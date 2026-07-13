@@ -1,0 +1,15 @@
+appId: org.aetherassembly.driftleaf
+productName: Driftleaf
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - dist-electron/**
+mac:
+  category: public.app-category.productivity
+linux:
+  target: AppImage
+  category: Office
+win:
+  target: nsis
