@@ -4,6 +4,7 @@ import * as vaultModule from "./vault";
 import type { Vault } from "./vault";
 import * as searchModule from "./search";
 import type { SearchIndex } from "./search";
+import * as settingsModule from "./settings";
 
 interface Session {
   vault: Vault | null;
@@ -33,11 +34,13 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC_CHANNELS.vaultCreate, async (_e, rootPath: string, passphrase: string) => {
     const vault = await vaultModule.createVault(rootPath, passphrase);
     await openSession(vault);
+    await settingsModule.patchSettings({ lastVaultPath: rootPath });
   });
 
   ipcMain.handle(IPC_CHANNELS.vaultUnlock, async (_e, rootPath: string, passphrase: string) => {
     const vault = await vaultModule.unlockVault(rootPath, passphrase);
     await openSession(vault);
+    await settingsModule.patchSettings({ lastVaultPath: rootPath });
   });
 
   ipcMain.handle(IPC_CHANNELS.vaultHasPassphrase, (_e, rootPath: string) => {
@@ -98,5 +101,13 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC_CHANNELS.searchQuery, (_e, text: string) => {
     if (!session.index) return [];
     return searchModule.search(session.index, text);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.settingsRead, () => {
+    return settingsModule.readSettings();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.settingsPatch, (_e, patch: Partial<settingsModule.AppSettings>) => {
+    return settingsModule.patchSettings(patch);
   });
 }

@@ -1,6 +1,13 @@
 // Shared IPC contract between main and renderer. Keep this the single source of truth
 // for channel names and payload/result shapes so both sides stay in sync.
 
+export interface AppSettings {
+  lastVaultPath: string | null;
+  theme: "system" | "light" | "dark";
+  editorFontSizePx: number;
+  autosaveIntervalMs: number;
+}
+
 export interface NoteMeta {
   id: string;
   title: string;
@@ -38,6 +45,10 @@ export interface DriftleafApi {
   search: {
     query(text: string): Promise<SearchResult[]>;
   };
+  settings: {
+    read(): Promise<AppSettings>;
+    patch(update: Partial<AppSettings>): Promise<AppSettings>;
+  };
 }
 
 export const IPC_CHANNELS = {
@@ -55,4 +66,6 @@ export const IPC_CHANNELS = {
   notesRemove: "notes:remove",
   foldersCreate: "folders:create",
   searchQuery: "search:query",
+  settingsRead: "settings:read",
+  settingsPatch: "settings:patch",
 } as const;

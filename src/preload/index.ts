@@ -26,6 +26,10 @@ const api: DriftleafApi = {
   search: {
     query: (text) => ipcRenderer.invoke(IPC_CHANNELS.searchQuery, text),
   },
+  settings: {
+    read: () => ipcRenderer.invoke(IPC_CHANNELS.settingsRead),
+    patch: (update) => ipcRenderer.invoke(IPC_CHANNELS.settingsPatch, update),
+  },
 };
 
 contextBridge.exposeInMainWorld("driftleaf", api);

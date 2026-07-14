@@ -43,7 +43,7 @@ phase before its dependencies above it are done.
       select-folder (done); still missing: move note between folders, rename/delete
       folder, nested-tree indentation (currently a flat list of full paths)
 - [ ] **5. Packaging (dev builds)** — electron-builder unsigned builds for
-      Linux/macOS/Windows, good enough for the developer to dogfood daily
+      Linux/macOS/Windows, good enough for the developers
 
 ### Beta — feature-complete, hardening
 

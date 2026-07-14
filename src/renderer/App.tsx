@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { UnlockScreen } from "./components/UnlockScreen";
 import { Sidebar } from "./components/Sidebar";
 import { Editor } from "./components/Editor";
-import type { NoteMeta, SearchResult } from "../shared/ipc";
+import { SettingsModal } from "./components/SettingsModal";
+import type { AppSettings, NoteMeta, SearchResult } from "../shared/ipc";
 
-const SAVE_DEBOUNCE_MS = 500;
 const SEARCH_DEBOUNCE_MS = 200;
 
 export default function App() {
@@ -14,8 +14,16 @@ export default function App() {
   const [selectedFolder, setSelectedFolder] = useState("");
   const [selectedNote, setSelectedNote] = useState<NoteMeta | null>(null);
   const [content, setContent] = useState("");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [settings, setSettings] = useState<AppSettings>({
+    lastVaultPath: null,
+    theme: "system",
+    editorFontSizePx: 15,
+    autosaveIntervalMs: 500,
+  });
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -30,8 +38,28 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (unlocked) void refreshVaultState();
+    if (unlocked) {
+      void refreshVaultState();
+      void window.driftleaf.settings.read().then((s) => {
+        setSettings(s);
+        applyTheme(s.theme);
+      });
+    }
   }, [unlocked, refreshVaultState]);
+
+  function applyTheme(theme: AppSettings["theme"]) {
+    if (theme === "system") {
+      document.documentElement.removeAttribute("data-theme");
+    } else {
+      document.documentElement.setAttribute("data-theme", theme);
+    }
+  }
+
+  async function handlePatchSettings(update: Partial<AppSettings>) {
+    const next = await window.driftleaf.settings.patch(update);
+    setSettings(next);
+    if (update.theme !== undefined) applyTheme(update.theme);
+  }
 
   async function openNote(id: string) {
     const note = notes.find((n) => n.id === id) ?? (await findNoteAnywhere(id));
@@ -40,6 +68,7 @@ export default function App() {
     setSelectedNote(note);
     setSelectedFolder(note.folderPath);
     setContent(text);
+    setSaveStatus("idle");
   }
 
   async function findNoteAnywhere(id: string): Promise<NoteMeta | undefined> {
@@ -49,9 +78,10 @@ export default function App() {
 
   function scheduleSave(id: string, nextContent: string) {
     if (saveTimer.current) clearTimeout(saveTimer.current);
+    setSaveStatus("saving");
     saveTimer.current = setTimeout(() => {
-      void window.driftleaf.notes.write(id, nextContent);
-    }, SAVE_DEBOUNCE_MS);
+      void window.driftleaf.notes.write(id, nextContent).then(() => setSaveStatus("saved"));
+    }, settings.autosaveIntervalMs);
   }
 
   function handleContentChange(next: string) {
@@ -67,7 +97,7 @@ export default function App() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       void window.driftleaf.notes.rename(updated.id, title);
-    }, SAVE_DEBOUNCE_MS);
+    }, settings.autosaveIntervalMs);
   }
 
   async function handleCreateNote() {
@@ -132,12 +162,15 @@ export default function App() {
         searchResults={searchResults}
         onSelectSearchResult={(id) => void openNote(id)}
         onLock={() => void handleLock()}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
       <main className="main">
         {selectedNote ? (
           <Editor
             note={selectedNote}
             content={content}
+            saveStatus={saveStatus}
+            fontSizePx={settings.editorFontSizePx}
             onChange={handleContentChange}
             onRenameTitle={handleRenameTitle}
             onDelete={() => void handleDeleteNote()}
@@ -146,6 +179,12 @@ export default function App() {
           <div className="main__empty">Select or create a note to start writing.</div>
         )}
       </main>
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={settings}
+        onPatch={(update) => void handlePatchSettings(update)}
+      />
     </div>
   );
 }

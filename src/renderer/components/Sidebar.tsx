@@ -16,6 +16,7 @@ interface SidebarProps {
   searchResults: SearchResult[];
   onSelectSearchResult: (id: string) => void;
   onLock: () => void;
+  onOpenSettings: () => void;
 }
 
 function folderLabel(folderPath: string): string {
@@ -37,9 +38,18 @@ export function Sidebar({
   searchResults,
   onSelectSearchResult,
   onLock,
+  onOpenSettings,
 }: SidebarProps) {
   const [newFolderName, setNewFolderName] = useState("");
+  const [showNewFolder, setShowNewFolder] = useState(false);
   const isSearching = searchQuery.trim().length > 0;
+
+  function noteCountForFolder(folder: string) {
+    if (folder === "") return notes.length;
+    return notes.filter(
+      (n) => n.folderPath === folder || n.folderPath.startsWith(folder + "/"),
+    ).length;
+  }
 
   return (
     <aside className="sidebar">
@@ -60,6 +70,9 @@ export function Sidebar({
                 onClick={() => onSelectSearchResult(result.id)}
               >
                 <strong>{result.title || "Untitled"}</strong>
+                <span className="sidebar__result-folder">
+                  {result.folderPath || "Root"}
+                </span>
                 <span
                   className="sidebar__snippet"
                   dangerouslySetInnerHTML={{ __html: result.snippet }}
@@ -71,6 +84,13 @@ export function Sidebar({
         </ul>
       ) : (
         <>
+          <div className="sidebar__folders-header">
+            <span className="sidebar__section-label">Folders</span>
+            <Button variant="ghost" size="sm" onClick={() => setShowNewFolder(true)}>
+              + Folder
+            </Button>
+          </div>
+
           <div className="sidebar__folders">
             {folders.map((folder) => (
               <button
@@ -79,31 +99,39 @@ export function Sidebar({
                 onClick={() => onSelectFolder(folder)}
               >
                 {folderLabel(folder)}
-                <Badge variant="default">
-                  {notes.filter((n) => n.folderPath === folder).length}
-                </Badge>
+                <Badge variant="default">{noteCountForFolder(folder)}</Badge>
               </button>
             ))}
           </div>
 
-          <form
-            className="sidebar__new-folder"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!newFolderName.trim()) return;
-              const path = selectedFolder
-                ? `${selectedFolder}/${newFolderName.trim()}`
-                : newFolderName.trim();
-              onCreateFolder(path);
-              setNewFolderName("");
-            }}
-          >
-            <Input
-              placeholder="New folder name"
-              value={newFolderName}
-              onChange={(e) => setNewFolderName(e.target.value)}
-            />
-          </form>
+          {showNewFolder && (
+            <form
+              className="sidebar__new-folder"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newFolderName.trim()) {
+                  setShowNewFolder(false);
+                  return;
+                }
+                const path = selectedFolder
+                  ? `${selectedFolder}/${newFolderName.trim()}`
+                  : newFolderName.trim();
+                onCreateFolder(path);
+                setNewFolderName("");
+                setShowNewFolder(false);
+              }}
+            >
+              <Input
+                autoFocus
+                placeholder="Folder name…"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onBlur={() => {
+                  if (!newFolderName.trim()) setShowNewFolder(false);
+                }}
+              />
+            </form>
+          )}
 
           <div className="sidebar__notes-header">
             <span>{folderLabel(selectedFolder)}</span>
@@ -130,6 +158,9 @@ export function Sidebar({
       )}
 
       <div className="sidebar__footer">
+        <Button variant="ghost" size="sm" onClick={onOpenSettings}>
+          Settings
+        </Button>
         <Button variant="ghost" size="sm" onClick={onLock}>
           Lock vault
         </Button>

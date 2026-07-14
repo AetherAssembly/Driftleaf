@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Card, Input } from "@aetherAssembly/ui";
 
 interface UnlockScreenProps {
@@ -11,6 +11,11 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
   const [mode, setMode] = useState<"create" | "unlock" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [lastVaultPath, setLastVaultPath] = useState<string | null>(null);
+
+  useEffect(() => {
+    void window.driftleaf.settings.read().then((s) => setLastVaultPath(s.lastVaultPath));
+  }, []);
 
   async function openWithoutPassphrase(path: string) {
     setBusy(true);
@@ -67,7 +72,20 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
       <Card header={<h1>Driftleaf</h1>}>
         {!mode ? (
           <div className="unlock-screen__actions">
-            <Button variant="primary" loading={busy} onClick={() => choosePath("create")}>
+            {lastVaultPath && (
+              <Button
+                variant="primary"
+                loading={busy}
+                onClick={() => void openWithoutPassphrase(lastVaultPath)}
+              >
+                Reopen {lastVaultPath.split("/").pop()}
+              </Button>
+            )}
+            <Button
+              variant={lastVaultPath ? "secondary" : "primary"}
+              loading={busy}
+              onClick={() => choosePath("create")}
+            >
               Create a new vault
             </Button>
             <Button variant="secondary" loading={busy} onClick={() => choosePath("unlock")}>

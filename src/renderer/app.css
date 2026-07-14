@@ -121,9 +121,82 @@ body {
   font-size: 0.85em;
 }
 
+.sidebar__folders-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sidebar__section-label {
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.5;
+}
+
+.sidebar__result-folder {
+  font-size: 0.75em;
+  opacity: 0.6;
+}
+
 .sidebar__footer {
   border-top: 1px solid var(--ae-color-border, #ddd);
   padding-top: var(--ae-space-2, 8px);
+  display: flex;
+  gap: var(--ae-space-2, 8px);
+}
+
+.editor__save-status {
+  font-size: 0.8em;
+  opacity: 0.5;
+  align-self: center;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ae-space-2, 8px);
+  margin-top: var(--ae-space-4, 16px);
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ae-space-4, 16px);
+  min-width: 280px;
+}
+
+.settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ae-space-2, 8px);
+}
+
+.settings__label {
+  font-size: 0.85em;
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.settings__theme-row {
+  display: flex;
+  gap: var(--ae-space-2, 8px);
+}
+
+.settings__vault-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ae-space-2, 8px);
+}
+
+.settings__vault-name {
+  font-size: 0.9em;
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .main {
