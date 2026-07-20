@@ -1,0 +1,31 @@
+appId: org.aetherassembly.driftleaf
+productName: Driftleaf
+icon: build/icon.png
+copyright: Copyright 2026 AetherAssembly
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - dist-electron/**
+win:
+  target:
+    - nsis
+    - portable
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  runAfterFinish: true
+  installerSidebar: assets/installer-sidebar.png
+  license: assets/eula.rtf
+  include: build/installer.nsh
+  artifactName: 'driftleaf-setup-${version}.exe'
+portable:
+  artifactName: 'driftleaf-portable-${version}.exe'
+publish:
+  provider: github
+  owner: AetherAssembly
+  repo: Driftleaf
+generateUpdatesFilesForAllChannels: true

@@ -1,18 +1,37 @@
 {
   "name": "driftleaf",
-  "version": "0.3.0",
+  "version": "0.1.0-beta.1",
   "description": "So your thoughts don't drift. A local-first, encrypted-by-default notes app.",
   "main": "dist-electron/main/index.js",
   "private": true,
+  "author": {
+    "name": "AetherAssembly",
+    "email": "support@aetherassembly.org",
+    "url": "https://github.com/AetherAssembly"
+  },
+  "desktopName": "driftleaf.desktop",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && electron-builder",
+    "build": "tsc -b && vite build",
+    "package:appimage": "npm run build && electron-builder --config electron-builder/linux.yml --linux AppImage --publish never -c.electronVersion=43.1.0",
+    "package:linux": "npm run build && electron-builder --config electron-builder/linux.yml --linux --publish never -c.electronVersion=43.1.0",
+    "package:linux:rpm": "npm run build && electron-builder --config electron-builder/linux.yml --linux rpm --publish never -c.electronVersion=43.1.0",
+    "package:linux:arm64": "npm run build && electron-builder --config electron-builder/linux.yml --linux --arm64 --publish never -c.electronVersion=43.1.0",
+    "package:linux:beta": "npm run build && electron-builder --config electron-builder/linux.beta.yml --linux --publish never -c.electronVersion=43.1.0",
+    "package:macos": "npm run build && electron-builder --config electron-builder/macos.yml --mac dmg --publish never -c.electronVersion=43.1.0",
+    "package:macos:beta": "npm run build && electron-builder --config electron-builder/macos.beta.yml --mac dmg --publish never -c.electronVersion=43.1.0",
+    "package:windows": "npm run build && electron-builder --config electron-builder/windows.yml --win nsis portable --publish never -c.electronVersion=43.1.0",
+    "package:windows:beta": "npm run build && electron-builder --config electron-builder/windows.beta.yml --win nsis portable --publish never -c.electronVersion=43.1.0",
+    "publish:linux": "npm run build && electron-builder --config electron-builder/linux.yml --linux --publish always -c.electronVersion=43.1.0",
+    "publish:macos": "npm run build && electron-builder --config electron-builder/macos.yml --mac dmg --publish always -c.electronVersion=43.1.0",
+    "publish:windows": "npm run build && electron-builder --config electron-builder/windows.yml --win nsis portable --publish always -c.electronVersion=43.1.0",
     "lint": "eslint . --ext .ts,.tsx",
     "typecheck": "tsc -b --noEmit",
     "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "dependencies": {
     "@aetherAssembly/ui": "^1.0.1",
+    "adm-zip": "^0.6.0",
     "better-sqlite3": "^12.11.1",
     "dompurify": "^3.4.12",
     "marked": "^18.0.6",
@@ -20,6 +39,7 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",

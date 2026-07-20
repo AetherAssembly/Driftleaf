@@ -1,0 +1,25 @@
+appId: org.aetherassembly.driftleaf
+productName: Driftleaf
+icon: build/icon.png
+directories:
+  output: release
+files:
+  - dist/**
+  - dist-electron/**
+artifactName: 'driftleaf-${version}-mac.${ext}'
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.productivity
+  minimumSystemVersion: '12.0'
+dmg:
+  title: Driftleaf
+  window:
+    width: 540
+    height: 380
+publish:
+  provider: github
+  owner: AetherAssembly
+  repo: Driftleaf
+generateUpdatesFilesForAllChannels: true

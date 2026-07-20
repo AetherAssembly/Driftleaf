@@ -1,0 +1,31 @@
+appId: org.aetherassembly.driftleaf.beta
+productName: Driftleaf-Beta
+icon: build/icon.png
+artifactName: driftleaf-beta-${version}-${arch}.${ext}
+directories:
+  output: release
+files:
+  - dist/**
+  - dist-electron/**
+linux:
+  target:
+    - AppImage
+    - deb
+    - rpm
+  category: Office
+  synopsis: So your thoughts don't drift.
+  executableName: driftleaf
+  syncDesktopName: true
+  desktop:
+    entry:
+      Name: Driftleaf (Beta)
+deb:
+  packageName: driftleaf-beta
+rpm:
+  packageName: driftleaf-beta
+publish:
+  provider: github
+  owner: AetherAssembly
+  repo: Driftleaf
+  channel: beta
+generateUpdatesFilesForAllChannels: true
