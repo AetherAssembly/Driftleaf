@@ -1,0 +1,31 @@
+Driftleaf has been installed successfully!
+===========================================
+
+GETTING STARTED
+---------------
+Launch Driftleaf from your Start Menu or Desktop shortcut.
+
+On first launch you can:
+- Create a new vault (a folder on disk) or open an existing one
+- Set a passphrase to encrypt notes at rest, or skip it for no prompt
+- Create folders and notes, and search across your vault instantly
+
+A "Welcome to Driftleaf" note is created automatically in every new vault
+with keyboard shortcuts and a markdown syntax reference.
+
+KEYBOARD SHORTCUTS
+-------------------
+Ctrl+K        Command palette
+Ctrl+Shift+N  Quick capture (works even when Driftleaf isn't focused)
+
+BACKUP YOUR VAULT
+------------------
+A vault is just a folder — copy it (including the hidden .driftleaf/
+directory) to an external drive or another machine to back it up.
+
+LINKS
+-----
+GitHub:        https://github.com/AetherAssembly/Driftleaf
+Report a bug:  https://github.com/AetherAssembly/Driftleaf/issues
+
+Thank you for using Driftleaf!

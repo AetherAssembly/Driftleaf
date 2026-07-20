@@ -1,0 +1,24 @@
+<svg width="164" height="314" viewBox="0 0 164 314" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5c8f6b"/>
+      <stop offset="100%" stop-color="#33503c"/>
+    </linearGradient>
+  </defs>
+  <rect width="164" height="314" fill="url(#bg)"/>
+  <path d="M82 60
+           C 122 76, 152 112, 152 152
+           C 152 194, 122 226, 82 240
+           C 42 226, 12 194, 12 152
+           C 12 112, 42 76, 82 60
+           Z"
+        fill="#eef3ea"/>
+  <path d="M82 68 L 82 240" stroke="#33503c" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.85"/>
+  <path d="M82 104 C 68 114, 56 120, 42 123" stroke="#33503c" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.5"/>
+  <path d="M82 104 C 96 114, 108 120, 122 123" stroke="#33503c" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.5"/>
+  <path d="M82 148 C 66 160, 52 166, 36 170" stroke="#33503c" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.5"/>
+  <path d="M82 148 C 98 160, 112 166, 128 170" stroke="#33503c" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.5"/>
+  <path d="M82 192 C 68 202, 56 208, 44 211" stroke="#33503c" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.5"/>
+  <path d="M82 192 C 96 202, 108 208, 120 211" stroke="#33503c" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.5"/>
+  <text x="82" y="278" text-anchor="middle" font-family="sans-serif" font-size="19" font-weight="600" fill="#eef3ea">Driftleaf</text>
+</svg>

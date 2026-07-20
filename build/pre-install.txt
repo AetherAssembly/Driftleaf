@@ -1,0 +1,35 @@
+Driftleaf - So your thoughts don't drift
+=========================================
+
+A local-first, encrypted-by-default notes app.
+
+WHAT THIS INSTALLER DOES
+-------------------------
+- Installs Driftleaf on your computer
+- Creates a Start Menu shortcut
+- Optionally creates a Desktop shortcut
+- All your data stays on your machine; no account, no cloud sync by default
+
+SYSTEM REQUIREMENTS
+-------------------
+- Windows 10 or later (64-bit)
+- ~200 MB of disk space
+
+PRIVACY
+-------
+Driftleaf is local-first. Notes are markdown files encrypted at rest
+(AES-256-GCM) in a vault folder you choose, on your own disk. Driftleaf
+makes no network requests of its own — there is no telemetry, no account,
+and no cloud sync unless a future opt-in feature adds one.
+
+PASSPHRASE RECOVERY
+--------------------
+If you set a passphrase, there is no password reset. Write it down and
+keep it somewhere safe — this app's developers cannot recover it for you.
+
+LICENSE
+-------
+Driftleaf is licensed under the GNU Affero General Public License v3.0
+(AGPL-3.0). The full license text will be shown on the next screen.
+
+Click Next to review the license and continue installation.
