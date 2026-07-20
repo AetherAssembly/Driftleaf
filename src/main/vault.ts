@@ -4,8 +4,9 @@
 // can render without decrypting every note — only note *content* is encrypted.
 
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile, rm, rename } from "node:fs/promises";
+import { mkdir, readFile, writeFile, rm, rename, readdir } from "node:fs/promises";
 import path from "node:path";
+import AdmZip from "adm-zip";
 import {
   deriveVaultKey,
   encrypt,
@@ -19,10 +20,53 @@ import {
 const CANARY_TEXT = "driftleaf-vault-v1";
 const DRIFTLEAF_DIR = ".driftleaf";
 
+const WELCOME_NOTE_CONTENT = `# Welcome to Driftleaf
+
+## Local-first, encrypted, yours alone
+
+- Your notes live only on this device (or wherever you point the vault folder) —
+  no cloud, no account, no tracking.
+- Note content is encrypted at rest with AES-256-GCM. If you set a passphrase,
+  it's the only way to unlock the vault — **there is no password reset**. Write
+  it down and keep it somewhere safe.
+- Titles and folder names are kept in a plaintext index next to the encrypted
+  notes so the sidebar can render without decrypting everything — only note
+  *content* is encrypted.
+
+## Organization
+
+Notes live in folders, not tags — the sidebar folder tree mirrors the vault's
+folder structure on disk. Right-click a folder to rename or delete it;
+right-click a note to move it.
+
+## Markdown
+
+The editor supports standard markdown with a live preview toggle:
+
+- \`**bold**\`, \`*italic*\`, \`[links](url)\`
+- \`# Heading\`, \`## Subheading\`
+- Inline code and fenced code blocks (wrap text in backticks)
+- \`- bullet\` or \`1. numbered\` lists
+
+Changes autosave a moment after you stop typing.
+
+## If something goes wrong
+
+Every unlock double-checks the vault against what's actually on disk and
+repairs small inconsistencies automatically (e.g. after a crash mid-save). If
+a note ever won't decrypt, it's reported as corrupted rather than silently
+losing your other notes. See \`docs/RECOVERY.md\` in the project repo for more.
+
+Delete this note whenever you like — it's a normal note, not a special one.
+`;
+
 export interface NoteMeta {
   id: string;
   title: string;
   folderPath: string; // "" for vault root, else e.g. "Projects/Driftleaf"
+  fileName: string; // on-disk basename, e.g. "Meeting notes.md.enc" — kept in sync with
+  // `title` (see uniqueFileName/renameNote) so the vault folder is browsable in a normal
+  // file manager, the way any other encrypted file keeps its name with the extension changed.
   updatedAt: number;
 }
 
@@ -44,6 +88,74 @@ export interface Vault {
   manifest: Manifest;
 }
 
+// Reports what reconcileVault() found and fixed by cross-checking the manifest against
+// the .enc files actually on disk — the self-healing pass that stands in for a crash
+// recovery log (see writeFileAtomic/deleteNote/deleteFolder for how corruption is avoided
+// in the first place).
+export interface VaultRecoveryReport {
+  renamedLegacy: string[]; // note ids migrated from an old id-based filename to title.md.enc
+  removedDangling: string[]; // note ids removed because no .enc file exists for them anymore
+  recoveredOrphans: string[]; // note ids found on disk with no manifest entry, re-added
+}
+
+function isEmptyReport(report: VaultRecoveryReport): boolean {
+  return (
+    report.renamedLegacy.length === 0 &&
+    report.removedDangling.length === 0 &&
+    report.recoveredOrphans.length === 0
+  );
+}
+
+const MAX_FILENAME_BASE_LENGTH = 120; // leaves headroom for " (NN).md.enc" + OS path limits
+const WINDOWS_RESERVED_NAMES = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
+
+// Turns a note title into a filesystem-safe basename: strips characters illegal on
+// Windows/macOS/Linux, collapses whitespace, and avoids Windows-reserved device names.
+function sanitizeTitleForFileName(title: string): string {
+  let base = title
+    .replace(/[\\/:*?"<>|\x00-\x1f]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[. ]+$/, ""); // Windows disallows trailing dots/spaces
+  if (base.length > MAX_FILENAME_BASE_LENGTH) {
+    base = base.slice(0, MAX_FILENAME_BASE_LENGTH).trim();
+  }
+  if (!base || WINDOWS_RESERVED_NAMES.test(base)) {
+    base = "Untitled";
+  }
+  return base;
+}
+
+// Derives a `<title>.md.enc` filename for a note, adding a " (2)", " (3)", ... suffix if
+// another note in the same folder already claims that name — mirrors how a file manager
+// resolves a naming collision on copy/save.
+function uniqueFileName(
+  vault: Vault,
+  folderPath: string,
+  title: string,
+  excludeId?: string,
+): string {
+  const base = sanitizeTitleForFileName(title);
+  const taken = new Set(
+    vault.manifest.notes
+      .filter((n) => n.folderPath === folderPath && n.id !== excludeId)
+      .map((n) => n.fileName),
+  );
+  let candidate = `${base}.md.enc`;
+  for (let i = 2; taken.has(candidate); i++) {
+    candidate = `${base} (${i}).md.enc`;
+  }
+  return candidate;
+}
+
+// Recovers a reasonable title from an on-disk filename when a note's manifest entry is
+// gone (orphan recovery) — strips our own ".md.enc"/".enc" convention if present.
+function titleFromFileName(fileName: string): string {
+  const withoutEnc = fileName.endsWith(".enc") ? fileName.slice(0, -".enc".length) : fileName;
+  const withoutMd = withoutEnc.endsWith(".md") ? withoutEnc.slice(0, -".md".length) : withoutEnc;
+  return withoutMd || "Recovered note";
+}
+
 function configPath(rootPath: string): string {
   return path.join(rootPath, DRIFTLEAF_DIR, "vault.json");
 }
@@ -56,8 +168,17 @@ function canaryPath(rootPath: string): string {
   return path.join(rootPath, DRIFTLEAF_DIR, "canary.enc");
 }
 
-function notePath(rootPath: string, note: Pick<NoteMeta, "id" | "folderPath">): string {
-  return path.join(rootPath, note.folderPath, `${note.id}.enc`);
+function notePath(rootPath: string, note: Pick<NoteMeta, "folderPath" | "fileName">): string {
+  return path.join(rootPath, note.folderPath, note.fileName);
+}
+
+// Writes go to a sibling temp file and land via rename(), which POSIX/NTFS guarantee is
+// atomic within the same directory — a crash mid-write leaves the old file (or nothing
+// where there was nothing before) rather than a half-written one.
+async function writeFileAtomic(filePath: string, data: Buffer | string): Promise<void> {
+  const tmpPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.tmp-${randomUUID()}`);
+  await writeFile(tmpPath, data);
+  await rename(tmpPath, filePath);
 }
 
 async function readManifest(rootPath: string): Promise<Manifest> {
@@ -77,7 +198,7 @@ function validateFolderPath(folderPath: string): void {
 }
 
 async function writeManifest(rootPath: string, manifest: Manifest): Promise<void> {
-  await writeFile(manifestPath(rootPath), JSON.stringify(manifest, null, 2), "utf-8");
+  await writeFileAtomic(manifestPath(rootPath), JSON.stringify(manifest, null, 2));
 }
 
 export async function createVault(rootPath: string, passphrase: string): Promise<Vault> {
@@ -101,7 +222,11 @@ export async function createVault(rootPath: string, passphrase: string): Promise
   const manifest: Manifest = { notes: [], folders: [] };
   await writeManifest(rootPath, manifest);
 
-  return { rootPath, key, manifest };
+  const vault: Vault = { rootPath, key, manifest };
+  const welcomeNote = await createNote(vault, "", "Welcome to Driftleaf");
+  await writeNote(vault, welcomeNote.id, WELCOME_NOTE_CONTENT);
+
+  return vault;
 }
 
 export async function vaultHasPassphrase(rootPath: string): Promise<boolean> {
@@ -110,7 +235,12 @@ export async function vaultHasPassphrase(rootPath: string): Promise<boolean> {
   return config.kdf === "scrypt";
 }
 
-export async function unlockVault(rootPath: string, passphrase: string): Promise<Vault> {
+export interface UnlockResult {
+  vault: Vault;
+  recovery: VaultRecoveryReport;
+}
+
+export async function unlockVault(rootPath: string, passphrase: string): Promise<UnlockResult> {
   const configRaw = await readFile(configPath(rootPath), "utf-8");
   const config = JSON.parse(configRaw) as VaultConfig;
   const key =
@@ -130,7 +260,100 @@ export async function unlockVault(rootPath: string, passphrase: string): Promise
   }
 
   const manifest = await readManifest(rootPath);
-  return { rootPath, key, manifest };
+  const vault: Vault = { rootPath, key, manifest };
+  const recovery = await reconcileVault(vault);
+  return { vault, recovery };
+}
+
+interface DiskEncFile {
+  folderPath: string;
+  fileName: string;
+}
+
+// Recursively finds every `*.enc` file under the vault root (skipping the .driftleaf config
+// dir), keyed by its full "<folderPath>/<fileName>" location.
+async function scanEncFiles(
+  rootPath: string,
+  dir: string,
+  results: Map<string, DiskEncFile>,
+): Promise<void> {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      if (entry.name === DRIFTLEAF_DIR) continue;
+      await scanEncFiles(rootPath, path.join(dir, entry.name), results);
+    } else if (entry.isFile() && entry.name.endsWith(".enc")) {
+      const relFolder = path.relative(rootPath, dir).split(path.sep).join("/");
+      const folderPath = relFolder === "." ? "" : relFolder;
+      results.set(`${folderPath}/${entry.name}`, { folderPath, fileName: entry.name });
+    }
+  }
+}
+
+// Cross-checks the manifest against what's actually on disk and self-heals mismatches left
+// by a crash between a file write and its manifest update (see writeNote/moveNote/deleteNote
+// for the operations this covers), and opportunistically migrates any note still using the
+// pre-"title.md.enc" id-based filename. Runs automatically on every unlock.
+export async function reconcileVault(vault: Vault): Promise<VaultRecoveryReport> {
+  const onDisk = new Map<string, DiskEncFile>();
+  await scanEncFiles(vault.rootPath, vault.rootPath, onDisk);
+
+  const report: VaultRecoveryReport = { renamedLegacy: [], removedDangling: [], recoveredOrphans: [] };
+  const claimed = new Set<string>();
+  const survivors: NoteMeta[] = [];
+
+  for (const meta of vault.manifest.notes) {
+    // Backfill fileName for notes written before this field existed, matching the file's
+    // actual (pre-existing) on-disk name so nothing moves until the migration pass below.
+    if (!meta.fileName) {
+      meta.fileName = `${meta.id}.enc`;
+    }
+    const key = `${meta.folderPath}/${meta.fileName}`;
+    if (!onDisk.has(key)) {
+      report.removedDangling.push(meta.id);
+      continue;
+    }
+    claimed.add(key);
+    survivors.push(meta);
+  }
+
+  // Migrate legacy id-named files to the readable "title.md.enc" scheme opportunistically,
+  // so vaults created before this feature get browsable filenames without a manual re-save.
+  for (const meta of survivors) {
+    if (/\.md\.enc$/.test(meta.fileName)) continue;
+    const oldPath = notePath(vault.rootPath, meta);
+    const newFileName = uniqueFileName(vault, meta.folderPath, meta.title, meta.id);
+    const newPath = path.join(vault.rootPath, meta.folderPath, newFileName);
+    try {
+      await rename(oldPath, newPath);
+    } catch {
+      continue; // leave it on the legacy name (e.g. permissions issue); still fully readable
+    }
+    claimed.delete(`${meta.folderPath}/${meta.fileName}`);
+    meta.fileName = newFileName;
+    claimed.add(`${meta.folderPath}/${newFileName}`);
+    report.renamedLegacy.push(meta.id);
+  }
+
+  for (const [key, { folderPath, fileName }] of onDisk) {
+    if (claimed.has(key)) continue;
+    const id = randomUUID();
+    survivors.push({ id, title: titleFromFileName(fileName), folderPath, fileName, updatedAt: Date.now() });
+    report.recoveredOrphans.push(id);
+  }
+
+  vault.manifest.notes = survivors;
+
+  if (!isEmptyReport(report)) {
+    await writeManifest(vault.rootPath, vault.manifest);
+  }
+
+  return report;
 }
 
 export function listNotes(vault: Vault, folderPath?: string): NoteMeta[] {
@@ -154,15 +377,24 @@ export async function readNote(vault: Vault, id: string): Promise<string> {
   const meta = vault.manifest.notes.find((n) => n.id === id);
   if (!meta) throw new Error(`Note not found: ${id}`);
   const data = await readFile(notePath(vault.rootPath, meta));
-  const decrypted = decrypt(unpackPayload(data), vault.key);
-  return decrypted.toString("utf-8");
+  try {
+    const decrypted = decrypt(unpackPayload(data), vault.key);
+    return decrypted.toString("utf-8");
+  } catch {
+    // AES-GCM's auth tag fails to verify on any bit-flip or truncation, so this reliably
+    // means the .enc file itself is damaged (bad disk, killed process mid-write pre-atomic-fix,
+    // manual tampering) rather than a wrong key — the key was already checked at unlock.
+    throw new Error(`Note is corrupted and cannot be decrypted: ${id}`);
+  }
 }
 
+// Note content is written before the manifest so a crash between the two leaves, at worst,
+// a manifest with a stale updatedAt — never lost content. reconcileVault() self-heals the rest.
 export async function writeNote(vault: Vault, id: string, content: string): Promise<void> {
   const meta = vault.manifest.notes.find((n) => n.id === id);
   if (!meta) throw new Error(`Note not found: ${id}`);
   const payload = encrypt(Buffer.from(content, "utf-8"), vault.key);
-  await writeFile(notePath(vault.rootPath, meta), packPayload(payload));
+  await writeFileAtomic(notePath(vault.rootPath, meta), packPayload(payload));
   meta.updatedAt = Date.now();
   await writeManifest(vault.rootPath, vault.manifest);
 }
@@ -173,29 +405,49 @@ export async function createNote(
   title: string,
 ): Promise<NoteMeta> {
   const id = randomUUID();
-  const meta: NoteMeta = { id, title, folderPath, updatedAt: Date.now() };
+  const fileName = uniqueFileName(vault, folderPath, title);
+  const meta: NoteMeta = { id, title, folderPath, fileName, updatedAt: Date.now() };
   await mkdir(path.join(vault.rootPath, folderPath), { recursive: true });
   const payload = encrypt(Buffer.from("", "utf-8"), vault.key);
-  await writeFile(notePath(vault.rootPath, meta), packPayload(payload));
+  await writeFileAtomic(notePath(vault.rootPath, meta), packPayload(payload));
   vault.manifest.notes.push(meta);
   await writeManifest(vault.rootPath, vault.manifest);
   return meta;
 }
 
+// The file is renamed on disk before the manifest is updated (same "disk first" ordering as
+// createNote/writeNote): a crash in between leaves the file already at its new, correct name —
+// reconcileVault() will find the stale manifest entry dangling and the file itself as an
+// orphan, and recover it with the right title straight from the new filename.
 export async function renameNote(vault: Vault, id: string, title: string): Promise<void> {
   const meta = vault.manifest.notes.find((n) => n.id === id);
   if (!meta) throw new Error(`Note not found: ${id}`);
+  const oldPath = notePath(vault.rootPath, meta);
+  const newFileName = uniqueFileName(vault, meta.folderPath, title, id);
+  const newPath = path.join(vault.rootPath, meta.folderPath, newFileName);
+  if (newPath !== oldPath) {
+    await rename(oldPath, newPath);
+  }
   meta.title = title;
+  meta.fileName = newFileName;
   meta.updatedAt = Date.now();
   await writeManifest(vault.rootPath, vault.manifest);
 }
 
+// Manifest is updated before the file is removed: if a crash happens in between, the
+// worst case is an orphaned .enc file on disk (harmless, cleaned up by reconcileVault()),
+// never a manifest entry pointing at a note that no longer exists.
 export async function deleteNote(vault: Vault, id: string): Promise<void> {
   const index = vault.manifest.notes.findIndex((n) => n.id === id);
   if (index === -1) throw new Error(`Note not found: ${id}`);
   const [meta] = vault.manifest.notes.splice(index, 1);
+  try {
+    await writeManifest(vault.rootPath, vault.manifest);
+  } catch (err) {
+    vault.manifest.notes.splice(index, 0, meta);
+    throw err;
+  }
   await rm(notePath(vault.rootPath, meta), { force: true });
-  await writeManifest(vault.rootPath, vault.manifest);
 }
 
 export async function createFolder(vault: Vault, folderPath: string): Promise<void> {
@@ -211,7 +463,11 @@ export async function moveNote(vault: Vault, id: string, targetFolder: string): 
   const meta = vault.manifest.notes.find((n) => n.id === id);
   if (!meta) throw new Error(`Note not found: ${id}`);
   const oldPath = notePath(vault.rootPath, meta);
+  // Recompute the filename in the target folder in case a note with the same title already
+  // lives there — moving "Notes.md.enc" into a folder that already has one shouldn't collide.
+  const newFileName = uniqueFileName(vault, targetFolder, meta.title, id);
   meta.folderPath = targetFolder;
+  meta.fileName = newFileName;
   meta.updatedAt = Date.now();
   const newPath = notePath(vault.rootPath, meta);
   if (oldPath !== newPath) {
@@ -246,17 +502,134 @@ export async function renameFolder(
   await writeManifest(vault.rootPath, vault.manifest);
 }
 
+// Same ordering rationale as deleteNote(): manifest drops the entries first, directory
+// removal happens after, so a crash mid-operation leaves orphaned files rather than
+// manifest entries for notes that no longer exist.
 export async function deleteFolder(vault: Vault, folderPath: string): Promise<string[]> {
   if (!folderPath) throw new Error("Cannot delete the vault root");
   const affected = vault.manifest.notes.filter(
     (n) => n.folderPath === folderPath || n.folderPath.startsWith(folderPath + "/"),
   );
   const deletedIds = affected.map((n) => n.id);
+  const prevNotes = vault.manifest.notes;
+  const prevFolders = vault.manifest.folders;
   vault.manifest.notes = vault.manifest.notes.filter((n) => !deletedIds.includes(n.id));
   vault.manifest.folders = vault.manifest.folders.filter(
     (f) => f !== folderPath && !f.startsWith(folderPath + "/"),
   );
+  try {
+    await writeManifest(vault.rootPath, vault.manifest);
+  } catch (err) {
+    vault.manifest.notes = prevNotes;
+    vault.manifest.folders = prevFolders;
+    throw err;
+  }
   await rm(path.join(vault.rootPath, folderPath), { recursive: true, force: true });
-  await writeManifest(vault.rootPath, vault.manifest);
   return deletedIds;
+}
+
+// Registers every ancestor of folderPath as an explicit folder (createFolder is idempotent),
+// so a nested import target shows up in the sidebar tree even before any note lands in it.
+async function ensureFolderChain(vault: Vault, folderPath: string): Promise<void> {
+  if (!folderPath) return;
+  const parts = folderPath.split("/");
+  let current = "";
+  for (const part of parts) {
+    current = current ? `${current}/${part}` : part;
+    await createFolder(vault, current);
+  }
+}
+
+export interface ImportResult {
+  imported: NoteMeta[];
+  skipped: string[]; // "<name> (<reason>)" entries for files/entries that couldn't be imported
+}
+
+// Imports a mix of .md files and .zip archives (each .md inside imported as its own note,
+// preserving the archive's internal folder structure under targetFolder). One bad file/entry
+// doesn't abort the rest of the batch — failures are collected in `skipped` instead of thrown.
+export async function importFiles(
+  vault: Vault,
+  filePaths: string[],
+  targetFolder: string,
+): Promise<ImportResult> {
+  const imported: NoteMeta[] = [];
+  const skipped: string[] = [];
+
+  for (const filePath of filePaths) {
+    const ext = path.extname(filePath).toLowerCase();
+    const baseName = path.basename(filePath);
+    try {
+      if (ext === ".md") {
+        const content = await readFile(filePath, "utf-8");
+        const title = path.basename(filePath, ".md") || "Untitled";
+        await ensureFolderChain(vault, targetFolder);
+        const meta = await createNote(vault, targetFolder, title);
+        await writeNote(vault, meta.id, content);
+        imported.push(meta);
+      } else if (ext === ".zip") {
+        const result = await importZipArchive(vault, filePath, targetFolder);
+        imported.push(...result.imported);
+        skipped.push(...result.skipped);
+      } else {
+        skipped.push(`${baseName} (unsupported file type — only .md and .zip can be imported)`);
+      }
+    } catch (err) {
+      skipped.push(`${baseName} (${err instanceof Error ? err.message : "import failed"})`);
+    }
+  }
+
+  return { imported, skipped };
+}
+
+async function importZipArchive(
+  vault: Vault,
+  zipPath: string,
+  targetFolder: string,
+): Promise<ImportResult> {
+  const imported: NoteMeta[] = [];
+  const skipped: string[] = [];
+
+  let entries;
+  try {
+    entries = new AdmZip(zipPath).getEntries();
+  } catch (err) {
+    return {
+      imported,
+      skipped: [`${path.basename(zipPath)} (${err instanceof Error ? err.message : "couldn't read archive"})`],
+    };
+  }
+
+  for (const entry of entries) {
+    if (entry.isDirectory) continue;
+    if (!entry.entryName.toLowerCase().endsWith(".md")) continue;
+
+    try {
+      // Zip entry names always use "/" regardless of platform. Reject anything that could
+      // escape the vault (zip-slip): ".." segments or an absolute-looking path.
+      const relPath = entry.entryName.replace(/\\/g, "/");
+      if (relPath.includes("..") || path.isAbsolute(relPath)) {
+        throw new Error("unsafe path in archive");
+      }
+      const slashIndex = relPath.lastIndexOf("/");
+      const relDir = slashIndex === -1 ? "" : relPath.slice(0, slashIndex);
+      const fileName = slashIndex === -1 ? relPath : relPath.slice(slashIndex + 1);
+      const title = fileName.replace(/\.md$/i, "") || "Untitled";
+      const folderPath = targetFolder
+        ? relDir
+          ? `${targetFolder}/${relDir}`
+          : targetFolder
+        : relDir;
+      validateFolderPath(folderPath);
+
+      await ensureFolderChain(vault, folderPath);
+      const meta = await createNote(vault, folderPath, title);
+      await writeNote(vault, meta.id, entry.getData().toString("utf-8"));
+      imported.push(meta);
+    } catch (err) {
+      skipped.push(`${entry.entryName} (${err instanceof Error ? err.message : "import failed"})`);
+    }
+  }
+
+  return { imported, skipped };
 }

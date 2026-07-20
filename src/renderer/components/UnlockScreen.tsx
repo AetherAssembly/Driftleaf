@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Button, Card, Input } from "@aetherAssembly/ui";
+import { Button, Card, Input, Modal } from "@aetherAssembly/ui";
+import type { VaultRecoveryReport } from "../../shared/ipc";
 
 interface UnlockScreenProps {
-  onUnlocked: () => void;
+  onUnlocked: (recovery?: VaultRecoveryReport) => void;
 }
 
 export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
@@ -12,6 +13,8 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [lastVaultPath, setLastVaultPath] = useState<string | null>(null);
+  const [confirmingNoRecovery, setConfirmingNoRecovery] = useState(false);
+  const [acknowledgedNoRecovery, setAcknowledgedNoRecovery] = useState(false);
 
   useEffect(() => {
     void window.driftleaf.settings.read().then((s) => setLastVaultPath(s.lastVaultPath));
@@ -21,8 +24,8 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
     setBusy(true);
     setError(null);
     try {
-      await window.driftleaf.vault.unlock(path, "");
-      onUnlocked();
+      const recovery = await window.driftleaf.vault.unlock(path, "");
+      onUnlocked(recovery);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to open vault");
       setRootPath(path);
@@ -49,22 +52,37 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
     setMode(next);
   }
 
-  async function submit() {
+  async function performSubmit() {
     if (!rootPath || !mode) return;
     setBusy(true);
     setError(null);
     try {
       if (mode === "create") {
         await window.driftleaf.vault.create(rootPath, passphrase);
+        onUnlocked();
       } else {
-        await window.driftleaf.vault.unlock(rootPath, passphrase);
+        const recovery = await window.driftleaf.vault.unlock(rootPath, passphrase);
+        onUnlocked(recovery);
       }
-      onUnlocked();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to open vault");
     } finally {
       setBusy(false);
     }
+  }
+
+  function submit() {
+    if (mode === "create" && passphrase && !acknowledgedNoRecovery) {
+      setConfirmingNoRecovery(true);
+      return;
+    }
+    void performSubmit();
+  }
+
+  function confirmNoRecovery() {
+    setConfirmingNoRecovery(false);
+    setAcknowledgedNoRecovery(true);
+    void performSubmit();
   }
 
   return (
@@ -123,13 +141,40 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
                     : "Create vault without a passphrase"
                   : "Unlock"}
               </Button>
-              <Button type="button" variant="ghost" onClick={() => setMode(null)}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setMode(null);
+                  setAcknowledgedNoRecovery(false);
+                }}
+              >
                 Back
               </Button>
             </div>
           </form>
         )}
       </Card>
+
+      <Modal
+        open={confirmingNoRecovery}
+        onClose={() => setConfirmingNoRecovery(false)}
+        title="This passphrase cannot be recovered"
+      >
+        <p>
+          Driftleaf never stores or transmits your passphrase. If you forget it, there is no
+          reset — your notes cannot be recovered.
+        </p>
+        <p>Write it down and keep it somewhere safe before you continue.</p>
+        <div className="modal-actions">
+          <Button variant="ghost" size="sm" onClick={() => setConfirmingNoRecovery(false)}>
+            Cancel
+          </Button>
+          <Button variant="primary" size="sm" onClick={confirmNoRecovery}>
+            I understand, create vault
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }

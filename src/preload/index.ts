@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { IPC_CHANNELS, type DriftleafApi } from "../shared/ipc";
+import { IPC_CHANNELS, RENDERER_EVENTS, type DriftleafApi } from "../shared/ipc";
 
 const api: DriftleafApi = {
   vault: {
     pickDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.vaultPickDirectory),
+    pickImportFiles: () => ipcRenderer.invoke(IPC_CHANNELS.vaultPickImportFiles),
     create: (rootPath, passphrase) =>
       ipcRenderer.invoke(IPC_CHANNELS.vaultCreate, rootPath, passphrase),
     unlock: (rootPath, passphrase) =>
@@ -20,6 +21,8 @@ const api: DriftleafApi = {
     rename: (id, title) => ipcRenderer.invoke(IPC_CHANNELS.notesRename, id, title),
     remove: (id) => ipcRenderer.invoke(IPC_CHANNELS.notesRemove, id),
     move: (id, targetFolder) => ipcRenderer.invoke(IPC_CHANNELS.notesMove, id, targetFolder),
+    import: (filePaths, targetFolder) =>
+      ipcRenderer.invoke(IPC_CHANNELS.notesImport, filePaths, targetFolder),
   },
   folders: {
     create: (folderPath) => ipcRenderer.invoke(IPC_CHANNELS.foldersCreate, folderPath),
@@ -32,6 +35,13 @@ const api: DriftleafApi = {
   settings: {
     read: () => ipcRenderer.invoke(IPC_CHANNELS.settingsRead),
     patch: (update) => ipcRenderer.invoke(IPC_CHANNELS.settingsPatch, update),
+  },
+  events: {
+    onQuickCapture: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on(RENDERER_EVENTS.quickCapture, listener);
+      return () => ipcRenderer.removeListener(RENDERER_EVENTS.quickCapture, listener);
+    },
   },
 };
 

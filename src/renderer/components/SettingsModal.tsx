@@ -70,6 +70,7 @@ export function SettingsModal({ open, onClose, settings, onPatch }: SettingsModa
             min={12}
             max={24}
             onChange={(e) => handleFontSize(Number(e.target.value))}
+            hint="Applies to the markdown editor pane."
           />
         </section>
 
@@ -81,6 +82,7 @@ export function SettingsModal({ open, onClose, settings, onPatch }: SettingsModa
             min={200}
             max={5000}
             onChange={(e) => handleAutosave(Number(e.target.value))}
+            hint="How long to wait after you stop typing before saving."
           />
         </section>
 
@@ -97,6 +99,14 @@ export function SettingsModal({ open, onClose, settings, onPatch }: SettingsModa
             </div>
           </section>
         )}
+
+        <section className="settings__section">
+          <p className="settings__about">
+            Notes are encrypted at rest and never leave this device. There is no passphrase
+            reset — see the &ldquo;Welcome to Driftleaf&rdquo; note in your vault, or
+            <code>docs/RECOVERY.md</code> in the project repo, for the full recovery story.
+          </p>
+        </section>
       </div>
     </Modal>
   );

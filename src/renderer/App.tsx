@@ -4,7 +4,36 @@ import { Sidebar } from "./components/Sidebar";
 import { Editor } from "./components/Editor";
 import { SettingsModal } from "./components/SettingsModal";
 import { MoveNoteModal } from "./components/MoveNoteModal";
-import type { AppSettings, NoteMeta, SearchResult } from "../shared/ipc";
+import { WelcomeModal } from "./components/WelcomeModal";
+import { QuickCapture } from "./components/QuickCapture";
+import { CommandPalette, type Command } from "./components/CommandPalette";
+import type { AppSettings, NoteMeta, SearchResult, VaultRecoveryReport } from "../shared/ipc";
+
+const WELCOMED_KEY = "driftleaf:welcomed";
+const DAILY_FOLDER = "Daily";
+
+function todayNoteTitle(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function describeRecovery(report: VaultRecoveryReport): string | null {
+  const parts: string[] = [];
+  if (report.recoveredOrphans.length > 0) {
+    parts.push(`recovered ${report.recoveredOrphans.length} note(s) missing from the index`);
+  }
+  if (report.renamedLegacy.length > 0) {
+    parts.push(`renamed ${report.renamedLegacy.length} note file(s) to match their title`);
+  }
+  if (report.removedDangling.length > 0) {
+    parts.push(`removed ${report.removedDangling.length} stale entr${report.removedDangling.length === 1 ? "y" : "ies"}`);
+  }
+  if (parts.length === 0) return null;
+  return `Vault self-check: ${parts.join(", ")}.`;
+}
 
 const SEARCH_DEBOUNCE_MS = 200;
 
@@ -27,6 +56,9 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [moveNoteId, setMoveNoteId] = useState<string | null>(null);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -51,6 +83,24 @@ export default function App() {
     }
   }, [unlocked, refreshVaultState]);
 
+  // Global hotkey (registered in main/index.ts) works even when the window wasn't focused.
+  useEffect(() => {
+    return window.driftleaf.events.onQuickCapture(() => {
+      if (unlocked) setQuickCaptureOpen(true);
+    });
+  }, [unlocked]);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (unlocked) setCommandPaletteOpen((v) => !v);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [unlocked]);
+
   function applyTheme(theme: AppSettings["theme"]) {
     if (theme === "system") {
       document.documentElement.removeAttribute("data-theme");
@@ -68,11 +118,15 @@ export default function App() {
   async function openNote(id: string) {
     const note = notes.find((n) => n.id === id) ?? (await findNoteAnywhere(id));
     if (!note) return;
-    const text = await window.driftleaf.notes.read(id);
-    setSelectedNote(note);
-    setSelectedFolder(note.folderPath);
-    setContent(text);
-    setSaveStatus("idle");
+    try {
+      const text = await window.driftleaf.notes.read(id);
+      setSelectedNote(note);
+      setSelectedFolder(note.folderPath);
+      setContent(text);
+      setSaveStatus("idle");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to open note");
+    }
   }
 
   async function findNoteAnywhere(id: string): Promise<NoteMeta | undefined> {
@@ -84,7 +138,13 @@ export default function App() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSaveStatus("saving");
     saveTimer.current = setTimeout(() => {
-      void window.driftleaf.notes.write(id, nextContent).then(() => setSaveStatus("saved"));
+      void window.driftleaf.notes
+        .write(id, nextContent)
+        .then(() => setSaveStatus("saved"))
+        .catch((err) => {
+          setSaveStatus("idle");
+          showToast(err instanceof Error ? err.message : "Failed to save note");
+        });
     }, settings.autosaveIntervalMs);
   }
 
@@ -100,28 +160,92 @@ export default function App() {
     setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      void window.driftleaf.notes.rename(updated.id, title);
+      void window.driftleaf.notes
+        .rename(updated.id, title)
+        .catch((err) => showToast(err instanceof Error ? err.message : "Failed to rename note"));
     }, settings.autosaveIntervalMs);
   }
 
   async function handleCreateNote() {
-    const meta = await window.driftleaf.notes.create(selectedFolder, "Untitled");
-    setNotes((prev) => [...prev, meta]);
-    setSelectedNote(meta);
-    setContent("");
+    try {
+      const meta = await window.driftleaf.notes.create(selectedFolder, "Untitled");
+      setNotes((prev) => [...prev, meta]);
+      setSelectedNote(meta);
+      setContent("");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to create note");
+    }
   }
 
   async function handleCreateFolder(folderPath: string) {
-    await window.driftleaf.folders.create(folderPath);
-    await refreshVaultState();
+    try {
+      await window.driftleaf.folders.create(folderPath);
+      await refreshVaultState();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to create folder");
+    }
   }
 
   async function handleDeleteNote() {
     if (!selectedNote) return;
-    await window.driftleaf.notes.remove(selectedNote.id);
-    setNotes((prev) => prev.filter((n) => n.id !== selectedNote.id));
-    setSelectedNote(null);
-    setContent("");
+    try {
+      await window.driftleaf.notes.remove(selectedNote.id);
+      setNotes((prev) => prev.filter((n) => n.id !== selectedNote.id));
+      setSelectedNote(null);
+      setContent("");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to delete note");
+    }
+  }
+
+  async function handleQuickCapture(text: string) {
+    const firstLine = text.split("\n")[0].trim();
+    const title = firstLine ? firstLine.slice(0, 60) : "Untitled";
+    try {
+      const meta = await window.driftleaf.notes.create("", title);
+      await window.driftleaf.notes.write(meta.id, text);
+      setNotes((prev) => [...prev, { ...meta, title }]);
+      showToast(`Saved "${title}"`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to save quick capture");
+    }
+  }
+
+  async function handleOpenDailyNote() {
+    const title = todayNoteTitle();
+    const existing = notes.find((n) => n.folderPath === DAILY_FOLDER && n.title === title);
+    if (existing) {
+      await openNote(existing.id);
+      return;
+    }
+    try {
+      await window.driftleaf.folders.create(DAILY_FOLDER);
+      const meta = await window.driftleaf.notes.create(DAILY_FOLDER, title);
+      setNotes((prev) => [...prev, meta]);
+      setFolders((prev) => (prev.includes(DAILY_FOLDER) ? prev : [...prev, DAILY_FOLDER].sort()));
+      setSelectedFolder(DAILY_FOLDER);
+      setSelectedNote(meta);
+      setContent("");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to open daily note");
+    }
+  }
+
+  async function handleImport() {
+    const paths = await window.driftleaf.vault.pickImportFiles();
+    if (!paths || paths.length === 0) return;
+    try {
+      const result = await window.driftleaf.notes.import(paths, selectedFolder);
+      await refreshVaultState();
+      const noun = result.imported === 1 ? "note" : "notes";
+      if (result.skipped.length > 0) {
+        showToast(`Imported ${result.imported} ${noun}. Skipped: ${result.skipped.join("; ")}`);
+      } else {
+        showToast(`Imported ${result.imported} ${noun}.`);
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Import failed");
+    }
   }
 
   function showToast(message: string) {
@@ -195,8 +319,35 @@ export default function App() {
   }
 
   if (!unlocked) {
-    return <UnlockScreen onUnlocked={() => setUnlocked(true)} />;
+    return (
+      <UnlockScreen
+        onUnlocked={(recovery) => {
+          setUnlocked(true);
+          if (recovery) {
+            const message = describeRecovery(recovery);
+            if (message) showToast(message);
+          }
+          if (!localStorage.getItem(WELCOMED_KEY)) {
+            setShowWelcome(true);
+            localStorage.setItem(WELCOMED_KEY, "1");
+          }
+        }}
+      />
+    );
   }
+
+  const commands: Command[] = [
+    { id: "new-note", label: "New note", run: () => void handleCreateNote() },
+    { id: "import", label: "Import notes (.md / .zip)…", run: () => void handleImport() },
+    { id: "daily-note", label: "Daily note (today)", run: () => void handleOpenDailyNote() },
+    { id: "open-settings", label: "Open settings", run: () => setSettingsOpen(true) },
+    { id: "lock-vault", label: "Lock vault", run: () => void handleLock() },
+    ...folders.map((f): Command => ({
+      id: `goto-${f || "root"}`,
+      label: `Go to folder: ${f || "All notes"}`,
+      run: () => setSelectedFolder(f),
+    })),
+  ];
 
   return (
     <div className="app">
@@ -209,6 +360,7 @@ export default function App() {
         onSelectNote={(id) => void openNote(id)}
         onCreateNote={() => void handleCreateNote()}
         onCreateFolder={(path) => void handleCreateFolder(path)}
+        onImport={() => void handleImport()}
         searchQuery={searchQuery}
         onSearchChange={handleSearchChange}
         searchResults={searchResults}
@@ -250,6 +402,17 @@ export default function App() {
         />
       )}
       {toast && <div className="toast">{toast}</div>}
+      <WelcomeModal open={showWelcome} onClose={() => setShowWelcome(false)} />
+      <QuickCapture
+        open={quickCaptureOpen}
+        onCapture={(text) => void handleQuickCapture(text)}
+        onClose={() => setQuickCaptureOpen(false)}
+      />
+      <CommandPalette
+        open={commandPaletteOpen}
+        commands={commands}
+        onClose={() => setCommandPaletteOpen(false)}
+      />
     </div>
   );
 }

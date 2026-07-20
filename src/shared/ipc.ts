@@ -22,11 +22,25 @@ export interface SearchResult {
   snippet: string;
 }
 
+// Reported after every unlock: what reconcileVault() found and self-healed by cross-checking
+// the manifest against the .enc files actually on disk (see src/main/vault.ts).
+export interface VaultRecoveryReport {
+  renamedLegacy: string[];
+  removedDangling: string[];
+  recoveredOrphans: string[];
+}
+
+export interface ImportResult {
+  imported: number;
+  skipped: string[];
+}
+
 export interface DriftleafApi {
   vault: {
     pickDirectory(): Promise<string | null>;
+    pickImportFiles(): Promise<string[] | null>;
     create(rootPath: string, passphrase: string): Promise<void>;
-    unlock(rootPath: string, passphrase: string): Promise<void>;
+    unlock(rootPath: string, passphrase: string): Promise<VaultRecoveryReport>;
     hasPassphrase(rootPath: string): Promise<boolean>;
     lock(): Promise<void>;
   };
@@ -39,6 +53,7 @@ export interface DriftleafApi {
     rename(id: string, title: string): Promise<void>;
     remove(id: string): Promise<void>;
     move(id: string, targetFolder: string): Promise<NoteMeta>;
+    import(filePaths: string[], targetFolder: string): Promise<ImportResult>;
   };
   folders: {
     create(folderPath: string): Promise<void>;
@@ -52,10 +67,21 @@ export interface DriftleafApi {
     read(): Promise<AppSettings>;
     patch(update: Partial<AppSettings>): Promise<AppSettings>;
   };
+  events: {
+    // Fired by the global quick-capture hotkey (main/index.ts). Returns an unsubscribe fn.
+    onQuickCapture(callback: () => void): () => void;
+  };
 }
+
+// Main -> renderer push events (as opposed to IPC_CHANNELS, which are renderer -> main
+// invoke/handle calls). Kept separate since these use ipcRenderer.on, not .invoke.
+export const RENDERER_EVENTS = {
+  quickCapture: "event:quickCapture",
+} as const;
 
 export const IPC_CHANNELS = {
   vaultPickDirectory: "vault:pickDirectory",
+  vaultPickImportFiles: "vault:pickImportFiles",
   vaultCreate: "vault:create",
   vaultUnlock: "vault:unlock",
   vaultHasPassphrase: "vault:hasPassphrase",
@@ -67,6 +93,7 @@ export const IPC_CHANNELS = {
   notesCreate: "notes:create",
   notesRename: "notes:rename",
   notesRemove: "notes:remove",
+  notesImport: "notes:import",
   foldersCreate: "folders:create",
   foldersRename: "folders:rename",
   foldersDelete: "folders:delete",

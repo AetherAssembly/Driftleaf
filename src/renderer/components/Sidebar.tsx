@@ -12,6 +12,7 @@ interface SidebarProps {
   onSelectNote: (id: string) => void;
   onCreateNote: () => void;
   onCreateFolder: (folderPath: string) => void;
+  onImport: () => void;
   searchQuery: string;
   onSearchChange: (text: string) => void;
   searchResults: SearchResult[];
@@ -37,6 +38,7 @@ export function Sidebar({
   onSelectNote,
   onCreateNote,
   onCreateFolder,
+  onImport,
   searchQuery,
   onSearchChange,
   searchResults,
@@ -150,9 +152,14 @@ export function Sidebar({
         <>
           <div className="sidebar__folders-header">
             <span className="sidebar__section-label">Folders</span>
-            <Button variant="ghost" size="sm" onClick={() => setShowNewFolder(true)}>
-              + Folder
-            </Button>
+            <div className="sidebar__folders-header-actions">
+              <Button variant="ghost" size="sm" onClick={onImport} title="Import .md or .zip files">
+                Import
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setShowNewFolder(true)}>
+                + Folder
+              </Button>
+            </div>
           </div>
 
           <div className="sidebar__folders">
@@ -236,6 +243,14 @@ export function Sidebar({
                     {note.title || "Untitled"}
                   </button>
                 </li>
+              ))}
+            {notes.filter((n) => n.folderPath === selectedFolder).length === 0 &&
+              (notes.length === 0 ? (
+                <li className="sidebar__empty">
+                  Your vault is empty. Click &ldquo;+ Note&rdquo; to create your first note.
+                </li>
+              ) : (
+                <li className="sidebar__empty">This folder is empty.</li>
               ))}
           </ul>
         </>
