@@ -98,6 +98,34 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     await vaultModule.createFolder(requireVault(), folderPath);
   });
 
+  ipcMain.handle(IPC_CHANNELS.notesMove, async (_e, id: string, targetFolder: string) => {
+    const vault = requireVault();
+    const meta = await vaultModule.moveNote(vault, id, targetFolder);
+    if (session.index) {
+      const content = await vaultModule.readNote(vault, id);
+      searchModule.reindexNote(session.index, meta, content);
+    }
+    return meta;
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.foldersRename,
+    async (_e, oldPath: string, newPath: string) => {
+      const vault = requireVault();
+      await vaultModule.renameFolder(vault, oldPath, newPath);
+      if (session.index) await searchModule.buildIndex(session.index, vault);
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.foldersDelete, async (_e, folderPath: string) => {
+    const vault = requireVault();
+    const deletedIds = await vaultModule.deleteFolder(vault, folderPath);
+    if (session.index) {
+      deletedIds.forEach((id) => searchModule.removeFromIndex(session.index!, id));
+    }
+    return deletedIds;
+  });
+
   ipcMain.handle(IPC_CHANNELS.searchQuery, (_e, text: string) => {
     if (!session.index) return [];
     return searchModule.search(session.index, text);

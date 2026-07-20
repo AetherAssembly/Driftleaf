@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Button, Input, Badge } from "@aetherAssembly/ui";
+import { Button, Input, Badge, Modal } from "@aetherAssembly/ui";
 import type { NoteMeta, SearchResult } from "../../shared/ipc";
+import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 
 interface SidebarProps {
   folders: string[];
@@ -17,6 +18,9 @@ interface SidebarProps {
   onSelectSearchResult: (id: string) => void;
   onLock: () => void;
   onOpenSettings: () => void;
+  onMoveNote: (id: string) => void;
+  onRenameFolder: (oldPath: string, newPath: string) => void;
+  onDeleteFolder: (folderPath: string) => void;
 }
 
 function folderLabel(folderPath: string): string {
@@ -39,9 +43,21 @@ export function Sidebar({
   onSelectSearchResult,
   onLock,
   onOpenSettings,
+  onMoveNote,
+  onRenameFolder,
+  onDeleteFolder,
 }: SidebarProps) {
   const [newFolderName, setNewFolderName] = useState("");
   const [showNewFolder, setShowNewFolder] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    type: "folder" | "note";
+    target: string;
+  } | null>(null);
+  const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
   const isSearching = searchQuery.trim().length > 0;
 
   function noteCountForFolder(folder: string) {
@@ -50,6 +66,54 @@ export function Sidebar({
       (n) => n.folderPath === folder || n.folderPath.startsWith(folder + "/"),
     ).length;
   }
+
+  function folderDepth(folderPath: string): number {
+    if (!folderPath) return 0;
+    return folderPath.split("/").length;
+  }
+
+  function openFolderContext(e: React.MouseEvent, folder: string) {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, type: "folder", target: folder });
+  }
+
+  function openNoteContext(e: React.MouseEvent, noteId: string) {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, type: "note", target: noteId });
+  }
+
+  function startRenameFolder(folder: string) {
+    setRenamingFolder(folder);
+    setRenameValue(folder.split("/").pop() ?? folder);
+  }
+
+  function submitRenameFolder() {
+    if (!renamingFolder || !renameValue.trim()) {
+      setRenamingFolder(null);
+      return;
+    }
+    const parent = renamingFolder.includes("/")
+      ? renamingFolder.slice(0, renamingFolder.lastIndexOf("/"))
+      : "";
+    const newPath = parent ? `${parent}/${renameValue.trim()}` : renameValue.trim();
+    if (newPath !== renamingFolder) onRenameFolder(renamingFolder, newPath);
+    setRenamingFolder(null);
+  }
+
+  const contextMenuItems: ContextMenuItem[] = contextMenu
+    ? contextMenu.type === "folder"
+      ? [
+          { label: "Rename", onClick: () => startRenameFolder(contextMenu.target) },
+          {
+            label: "Delete",
+            danger: true,
+            onClick: () => setDeletingFolder(contextMenu.target),
+          },
+        ]
+      : [
+          { label: "Move to…", onClick: () => onMoveNote(contextMenu.target) },
+        ]
+    : [];
 
   return (
     <aside className="sidebar">
@@ -93,14 +157,33 @@ export function Sidebar({
 
           <div className="sidebar__folders">
             {folders.map((folder) => (
-              <button
+              <div
                 key={folder || "root"}
-                className={`sidebar__folder${folder === selectedFolder ? " sidebar__folder--active" : ""}`}
-                onClick={() => onSelectFolder(folder)}
+                className="sidebar__folder-row"
+                style={{ paddingLeft: folderDepth(folder) * 12 }}
+                onContextMenu={(e) => folder && openFolderContext(e, folder)}
               >
-                {folderLabel(folder)}
-                <Badge variant="default">{noteCountForFolder(folder)}</Badge>
-              </button>
+                {renamingFolder === folder ? (
+                  <Input
+                    autoFocus
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onBlur={submitRenameFolder}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") submitRenameFolder();
+                      if (e.key === "Escape") setRenamingFolder(null);
+                    }}
+                  />
+                ) : (
+                  <button
+                    className={`sidebar__folder${folder === selectedFolder ? " sidebar__folder--active" : ""}`}
+                    onClick={() => onSelectFolder(folder)}
+                  >
+                    {folderLabel(folder)}
+                    <Badge variant="default">{noteCountForFolder(folder)}</Badge>
+                  </button>
+                )}
+              </div>
             ))}
           </div>
 
@@ -148,6 +231,7 @@ export function Sidebar({
                   <button
                     className={`sidebar__item${note.id === selectedNoteId ? " sidebar__item--active" : ""}`}
                     onClick={() => onSelectNote(note.id)}
+                    onContextMenu={(e) => openNoteContext(e, note.id)}
                   >
                     {note.title || "Untitled"}
                   </button>
@@ -165,6 +249,41 @@ export function Sidebar({
           Lock vault
         </Button>
       </div>
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenuItems}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      <Modal
+        open={!!deletingFolder}
+        onClose={() => setDeletingFolder(null)}
+        title="Delete folder?"
+      >
+        <p>
+          &ldquo;{deletingFolder?.split("/").pop()}&rdquo; and all notes inside it will be
+          permanently deleted.
+        </p>
+        <div className="modal-actions">
+          <Button variant="ghost" size="sm" onClick={() => setDeletingFolder(null)}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => {
+              if (deletingFolder) onDeleteFolder(deletingFolder);
+              setDeletingFolder(null);
+            }}
+          >
+            Yes, delete
+          </Button>
+        </div>
+      </Modal>
     </aside>
   );
 }

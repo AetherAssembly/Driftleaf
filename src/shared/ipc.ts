@@ -38,9 +38,12 @@ export interface DriftleafApi {
     create(folderPath: string, title: string): Promise<NoteMeta>;
     rename(id: string, title: string): Promise<void>;
     remove(id: string): Promise<void>;
+    move(id: string, targetFolder: string): Promise<NoteMeta>;
   };
   folders: {
     create(folderPath: string): Promise<void>;
+    rename(oldPath: string, newPath: string): Promise<void>;
+    delete(folderPath: string): Promise<string[]>;
   };
   search: {
     query(text: string): Promise<SearchResult[]>;
@@ -65,6 +68,9 @@ export const IPC_CHANNELS = {
   notesRename: "notes:rename",
   notesRemove: "notes:remove",
   foldersCreate: "folders:create",
+  foldersRename: "folders:rename",
+  foldersDelete: "folders:delete",
+  notesMove: "notes:move",
   searchQuery: "search:query",
   settingsRead: "settings:read",
   settingsPatch: "settings:patch",

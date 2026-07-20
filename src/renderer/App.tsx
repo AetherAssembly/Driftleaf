@@ -3,6 +3,7 @@ import { UnlockScreen } from "./components/UnlockScreen";
 import { Sidebar } from "./components/Sidebar";
 import { Editor } from "./components/Editor";
 import { SettingsModal } from "./components/SettingsModal";
+import { MoveNoteModal } from "./components/MoveNoteModal";
 import type { AppSettings, NoteMeta, SearchResult } from "../shared/ipc";
 
 const SEARCH_DEBOUNCE_MS = 200;
@@ -24,6 +25,9 @@ export default function App() {
     autosaveIntervalMs: 500,
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [moveNoteId, setMoveNoteId] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -120,6 +124,54 @@ export default function App() {
     setContent("");
   }
 
+  function showToast(message: string) {
+    setToast(message);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 5000);
+  }
+
+  async function handleMoveNote(id: string, targetFolder: string) {
+    try {
+      const meta = await window.driftleaf.notes.move(id, targetFolder);
+      setNotes((prev) => prev.map((n) => (n.id === id ? meta : n)));
+      if (selectedNote?.id === id) {
+        setSelectedNote(meta);
+        setSelectedFolder(targetFolder);
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to move note");
+    }
+  }
+
+  async function handleRenameFolder(oldPath: string, newPath: string) {
+    try {
+      await window.driftleaf.folders.rename(oldPath, newPath);
+      await refreshVaultState();
+      if (selectedFolder === oldPath) setSelectedFolder(newPath);
+      if (selectedNote?.folderPath === oldPath) {
+        setSelectedNote((n) => (n ? { ...n, folderPath: newPath } : n));
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to rename folder");
+    }
+  }
+
+  async function handleDeleteFolder(folderPath: string) {
+    try {
+      const deletedIds = await window.driftleaf.folders.delete(folderPath);
+      await refreshVaultState();
+      if (deletedIds.includes(selectedNote?.id ?? "")) {
+        setSelectedNote(null);
+        setContent("");
+      }
+      if (selectedFolder === folderPath || selectedFolder.startsWith(folderPath + "/")) {
+        setSelectedFolder("");
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to delete folder");
+    }
+  }
+
   function handleSearchChange(text: string) {
     setSearchQuery(text);
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -163,6 +215,9 @@ export default function App() {
         onSelectSearchResult={(id) => void openNote(id)}
         onLock={() => void handleLock()}
         onOpenSettings={() => setSettingsOpen(true)}
+        onMoveNote={(id) => setMoveNoteId(id)}
+        onRenameFolder={(old, next) => void handleRenameFolder(old, next)}
+        onDeleteFolder={(fp) => void handleDeleteFolder(fp)}
       />
       <main className="main">
         {selectedNote ? (
@@ -185,6 +240,16 @@ export default function App() {
         settings={settings}
         onPatch={(update) => void handlePatchSettings(update)}
       />
+      {moveNoteId && (
+        <MoveNoteModal
+          noteTitle={notes.find((n) => n.id === moveNoteId)?.title ?? ""}
+          currentFolder={notes.find((n) => n.id === moveNoteId)?.folderPath ?? ""}
+          folders={folders}
+          onMove={(targetFolder) => void handleMoveNote(moveNoteId, targetFolder)}
+          onClose={() => setMoveNoteId(null)}
+        />
+      )}
+      {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }

@@ -19,9 +19,12 @@ const api: DriftleafApi = {
     create: (folderPath, title) => ipcRenderer.invoke(IPC_CHANNELS.notesCreate, folderPath, title),
     rename: (id, title) => ipcRenderer.invoke(IPC_CHANNELS.notesRename, id, title),
     remove: (id) => ipcRenderer.invoke(IPC_CHANNELS.notesRemove, id),
+    move: (id, targetFolder) => ipcRenderer.invoke(IPC_CHANNELS.notesMove, id, targetFolder),
   },
   folders: {
     create: (folderPath) => ipcRenderer.invoke(IPC_CHANNELS.foldersCreate, folderPath),
+    rename: (oldPath, newPath) => ipcRenderer.invoke(IPC_CHANNELS.foldersRename, oldPath, newPath),
+    delete: (folderPath) => ipcRenderer.invoke(IPC_CHANNELS.foldersDelete, folderPath),
   },
   search: {
     query: (text) => ipcRenderer.invoke(IPC_CHANNELS.searchQuery, text),
