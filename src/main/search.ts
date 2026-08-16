@@ -26,20 +26,50 @@ export function openIndex(): SearchIndex {
 }
 
 export async function buildIndex(index: SearchIndex, vault: Vault): Promise<void> {
+  const buildStart = Date.now();
+  const noteList = listNotes(vault);
+  const noteCount = noteList.length;
+  
+  if (noteCount === 0) {
+    index.db.exec("DELETE FROM notes_fts");
+    return;
+  }
+
+  // Decrypt all notes in parallel to reduce I/O blocking
+  const decryptStart = Date.now();
+  const decryptedNotes = await Promise.all(
+    noteList.map(async (meta) => ({
+      ...meta,
+      content: await readNote(vault, meta.id),
+    })),
+  );
+  const decryptDuration = Date.now() - decryptStart;
+
+  // Insert all notes in a single transaction for better SQLite performance
+  const insertStart = Date.now();
   index.db.exec("DELETE FROM notes_fts");
+  index.db.exec("BEGIN TRANSACTION");
   const insert = index.db.prepare(
     "INSERT INTO notes_fts (id, title, folderPath, content) VALUES (?, ?, ?, ?)",
   );
-  for (const meta of listNotes(vault)) {
-    const content = await readNote(vault, meta.id);
-    insert.run(meta.id, meta.title, meta.folderPath, content);
+  for (const note of decryptedNotes) {
+    insert.run(note.id, note.title, note.folderPath, note.content);
+  }
+  index.db.exec("COMMIT");
+  const insertDuration = Date.now() - insertStart;
+  const buildDuration = Date.now() - buildStart;
+
+  if (process.env.DEBUG_SEARCH) {
+    console.log(
+      `[search] buildIndex: ${buildDuration}ms total (decrypt: ${decryptDuration}ms, insert: ${insertDuration}ms) for ${noteCount} notes (${(buildDuration / noteCount).toFixed(2)}ms/note)`,
+    );
   }
 }
 
 export function reindexNote(index: SearchIndex, meta: NoteMeta, content: string): void {
-  index.db.prepare("DELETE FROM notes_fts WHERE id = ?").run(meta.id);
+  // REPLACE INTO is atomic and more efficient than DELETE + INSERT
   index.db
-    .prepare("INSERT INTO notes_fts (id, title, folderPath, content) VALUES (?, ?, ?, ?)")
+    .prepare("REPLACE INTO notes_fts (id, title, folderPath, content) VALUES (?, ?, ?, ?)")
     .run(meta.id, meta.title, meta.folderPath, content);
 }
 
@@ -55,6 +85,7 @@ function toMatchQuery(query: string): string {
 }
 
 export function search(index: SearchIndex, query: string): SearchResult[] {
+  const searchStart = Date.now();
   const matchQuery = toMatchQuery(query);
   if (!matchQuery) return [];
   const rows = index.db
@@ -63,5 +94,9 @@ export function search(index: SearchIndex, query: string): SearchResult[] {
        FROM notes_fts WHERE notes_fts MATCH ? ORDER BY rank LIMIT 50`,
     )
     .all(matchQuery) as SearchResult[];
+  const searchDuration = Date.now() - searchStart;
+  if (process.env.DEBUG_SEARCH) {
+    console.log(`[search] query "${query}": ${searchDuration}ms, ${rows.length} results`);
+  }
   return rows;
 }

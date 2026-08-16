@@ -50,9 +50,14 @@ function handle<Args extends unknown[], Result>(
 }
 
 async function openSession(vault: Vault): Promise<void> {
+  const sessionStart = Date.now();
   session.vault = vault;
   session.index = searchModule.openIndex();
   await searchModule.buildIndex(session.index, vault);
+  const sessionDuration = Date.now() - sessionStart;
+  if (process.env.DEBUG_SEARCH) {
+    console.log(`[ipc] openSession (unlock + index build): ${sessionDuration}ms`);
+  }
 }
 
 export function registerIpcHandlers(win: BrowserWindow): void {
