@@ -27,7 +27,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   }, [onClose]);
 
   return (
-    <div ref={menuRef} className="context-menu" style={{ top: y, left: x }}>
+    <div ref={menuRef} className="context-menu" style={{ top: y, left: x }} role="menu" aria-label="Context menu">
       {items.map((item) => (
         <button
           key={item.label}
@@ -36,6 +36,8 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
             onClose();
             item.onClick();
           }}
+          role="menuitem"
+          aria-label={item.label}
         >
           {item.label}
         </button>

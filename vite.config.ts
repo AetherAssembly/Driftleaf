@@ -34,8 +34,12 @@ export default defineConfig({
     }),
     renderer(),
   ],
-  root: "src/renderer",
   build: {
     outDir: path.resolve(rootDir, "dist"),
+  },
+  resolve: {
+    alias: {
+      "@": path.resolve(rootDir, "src"),
+    },
   },
 });
