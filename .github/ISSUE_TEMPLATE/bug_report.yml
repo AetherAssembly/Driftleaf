@@ -1,0 +1,88 @@
+name: Bug Report
+description: Report a bug or data loss concern
+title: "[Bug] "
+labels: ["bug"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug! Please fill out this form so we can help.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Clear description of what went wrong
+      placeholder: "What did you do, and what happened instead?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Exact steps to reproduce the bug
+      placeholder: |
+        1. Create a vault with passphrase
+        2. Create a note
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should have happened
+      placeholder: "The note should have been saved"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Driftleaf Version
+      description: "e.g., 0.2.0"
+      placeholder: "0.2.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Linux
+        - macOS
+        - Windows
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: System Details
+      description: Any other relevant system info (distro, desktop environment, etc.)
+      placeholder: "Ubuntu 22.04 LTS, GNOME 42"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Error Messages
+      description: If Driftleaf showed an error, paste it here (DevTools if opened)
+      render: bash
+
+  - type: checkboxes
+    id: data_loss
+    attributes:
+      label: Data Loss Check
+      options:
+        - label: This bug may cause data loss or note corruption
+          required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context or screenshots

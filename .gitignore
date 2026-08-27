@@ -10,3 +10,5 @@ release/
 
 # local vault data — never commit a user's notes
 *.driftleaf-vault/
+PLAN.md
+index.html
