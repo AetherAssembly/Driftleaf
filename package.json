@@ -25,7 +25,7 @@
     "publish:linux": "npm run build && electron-builder --config electron-builder/linux.yml --linux --publish always -c.electronVersion=43.1.0",
     "publish:macos": "npm run build && electron-builder --config electron-builder/macos.yml --mac dmg --publish always -c.electronVersion=43.1.0",
     "publish:windows": "npm run build && electron-builder --config electron-builder/windows.yml --win nsis portable --publish always -c.electronVersion=43.1.0",
-    "lint": "eslint . --ext .ts,.tsx",
+    "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc -b --noEmit",
     "postinstall": "electron-rebuild -f -w better-sqlite3"
   },

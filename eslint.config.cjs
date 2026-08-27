@@ -45,5 +45,7 @@ module.exports = defineConfig([{
         "@typescript-eslint/no-unused-vars": ["error", {
             argsIgnorePattern: "^_",
         }],
+        "no-control-regex": "off",
+        "react-hooks/set-state-in-effect": "off",
     },
 }, globalIgnores(["**/dist", "**/dist-electron", "**/release", "**/node_modules"])]);
