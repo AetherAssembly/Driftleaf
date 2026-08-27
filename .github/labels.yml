@@ -1,0 +1,129 @@
+# GitHub labels for Driftleaf
+# Managed by .github/workflows/label-sync.yml
+# Edit here, commit to main, and the workflow will sync to GitHub automatically.
+
+# ── Type ─────────────────────────────────────────────────────────────────────
+- name: bug
+  color: 'FAEAEA'
+  description: Something isn't working
+
+- name: feature
+  color: 'EAF3DE'
+  description: New feature or enhancement
+
+- name: chore
+  color: 'F1EFE8'
+  description: Maintenance, refactors, or non-user-facing work
+
+- name: documentation
+  color: 'E6F1FB'
+  description: Improvements or additions to documentation
+
+- name: security
+  color: 'FAEEDA'
+  description: Security vulnerability or audit finding
+
+# ── Status ────────────────────────────────────────────────────────────────────
+- name: in-progress
+  color: 'E6F1FB'
+  description: Actively being worked on
+
+- name: needs-review
+  color: 'EEEDFE'
+  description: Ready for review
+
+- name: needs-info
+  color: 'FAEEDA'
+  description: Waiting for more information from the reporter
+
+- name: stale
+  color: 'F1EFE8'
+  description: No recent activity; will be closed soon
+
+- name: blocked
+  color: 'FAEAEA'
+  description: Blocked by something else
+
+- name: do-not-merge
+  color: 'FAEAEA'
+  description: This PR must not be merged yet
+
+- name: pinned
+  color: 'EEEDFE'
+  description: Exempt from stale closing
+
+# ── Area ──────────────────────────────────────────────────────────────────────
+- name: 'area: electron'
+  color: 'E6F1FB'
+  description: Electron main process, preload, IPC, or window management
+
+- name: 'area: renderer'
+  color: 'EEEDFE'
+  description: React renderer, editor UI, or Vite configuration
+
+- name: 'area: vault'
+  color: 'EAF3DE'
+  description: Encrypted vault, notes, and persistence
+
+- name: 'area: editor'
+  color: 'FAEEDA'
+  description: Note editing, markdown, and formatting
+
+- name: 'area: packaging'
+  color: 'F1EFE8'
+  description: Electron-builder and platform packages
+
+- name: 'area: search'
+  color: 'E6F1FB'
+  description: Full-text search and note discovery
+
+- name: 'area: settings'
+  color: 'EEEDFE'
+  description: Application preferences and configuration
+
+- name: 'area: ipc'
+  color: 'EAF3DE'
+  description: Main, preload, IPC, and process boundaries
+
+# ── Platform ──────────────────────────────────────────────────────────────────
+- name: 'platform: linux'
+  color: 'EAF3DE'
+  description: Linux-specific issue or change
+
+- name: 'platform: macos'
+  color: 'E6F1FB'
+  description: macOS-specific issue or change
+
+- name: 'platform: windows'
+  color: 'EEEDFE'
+  description: Windows-specific issue or change
+
+# ── PR labels ─────────────────────────────────────────────────────────────────
+- name: dependencies
+  color: 'E6F1FB'
+  description: Dependency updates (Dependabot)
+
+- name: skip-changelog
+  color: 'F1EFE8'
+  description: Exempt from the changelog check
+
+# ── Size (applied automatically by pr-size.yml) ───────────────────────────────
+- name: 'size: XS'
+  color: 'EAF3DE'
+  description: 'Diff < 10 lines'
+
+- name: 'size: S'
+  color: 'EAF3DE'
+  description: 'Diff 10–49 lines'
+
+- name: 'size: M'
+  color: 'FAEEDA'
+  description: 'Diff 50–249 lines'
+
+- name: 'size: L'
+  color: 'FAEEDA'
+  description: 'Diff 250–499 lines'
+
+- name: 'size: XL'
+  color: 'FAEAEA'
+  description: 'Diff 500+ lines; consider splitting'

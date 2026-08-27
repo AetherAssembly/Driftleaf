@@ -1,0 +1,286 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build, for example v0.3.0 or v0.3.0-beta.1
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  create-release:
+    name: Create draft release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      is_beta: ${{ steps.channel.outputs.is_beta }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Extract tag name
+        id: tag
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
+            echo "Invalid release tag: $RELEASE_TAG"
+            exit 1
+          fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Detect channel
+        id: channel
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          TAG="$RELEASE_TAG"
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            echo "is_beta=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_beta=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PRERELEASE_FLAG=""
+          if [[ "${{ steps.channel.outputs.is_beta }}" == "true" ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          gh release create "${{ steps.tag.outputs.tag }}" \
+            --draft \
+            --title "Before It's Gone ${{ steps.tag.outputs.tag }}" \
+            --notes "Release in progress..." \
+            $PRERELEASE_FLAG
+
+  build:
+    name: Build & upload (${{ matrix.os }})
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            package_script: ${{ needs.create-release.outputs.is_beta == 'true' && 'package:linux:beta' || 'package:linux' }}
+          - os: ubuntu-24.04-arm
+            package_script: ${{ needs.create-release.outputs.is_beta == 'true' && 'package:linux:beta' || 'package:linux:arm64' }}
+          - os: macos-latest
+            package_script: ${{ needs.create-release.outputs.is_beta == 'true' && 'package:macos:beta' || 'package:macos' }}
+          - os: windows-latest
+            package_script: ${{ needs.create-release.outputs.is_beta == 'true' && 'package:windows:beta' || 'package:windows' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+          registry-url: https://npm.pkg.github.com
+
+      - name: Install
+        run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        run: npm run build
+
+      - name: Package
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npm run ${{ matrix.package_script }}
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+        shell: bash
+        run: |
+          find release -maxdepth 1 -type f \( \
+            -name "*.AppImage" -o \
+            -name "*.deb" -o \
+            -name "*.rpm" -o \
+            -name "*.dmg" -o \
+            -name "*.exe" -o \
+            -name "latest*.yml" \
+          \) | sort | while read -r f; do
+            echo "Uploading $f..."
+            gh release upload "$TAG" "$f" --clobber
+          done
+
+  publish-release:
+    name: Publish release
+    needs: [create-release, build]
+    if: always() && !failure() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download release artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+        run: |
+          gh release download "$TAG" --dir ./artifacts
+
+      - name: Build release notes
+        run: |
+          TAG="${{ needs.create-release.outputs.tag }}"
+          VER="${TAG#v}"
+          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${TAG}$" | head -1 || true)
+          IS_BETA="${{ needs.create-release.outputs.is_beta }}"
+          export TAG VER PREV_TAG IS_BETA
+          python3 << 'PYEOF'
+          import os, re, hashlib, glob
+          from pathlib import Path
+
+          tag      = os.environ['TAG']
+          ver      = os.environ['VER']
+          prev_tag = os.environ.get('PREV_TAG', '').strip()
+          artifacts_dir = Path('./artifacts')
+          base_url = f"https://github.com/AetherAssembly/Driftleaf/releases/download/{tag}"
+
+          # --- Parse CHANGELOG for this version ---
+          changelog = Path('CHANGELOG.md').read_text()
+          section_m = re.search(
+              r'## \[' + re.escape(ver) + r'\].*?\n(.*?)(?=\n---\n|\n## \[|\Z)',
+              changelog, re.DOTALL
+          )
+          section = section_m.group(1).strip() if section_m else ''
+
+          def subsection(text, heading):
+              m = re.search(r'### ' + heading + r'\n(.*?)(?=\n### |\Z)', text, re.DOTALL)
+              return m.group(1).strip() if m else ''
+
+          added   = subsection(section, 'Added')
+          fixed   = subsection(section, 'Fixed')
+          changed = subsection(section, 'Changed')
+
+          # --- SHA256 helpers ---
+          def sha256(path):
+              h = hashlib.sha256()
+              with open(path, 'rb') as f:
+                  for chunk in iter(lambda: f.read(65536), b''):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          def find_one(*patterns):
+              for pat in patterns:
+                  matches = sorted(glob.glob(str(artifacts_dir / pat)))
+                  if matches:
+                      return Path(matches[0])
+              return None
+
+          def row(label, path):
+              if not path or not path.exists():
+                  return None
+              url = f"{base_url}/{path.name}"
+              return f"| {label} | [{path.name}]({url}) | `{sha256(path)}` |"
+
+          table_rows = list(filter(None, [
+              row("Linux (x64) AppImage",   find_one("*x86_64.AppImage")),
+              row("Linux (x64) .deb",       find_one("*amd64.deb")),
+              row("Linux (x64) .rpm",       find_one("*x86_64.rpm")),
+              row("Linux (arm64) AppImage", find_one("*arm64.AppImage")),
+              row("Linux (arm64) .deb",     find_one("*arm64.deb")),
+              row("Linux (arm64) .rpm",     find_one("*aarch64.rpm")),
+              row("macOS DMG",              find_one("*.dmg")),
+              row("Windows installer",      find_one("*setup*.exe", "*-installer.exe")),
+              row("Windows portable",       find_one("*portable*.exe", "*Portable*.exe")),
+          ]))
+
+          compare_link = (
+              f"https://github.com/AetherAssembly/Driftleaf/compare/{prev_tag}...{tag}"
+              if prev_tag else
+              f"https://github.com/AetherAssembly/Driftleaf/releases/tag/{tag}"
+          )
+
+          # --- Assemble body ---
+          is_beta = os.environ.get('IS_BETA', 'false') == 'true'
+
+          parts = [f"## Driftleaf: {tag}", ""]
+
+          if is_beta:
+              parts += [
+                  "> [!WARNING]",
+                  "> **This is a beta release** and may contain bugs. It is intended for testing only.",
+                  "> Install the [latest stable release](https://github.com/AetherAssembly/Driftleaf/releases/latest) for everyday use.",
+                  "",
+              ]
+
+          if added:
+              parts += ["### What's new", "", added, ""]
+          if fixed:
+              parts += ["### Bug fixes", "", fixed, ""]
+          if changed:
+              parts += ["### Changes", "", changed, ""]
+
+          parts += [
+              "---", "",
+              "### Downloads", "",
+              "| Platform | Format | SHA256 |",
+              "|---|---|---|",
+              *table_rows, "",
+              "#### Verify a download", "",
+              "```bash",
+              f'sha256sum "driftleaf-{ver}-x86_64.AppImage"',
+              "```", "",
+              "---", "",
+              "### Linux notes", "",
+              "**Already using a package repo?** Just run your normal update command — no download needed:", "",
+              "- **Debian / Ubuntu / Raspberry Pi OS (apt):** `sudo apt update && sudo apt upgrade driftleaf`",
+              "- **Fedora / RHEL / CentOS Stream / Rocky / Alma (COPR):** `sudo dnf upgrade driftleaf`",
+              "- **openSUSE (OBS):** `sudo zypper update driftleaf`",
+              "- **Arch:** download the appropriate `.AppImage` attached below",
+              "",
+              "**First install or using AppImage?** Grab your build from the table above.",
+              "Repo setup instructions are in the [README](https://github.com/AetherAssembly/Driftleaf#download).", "",
+              "### macOS notes", "",
+              "The app is not notarized, so macOS may show a **\"damaged\"** warning and refuse to open it.",
+              "Run this command after mounting the DMG to strip the quarantine flag:", "",
+              "```sh",
+              f"xattr -d com.apple.quarantine \"/Applications/Driftleaf.app\"",
+              "```", "",
+              "### Windows notes", "",
+              "If SmartScreen warns on the installer, click **More info** then **Run anyway**."
+              " The app is not yet code-signed.", "",
+              "---", "",
+              "### Full changelog", "",
+              f"<!-- {compare_link} -->",
+          ]
+
+          Path('release-body.md').write_text('\n'.join(parts))
+          print("release-body.md written")
+          PYEOF
+
+      - name: Publish release with notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PRERELEASE_FLAG=""
+          if [[ "${{ needs.create-release.outputs.is_beta }}" == "true" ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          gh release edit "${GITHUB_REF#refs/tags/}" \
+            --notes-file release-body.md \
+            --draft=false \
+            $PRERELEASE_FLAG
+
