@@ -1,0 +1,68 @@
+"area: electron":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/main/**"
+          - "src/preload/**"
+          - "electron-builder/**"
+
+"area: renderer":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/renderer/**"
+          - "vite.config.ts"
+
+"area: vault":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/main/vault.ts"
+          - "src/main/crypto.ts"
+          - "src/main/settings.ts"
+
+"area: editor":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/renderer/components/Editor.tsx"
+          - "src/renderer/components/QuickCapture.tsx"
+
+"area: search":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/main/search.ts"
+          - "src/renderer/components/**/*Search*"
+
+"area: settings":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/renderer/components/SettingsModal.tsx"
+          - "src/main/settings.ts"
+
+"area: ipc":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/shared/ipc.ts"
+          - "src/main/ipc.ts"
+
+"area: packaging":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "electron-builder/**"
+          - "build/**"
+          - ".github/workflows/release.yml"
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+          - "docs/**"
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "package.json"
+          - "package-lock.json"
+
+security:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/main/crypto.ts"
+          - ".github/workflows/security-audit.yml"

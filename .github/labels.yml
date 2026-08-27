@@ -1,6 +1,6 @@
 # GitHub labels for Driftleaf
-# Managed by .github/workflows/label-sync.yml
-# Edit here, commit to main, and the workflow will sync to GitHub automatically.
+# Labels are managed manually in GitHub.
+# .github/labeler.yml applies existing labels to pull requests by changed paths.
 
 # ── Type ─────────────────────────────────────────────────────────────────────
 - name: bug
