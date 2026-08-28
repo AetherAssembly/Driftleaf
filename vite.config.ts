@@ -17,7 +17,7 @@ export default defineConfig({
           build: {
             outDir: path.resolve(rootDir, "dist-electron/main"),
             rollupOptions: {
-              external: ["better-sqlite3"],
+              external: [/^better-sqlite3(?:\/|$)/],
             },
           },
         },

@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
+## [0.2.1] - 2026-08-28
+
+### Added
+
+- **Native SQLite packaging:** Electron Builder now unpacks the
+  `better-sqlite3` native module for stable and beta builds on Linux, macOS, and Windows.
+- **License metadata:** package and lockfile metadata now identify the project as
+  `AGPL-3.0-or-later`.
+- **Installation documentation:** new `docs/INSTALLATION.md` documents package
+  installation, architecture-specific downloads, repository setup, and download
+  verification for Linux, macOS, and Windows.
+- **RPM packaging:** added an architecture-aware RPM spec for x86_64 and aarch64,
+  including the Electron application bundle, desktop launcher, icon, executable
+  symlink, and license files. Added RPM lint filters and an OBS download service
+  configuration for Driftleaf release artifacts.
+
+### Changed
+
+- **Search database loading:** the main-process search index now loads
+  `better-sqlite3` through Node's `createRequire`, while Vite externalizes all
+  `better-sqlite3` subpaths for reliable Electron native-module resolution.
+- **Release channels:** stable Linux, macOS, and Windows configurations now
+  explicitly publish on the stable channel.
+- **Package metadata:** Debian and RPM configurations now include the Driftleaf
+  synopsis and description, and macOS DMG builds include the project EULA.
+- **Beta packaging:** beta Linux, macOS, and Windows configurations now unpack
+  the native SQLite module and include the relevant package metadata.
+
+### Fixed
+
+- **Native module resolution:** corrected bundling and runtime loading so the
+  `better-sqlite3` dependency remains available to packaged Electron builds.
+
 ## [0.2.0] - 2026-08-26
 
 ### Added

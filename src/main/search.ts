@@ -2,12 +2,15 @@
 // Rebuilt each session from decrypted content and never written to disk — notes are
 // encrypted at rest, so nothing indexable ever touches disk in plaintext.
 
-import Database from "better-sqlite3";
+import { createRequire } from "node:module";
 import type { Vault, NoteMeta } from "./vault";
 import { listNotes, readNote } from "./vault";
 
+const require = createRequire(__filename);
+const Database = require("better-sqlite3") as typeof import("better-sqlite3");
+
 export interface SearchIndex {
-  db: Database.Database;
+  db: InstanceType<typeof Database>;
 }
 
 export interface SearchResult {

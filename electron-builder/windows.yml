@@ -8,6 +8,8 @@ directories:
 files:
   - dist/**
   - dist-electron/**
+asarUnpack:
+  - node_modules/better-sqlite3/**/*.node
 win:
   target:
     - nsis
@@ -20,7 +22,6 @@ nsis:
   runAfterFinish: true
   installerSidebar: assets/installer-sidebar.png
   license: assets/eula.rtf
-  copyright: Copyright 2026 AetherAssembly
   include: build/installer.nsh
   artifactName: 'driftleaf-setup-${version}.exe'
 portable:

@@ -7,6 +7,8 @@ directories:
 files:
   - dist/**
   - dist-electron/**
+asarUnpack:
+  - node_modules/better-sqlite3/**/*.node
 linux:
   target:
     - AppImage
@@ -21,11 +23,9 @@ linux:
       Name: Driftleaf (Beta)
 deb:
   packageName: driftleaf-beta
-  license: AGPL-3.0-or-later
   synopsis: So your thoughts don't drift.
 rpm:
   packageName: driftleaf-beta
-  license: AGPL-3.0-or-later
   description: So your thoughts don't drift.
 publish:
   provider: github

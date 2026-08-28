@@ -23,6 +23,9 @@ Get the latest release for your platform:
 - **macOS**: [.dmg or .zip](https://github.com/AetherAssembly/Driftleaf/releases)
 - **Windows**: [Installer or portable .exe](https://github.com/AetherAssembly/Driftleaf/releases)
 
+See [docs/INSTALLATION.md](docs/INSTALLATION.md) for package repository setup,
+architecture-specific downloads, verification, and platform-specific installation notes.
+
 ### First Time Using Driftleaf
 
 1. **Create a vault** - This is where all your notes live. Set a strong passphrase you'll remember (there's no password reset).

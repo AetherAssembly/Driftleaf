@@ -59,7 +59,7 @@ jobs:
           fi
           gh release create "${{ steps.tag.outputs.tag }}" \
             --draft \
-            --title "Before It's Gone ${{ steps.tag.outputs.tag }}" \
+            --title "Driftleaf ${{ steps.tag.outputs.tag }}" \
             --notes "Release in progress..." \
             $PRERELEASE_FLAG
 
