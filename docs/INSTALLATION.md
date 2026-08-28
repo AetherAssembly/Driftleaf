@@ -81,7 +81,9 @@ With the Driftleaf OBS repository configured:
 
 sudo zypper addrepo https://download.opensuse.org/repositories/home:aster1630/openSUSE_Tumbleweed/home:aster1630.repo
 
-sudo zypper refresh && sudo zypper install driftleaf
+sudo zypper refresh
+
+sudo zypper install driftleaf
 
 ```
 
