@@ -12,8 +12,8 @@ BuildRequires:  cpio
 BuildRequires:  rpm
 Requires:       hicolor-icon-theme
 
-Source0:        driftleaf-%{version}-x86_64.rpm
-Source1:        driftleaf-%{version}-aarch64.rpm
+Source0:        https://github.com/AetherAssembly/Driftleaf/releases/download/v%{version}/driftleaf-%{version}-x86_64.rpm
+Source1:        https://github.com/AetherAssembly/Driftleaf/releases/download/v%{version}/driftleaf-%{version}-aarch64.rpm
 
 %description
 Driftleaf is a private desktop notes application. Notes remain on the local
