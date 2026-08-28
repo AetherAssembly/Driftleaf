@@ -1,3 +1,5 @@
+%global debug_package %{nil}
+
 Name:           driftleaf
 Version:        0.2.1
 Release:        1%{?dist}
