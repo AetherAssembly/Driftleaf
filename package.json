@@ -4,6 +4,7 @@
   "description": "So your thoughts don't drift. A local-first, encrypted-by-default notes app.",
   "main": "dist-electron/main/index.js",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "author": {
     "name": "AetherAssembly",
     "email": "support@aetherassembly.org",

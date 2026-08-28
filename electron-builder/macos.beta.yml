@@ -18,6 +18,7 @@ dmg:
   window:
     width: 540
     height: 380
+  license: assets/eula.rtf
 publish:
   provider: github
   owner: AetherAssembly
