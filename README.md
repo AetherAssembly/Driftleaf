@@ -2,6 +2,13 @@
 
 **So your thoughts don't drift.**
 
+[![CI](https://img.shields.io/github/actions/workflow/status/AetherAssembly/Driftleaf/ci.yml?label=CI)](https://github.com/AetherAssembly/Driftleaf/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/AetherAssembly/Driftleaf?label=stable)](https://github.com/AetherAssembly/Driftleaf/releases/latest)
+[![APT version](https://img.shields.io/endpoint?url=https%3A%2F%2Fapt.aetherassembly.org%2Fdriftleaf%2Fbadge-version.json)](https://apt.aetherassembly.org/driftleaf)
+[![OBS Build Status](https://build.opensuse.org/projects/home:aster1630/packages/Driftleaf/badge.svg?type=default)](https://build.opensuse.org/package/show/home:aster1630/Driftleaf)
+[![Copr build status](https://copr.fedorainfracloud.org/coprs/aster1630/Driftleaf/package/Driftleaf/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/aster1630/Driftleaf/package/Driftleaf/)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+
 A private, simple notes app for your desktop. Your notes stay on your computer - encrypted, organized, and completely yours. No accounts, no cloud, no third-party tracking. Just you and your thoughts.
 
 ## Why Driftleaf?
@@ -76,7 +83,7 @@ That's it. No export/import needed. When you need to restore, just copy the fold
 
 ### Building from Source
 
-Want to help develop Driftleaf or build it yourself? See the [PLAN](PLAN.md) for the roadmap and current status.
+Want to help develop Driftleaf or build it yourself? Take a look at [DEVELOPMENT.md](docs/DEVELOPMENT.md) for a more indepth breakdown, including needed build dependencies.
 
 **Setup:**
 

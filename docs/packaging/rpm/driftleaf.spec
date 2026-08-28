@@ -49,6 +49,7 @@ ln -s /opt/Driftleaf/driftleaf %{buildroot}%{_bindir}/driftleaf
 /opt/Driftleaf/
 %{_bindir}/driftleaf
 %{_datadir}/applications/driftleaf.desktop
+%dir %{_datadir}/icons/hicolor
 %dir %{_datadir}/icons/hicolor/1024x1024
 %dir %{_datadir}/icons/hicolor/1024x1024/apps
 %{_datadir}/icons/hicolor/1024x1024/apps/driftleaf.png
