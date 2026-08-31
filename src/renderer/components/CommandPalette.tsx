@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useFocusTrap } from "../lib/focusTrap";
 
 export interface Command {
   id: string;
@@ -30,6 +31,11 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // This overlay is a plain positioned <div>, not a native <dialog> — without a trap, Tab
+  // can move focus into the sidebar/editor hidden behind it, and focus never returns to
+  // whatever triggered it (Ctrl+K) on close.
+  useFocusTrap(panelRef, { active: open, onEscape: onClose });
 
   const filtered = useMemo(
     () => commands.filter((c) => fuzzyMatch(query, c.label)),
@@ -75,7 +81,7 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 
   return (
     <div className="command-palette__overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="command-palette__panel">
+      <div ref={panelRef} className="command-palette__panel">
         <input
           ref={inputRef}
           className="command-palette__input"

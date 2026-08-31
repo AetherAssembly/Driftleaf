@@ -123,7 +123,14 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
               label="Passphrase (optional)"
               autoFocus
               value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
+              onChange={(e) => {
+                setPassphrase(e.target.value);
+                // A prior "I understand, create vault" acknowledgment was for the
+                // passphrase that was in the field at the time — editing it afterward
+                // (e.g. retrying after a failed create) shouldn't carry that acknowledgment
+                // over to a passphrase the user never actually confirmed.
+                setAcknowledgedNoRecovery(false);
+              }}
               error={error ?? undefined}
               hint={
                 mode === "create"

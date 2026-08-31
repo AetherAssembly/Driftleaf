@@ -61,8 +61,63 @@ export default function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Content autosave and title-rename autosave each get their own timer/pending-write
+  // ref — they used to share one `saveTimer`, so editing the title and then quickly editing
+  // the body (or vice versa) would cancel whichever debounced write hadn't fired yet, with
+  // no error and no indication the edit was ever dropped.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSave = useRef<{ noteId: string; content: string } | null>(null);
+  const renameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRename = useRef<{ noteId: string; title: string } | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Bumped on every dispatched search query; a response only gets applied if it's still the
+  // most recent one in flight, so a slow early keystroke's results can't overwrite a faster
+  // later keystroke's results if they resolve out of order.
+  const searchRequestId = useRef(0);
+  // Mirrors `selectedNote` for reading the *current* selection from inside an async
+  // callback after an `await` — the `selectedNote` closure variable itself is only ever as
+  // fresh as the render that created the callback.
+  const selectedNoteRef = useRef<NoteMeta | null>(null);
+  useEffect(() => {
+    selectedNoteRef.current = selectedNote;
+  }, [selectedNote]);
+
+  // Immediately performs (rather than waits out the debounce for) any save/rename still
+  // pending, so switching notes, deleting, or locking never silently drops the last edit
+  // still sitting in a debounce window.
+  const flushPendingSave = useCallback(async () => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    const pending = pendingSave.current;
+    if (!pending) return;
+    pendingSave.current = null;
+    try {
+      await window.driftleaf.notes.write(pending.noteId, pending.content);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to save note");
+    }
+  }, []);
+
+  const flushPendingRename = useCallback(async () => {
+    if (renameTimer.current) {
+      clearTimeout(renameTimer.current);
+      renameTimer.current = null;
+    }
+    const pending = pendingRename.current;
+    if (!pending) return;
+    pendingRename.current = null;
+    try {
+      await window.driftleaf.notes.rename(pending.noteId, pending.title);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to rename note");
+    }
+  }, []);
+
+  const flushPendingWrites = useCallback(async () => {
+    await Promise.all([flushPendingSave(), flushPendingRename()]);
+  }, [flushPendingSave, flushPendingRename]);
 
   const refreshVaultState = useCallback(async () => {
     const [folderList, noteList] = await Promise.all([
@@ -94,12 +149,17 @@ export default function App() {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        if (unlocked) setCommandPaletteOpen((v) => !v);
+        if (!unlocked) return;
+        // Don't stack the command palette on top of another already-open overlay — none of
+        // these native/hand-rolled modals currently stop this window-level listener from
+        // firing while they're focused.
+        if (settingsOpen || moveNoteId || quickCaptureOpen || showWelcome) return;
+        setCommandPaletteOpen((v) => !v);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [unlocked]);
+  }, [unlocked, settingsOpen, moveNoteId, quickCaptureOpen, showWelcome]);
 
   function applyTheme(theme: AppSettings["theme"]) {
     if (theme === "system") {
@@ -116,6 +176,7 @@ export default function App() {
   }
 
   async function openNote(id: string) {
+    await flushPendingWrites();
     const note = notes.find((n) => n.id === id) ?? (await findNoteAnywhere(id));
     if (!note) return;
     try {
@@ -135,11 +196,15 @@ export default function App() {
   }
 
   function scheduleSave(id: string, nextContent: string) {
+    pendingSave.current = { noteId: id, content: nextContent };
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSaveStatus("saving");
     saveTimer.current = setTimeout(() => {
+      const pending = pendingSave.current;
+      if (!pending) return;
+      pendingSave.current = null;
       void window.driftleaf.notes
-        .write(id, nextContent)
+        .write(pending.noteId, pending.content)
         .then(() => setSaveStatus("saved"))
         .catch((err) => {
           setSaveStatus("idle");
@@ -158,15 +223,20 @@ export default function App() {
     const updated = { ...selectedNote, title };
     setSelectedNote(updated);
     setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
+    pendingRename.current = { noteId: updated.id, title };
+    if (renameTimer.current) clearTimeout(renameTimer.current);
+    renameTimer.current = setTimeout(() => {
+      const pending = pendingRename.current;
+      if (!pending) return;
+      pendingRename.current = null;
       void window.driftleaf.notes
-        .rename(updated.id, title)
+        .rename(pending.noteId, pending.title)
         .catch((err) => showToast(err instanceof Error ? err.message : "Failed to rename note"));
     }, settings.autosaveIntervalMs);
   }
 
   async function handleCreateNote() {
+    await flushPendingWrites();
     try {
       const meta = await window.driftleaf.notes.create(selectedFolder, "Untitled");
       setNotes((prev) => [...prev, meta]);
@@ -188,6 +258,13 @@ export default function App() {
 
   async function handleDeleteNote() {
     if (!selectedNote) return;
+    // Cancel (don't flush) any pending debounced write for this note — it's about to be
+    // deleted, so a stale write landing afterward would either fail with a confusing
+    // "note not found" error or resurrect a file the user just asked to remove.
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    if (renameTimer.current) clearTimeout(renameTimer.current);
+    pendingSave.current = null;
+    pendingRename.current = null;
     try {
       await window.driftleaf.notes.remove(selectedNote.id);
       setNotes((prev) => prev.filter((n) => n.id !== selectedNote.id));
@@ -218,6 +295,7 @@ export default function App() {
       await openNote(existing.id);
       return;
     }
+    await flushPendingWrites();
     try {
       await window.driftleaf.folders.create(DAILY_FOLDER);
       const meta = await window.driftleaf.notes.create(DAILY_FOLDER, title);
@@ -258,7 +336,11 @@ export default function App() {
     try {
       const meta = await window.driftleaf.notes.move(id, targetFolder);
       setNotes((prev) => prev.map((n) => (n.id === id ? meta : n)));
-      if (selectedNote?.id === id) {
+      // Read the *current* selection via the ref, not the `selectedNote` closure captured
+      // when this function was called — if the user switched to a different note while the
+      // move was in flight, that stale closure would still match `id` and yank the editor
+      // back to a note the user already navigated away from.
+      if (selectedNoteRef.current?.id === id) {
         setSelectedNote(meta);
         setSelectedFolder(targetFolder);
       }
@@ -271,10 +353,10 @@ export default function App() {
     try {
       await window.driftleaf.folders.rename(oldPath, newPath);
       await refreshVaultState();
-      if (selectedFolder === oldPath) setSelectedFolder(newPath);
-      if (selectedNote?.folderPath === oldPath) {
-        setSelectedNote((n) => (n ? { ...n, folderPath: newPath } : n));
-      }
+      // Functional updaters read the latest state at update time regardless of how stale
+      // this closure is, so these two don't need the selectedNoteRef workaround above.
+      setSelectedFolder((prev) => (prev === oldPath ? newPath : prev));
+      setSelectedNote((prev) => (prev?.folderPath === oldPath ? { ...prev, folderPath: newPath } : prev));
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to rename folder");
     }
@@ -300,16 +382,27 @@ export default function App() {
     setSearchQuery(text);
     if (searchTimer.current) clearTimeout(searchTimer.current);
     if (!text.trim()) {
+      searchRequestId.current += 1; // invalidate any response still in flight
       setSearchResults([]);
       return;
     }
     searchTimer.current = setTimeout(async () => {
+      const requestId = ++searchRequestId.current;
       const results = await window.driftleaf.search.query(text);
-      setSearchResults(results);
+      // A faster, later query can resolve before this one — only apply the response if
+      // it's still the most recent request, so a slow stale result can't overwrite fresher
+      // results already on screen.
+      if (requestId === searchRequestId.current) {
+        setSearchResults(results);
+      }
     }, SEARCH_DEBOUNCE_MS);
   }
 
   async function handleLock() {
+    // Flush before locking, not after — an error toast can only render while `unlocked` is
+    // still true (the toast element only exists in that branch below), so any failure here
+    // needs to surface before we flip back to the lock screen.
+    await flushPendingWrites();
     await window.driftleaf.vault.lock();
     setUnlocked(false);
     setSelectedNote(null);

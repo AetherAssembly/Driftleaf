@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@aetherAssembly/ui";
+import { useFocusTrap } from "../lib/focusTrap";
 
 interface QuickCaptureProps {
   open: boolean;
@@ -12,6 +13,10 @@ interface QuickCaptureProps {
 export function QuickCapture({ open, onCapture, onClose }: QuickCaptureProps) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Plain positioned <div> overlay, not a native <dialog> — without a trap, Tab can move
+  // focus into the app behind it, and focus never returns to the trigger on close.
+  useFocusTrap(panelRef, { active: open, onEscape: onClose });
 
   useEffect(() => {
     if (open) {
@@ -48,7 +53,7 @@ export function QuickCapture({ open, onCapture, onClose }: QuickCaptureProps) {
 
   return (
     <div className="quick-capture__overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="quick-capture__panel">
+      <div ref={panelRef} className="quick-capture__panel">
         <textarea
           ref={textareaRef}
           className="quick-capture__textarea"

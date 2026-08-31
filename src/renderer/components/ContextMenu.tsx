@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useFocusTrap } from "../lib/focusTrap";
 
 export interface ContextMenuItem {
   label: string;
@@ -15,6 +16,11 @@ interface ContextMenuProps {
 
 export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  // This component only exists in the tree while the menu is open (the parent conditionally
+  // renders it), so the trap is active for its whole mounted lifetime. Moves initial focus
+  // into the menu and traps Tab there — previously Tab could escape into the sidebar/editor
+  // behind it, and there was no Escape-to-close at all.
+  useFocusTrap(menuRef, { active: true, onEscape: onClose });
 
   useEffect(() => {
     function handleMouseDown(e: MouseEvent) {
