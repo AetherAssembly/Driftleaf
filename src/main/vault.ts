@@ -136,13 +136,16 @@ function uniqueFileName(
   excludeId?: string,
 ): string {
   const base = sanitizeTitleForFileName(title);
+  // Compared case-insensitively: Windows and default macOS (APFS/NTFS) filesystems are
+  // case-insensitive-but-preserving, so a candidate that only differs in case from an
+  // existing file would resolve to the same inode and silently overwrite it on rename.
   const taken = new Set(
     vault.manifest.notes
       .filter((n) => n.folderPath === folderPath && n.id !== excludeId)
-      .map((n) => n.fileName),
+      .map((n) => n.fileName.toLowerCase()),
   );
   let candidate = `${base}.md.enc`;
-  for (let i = 2; taken.has(candidate); i++) {
+  for (let i = 2; taken.has(candidate.toLowerCase()); i++) {
     candidate = `${base} (${i}).md.enc`;
   }
   return candidate;
@@ -154,6 +157,18 @@ function titleFromFileName(fileName: string): string {
   const withoutEnc = fileName.endsWith(".enc") ? fileName.slice(0, -".enc".length) : fileName;
   const withoutMd = withoutEnc.endsWith(".md") ? withoutEnc.slice(0, -".md".length) : withoutEnc;
   return withoutMd || "Recovered note";
+}
+
+// Node's Buffer#toString("utf-8") silently substitutes U+FFFD for invalid byte sequences
+// instead of throwing, so a non-UTF-8 .md file (e.g. UTF-16 from Notepad, Latin-1) would
+// otherwise "import successfully" as silently mangled content. TextDecoder with fatal:true
+// throws instead, so the caller's existing skip-and-report-the-reason handling catches it.
+function decodeStrictUtf8(data: Buffer): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(data);
+  } catch {
+    throw new Error("not valid UTF-8 text");
+  }
 }
 
 function configPath(rootPath: string): string {
@@ -194,6 +209,13 @@ async function readManifest(rootPath: string): Promise<Manifest> {
 function validateFolderPath(folderPath: string): void {
   if (folderPath.includes("..") || path.isAbsolute(folderPath)) {
     throw new Error(`Invalid folder path: ${folderPath}`);
+  }
+  // DRIFTLEAF_DIR is reserved for the vault's own config/manifest — a folder with this
+  // name would be invisible to scanEncFiles()'s reconcile pass (it explicitly skips this
+  // name at every depth), so any note filed under it would be treated as dangling and
+  // silently dropped from the manifest on the very next unlock.
+  if (folderPath.split("/").includes(DRIFTLEAF_DIR)) {
+    throw new Error(`"${DRIFTLEAF_DIR}" is a reserved name and can't be used as a folder`);
   }
 }
 
@@ -404,6 +426,7 @@ export async function createNote(
   folderPath: string,
   title: string,
 ): Promise<NoteMeta> {
+  validateFolderPath(folderPath);
   const id = randomUUID();
   const fileName = uniqueFileName(vault, folderPath, title);
   const meta: NoteMeta = { id, title, folderPath, fileName, updatedAt: Date.now() };
@@ -411,7 +434,15 @@ export async function createNote(
   const payload = encrypt(Buffer.from("", "utf-8"), vault.key);
   await writeFileAtomic(notePath(vault.rootPath, meta), packPayload(payload));
   vault.manifest.notes.push(meta);
-  await writeManifest(vault.rootPath, vault.manifest);
+  try {
+    await writeManifest(vault.rootPath, vault.manifest);
+  } catch (err) {
+    // Mirror deleteNote()/deleteFolder()'s rollback: don't leave the note visible
+    // in-memory for the rest of the session if it was never actually recorded on disk.
+    const index = vault.manifest.notes.indexOf(meta);
+    if (index !== -1) vault.manifest.notes.splice(index, 1);
+    throw err;
+  }
   return meta;
 }
 
@@ -460,21 +491,43 @@ export async function createFolder(vault: Vault, folderPath: string): Promise<vo
 }
 
 export async function moveNote(vault: Vault, id: string, targetFolder: string): Promise<NoteMeta> {
+  validateFolderPath(targetFolder);
   const meta = vault.manifest.notes.find((n) => n.id === id);
   if (!meta) throw new Error(`Note not found: ${id}`);
   const oldPath = notePath(vault.rootPath, meta);
   // Recompute the filename in the target folder in case a note with the same title already
   // lives there — moving "Notes.md.enc" into a folder that already has one shouldn't collide.
   const newFileName = uniqueFileName(vault, targetFolder, meta.title, id);
-  meta.folderPath = targetFolder;
-  meta.fileName = newFileName;
-  meta.updatedAt = Date.now();
-  const newPath = notePath(vault.rootPath, meta);
+  const newPath = path.join(vault.rootPath, targetFolder, newFileName);
+
+  // Physical move happens before the in-memory mutation (and before the manifest write) so
+  // a failure here — permissions, a collision uniqueFileName didn't foresee — never leaves
+  // `meta` pointing at a folderPath/fileName the file isn't actually at.
   if (oldPath !== newPath) {
     await mkdir(path.join(vault.rootPath, targetFolder), { recursive: true });
     await rename(oldPath, newPath);
   }
-  await writeManifest(vault.rootPath, vault.manifest);
+
+  const prevFolderPath = meta.folderPath;
+  const prevFileName = meta.fileName;
+  const prevUpdatedAt = meta.updatedAt;
+  meta.folderPath = targetFolder;
+  meta.fileName = newFileName;
+  meta.updatedAt = Date.now();
+  try {
+    await writeManifest(vault.rootPath, vault.manifest);
+  } catch (err) {
+    meta.folderPath = prevFolderPath;
+    meta.fileName = prevFileName;
+    meta.updatedAt = prevUpdatedAt;
+    if (oldPath !== newPath) {
+      // Best-effort: move the file back so this session's in-memory rollback matches disk.
+      // If this also fails, the next unlock's reconcileVault() will recover the file at
+      // its new location rather than leave it permanently untracked.
+      await rename(newPath, oldPath).catch(() => {});
+    }
+    throw err;
+  }
   return meta;
 }
 
@@ -484,22 +537,46 @@ export async function renameFolder(
   newFolderPath: string,
 ): Promise<void> {
   if (!oldFolderPath) throw new Error("Cannot rename the vault root");
+  validateFolderPath(oldFolderPath);
   validateFolderPath(newFolderPath);
-  for (const note of vault.manifest.notes) {
-    if (note.folderPath === oldFolderPath || note.folderPath.startsWith(oldFolderPath + "/")) {
-      note.folderPath = newFolderPath + note.folderPath.slice(oldFolderPath.length);
-    }
+  if (newFolderPath !== oldFolderPath && listFolders(vault).includes(newFolderPath)) {
+    throw new Error(`A folder named "${newFolderPath}" already exists`);
   }
+
+  // Physical rename happens before the in-memory mutation (and before the manifest write)
+  // so a failure here — e.g. the target already exists as a non-empty directory on disk
+  // but wasn't tracked in the manifest — never leaves the manifest disagreeing with disk.
+  await rename(
+    path.join(vault.rootPath, oldFolderPath),
+    path.join(vault.rootPath, newFolderPath),
+  );
+
+  const prevNotes = vault.manifest.notes;
+  const prevFolders = vault.manifest.folders;
+  vault.manifest.notes = vault.manifest.notes.map((note) =>
+    note.folderPath === oldFolderPath || note.folderPath.startsWith(oldFolderPath + "/")
+      ? { ...note, folderPath: newFolderPath + note.folderPath.slice(oldFolderPath.length) }
+      : note,
+  );
   vault.manifest.folders = vault.manifest.folders.map((f) =>
     f === oldFolderPath || f.startsWith(oldFolderPath + "/")
       ? newFolderPath + f.slice(oldFolderPath.length)
       : f,
   );
-  await rename(
-    path.join(vault.rootPath, oldFolderPath),
-    path.join(vault.rootPath, newFolderPath),
-  );
-  await writeManifest(vault.rootPath, vault.manifest);
+  try {
+    await writeManifest(vault.rootPath, vault.manifest);
+  } catch (err) {
+    vault.manifest.notes = prevNotes;
+    vault.manifest.folders = prevFolders;
+    // Best-effort: move the directory back so this session's in-memory rollback matches
+    // disk. If this also fails, the next unlock's reconcileVault() will recover notes at
+    // their new on-disk location rather than leave them untracked.
+    await rename(
+      path.join(vault.rootPath, newFolderPath),
+      path.join(vault.rootPath, oldFolderPath),
+    ).catch(() => {});
+    throw err;
+  }
 }
 
 // Same ordering rationale as deleteNote(): manifest drops the entries first, directory
@@ -507,6 +584,7 @@ export async function renameFolder(
 // manifest entries for notes that no longer exist.
 export async function deleteFolder(vault: Vault, folderPath: string): Promise<string[]> {
   if (!folderPath) throw new Error("Cannot delete the vault root");
+  validateFolderPath(folderPath);
   const affected = vault.manifest.notes.filter(
     (n) => n.folderPath === folderPath || n.folderPath.startsWith(folderPath + "/"),
   );
@@ -561,7 +639,7 @@ export async function importFiles(
     const baseName = path.basename(filePath);
     try {
       if (ext === ".md") {
-        const content = await readFile(filePath, "utf-8");
+        const content = decodeStrictUtf8(await readFile(filePath));
         const title = path.basename(filePath, ".md") || "Untitled";
         await ensureFolderChain(vault, targetFolder);
         const meta = await createNote(vault, targetFolder, title);
@@ -582,6 +660,13 @@ export async function importFiles(
   return { imported, skipped };
 }
 
+// Zip-bomb guards: a small compressed archive can claim an enormous decompressed size or
+// entry count. header.size (uncompressed size) is available from the central directory
+// without decompressing, so oversized entries are rejected before getData() ever allocates
+// their content.
+const MAX_IMPORT_ENTRIES = 20_000;
+const MAX_IMPORT_ENTRY_BYTES = 20 * 1024 * 1024; // 20MB — generous for a markdown note
+
 async function importZipArchive(
   vault: Vault,
   zipPath: string,
@@ -600,11 +685,21 @@ async function importZipArchive(
     };
   }
 
+  if (entries.length > MAX_IMPORT_ENTRIES) {
+    return {
+      imported,
+      skipped: [`${path.basename(zipPath)} (archive has too many entries — over ${MAX_IMPORT_ENTRIES})`],
+    };
+  }
+
   for (const entry of entries) {
     if (entry.isDirectory) continue;
     if (!entry.entryName.toLowerCase().endsWith(".md")) continue;
 
     try {
+      if (entry.header.size > MAX_IMPORT_ENTRY_BYTES) {
+        throw new Error(`file too large to import (over ${MAX_IMPORT_ENTRY_BYTES / (1024 * 1024)}MB)`);
+      }
       // Zip entry names always use "/" regardless of platform. Reject anything that could
       // escape the vault (zip-slip): ".." segments or an absolute-looking path.
       const relPath = entry.entryName.replace(/\\/g, "/");
@@ -624,7 +719,7 @@ async function importZipArchive(
 
       await ensureFolderChain(vault, folderPath);
       const meta = await createNote(vault, folderPath, title);
-      await writeNote(vault, meta.id, entry.getData().toString("utf-8"));
+      await writeNote(vault, meta.id, decodeStrictUtf8(entry.getData()));
       imported.push(meta);
     } catch (err) {
       skipped.push(`${entry.entryName} (${err instanceof Error ? err.message : "import failed"})`);

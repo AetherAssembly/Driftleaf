@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import * as vaultModule from './dist-electron/main/vault.js';
+import * as vaultModule from '../../dist-electron/main/vault.js';
 
 const testVaultPath = path.join(os.tmpdir(), `driftleaf-test-${Date.now()}`);
 

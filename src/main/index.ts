@@ -19,15 +19,6 @@ function createWindow() {
 
   registerIpcHandlers(win);
 
-  // Quick-capture: works even when Driftleaf isn't focused, since it's the whole point —
-  // jot something down without breaking flow in whatever app you were in.
-  globalShortcut.register("CommandOrControl+Shift+N", () => {
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
-    win.webContents.send(RENDERER_EVENTS.quickCapture);
-  });
-
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL);
   } else {
@@ -35,7 +26,29 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+
+  // Quick-capture: works even when Driftleaf isn't focused, since it's the whole point —
+  // jot something down without breaking flow in whatever app you were in. Registered once
+  // at startup, not per-window: on macOS the app stays alive with zero windows after the
+  // last one is closed, so a callback closing over that window would call methods on a
+  // destroyed BrowserWindow the next time the shortcut fires. Looking the window up at call
+  // time instead means it always targets whichever window is actually alive right now.
+  const registered = globalShortcut.register("CommandOrControl+Shift+N", () => {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (!win || win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    win.webContents.send(RENDERER_EVENTS.quickCapture);
+  });
+  if (!registered) {
+    console.warn(
+      "Failed to register the quick-capture shortcut (Ctrl/Cmd+Shift+N) — it may already be in use by another application.",
+    );
+  }
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

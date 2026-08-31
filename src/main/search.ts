@@ -38,14 +38,23 @@ export async function buildIndex(index: SearchIndex, vault: Vault): Promise<void
     return;
   }
 
-  // Decrypt all notes in parallel to reduce I/O blocking
+  // Decrypt all notes in parallel to reduce I/O blocking. Promise.allSettled (not
+  // Promise.all) so one corrupted or dangling note doesn't take search down for the whole
+  // vault — readNote() already promises corruption is reported per-note rather than losing
+  // access to other notes, and the index build should honor that same guarantee.
   const decryptStart = Date.now();
-  const decryptedNotes = await Promise.all(
+  const settled = await Promise.allSettled(
     noteList.map(async (meta) => ({
       ...meta,
       content: await readNote(vault, meta.id),
     })),
   );
+  const decryptedNotes = settled
+    .filter(
+      (r): r is PromiseFulfilledResult<NoteMeta & { content: string }> => r.status === "fulfilled",
+    )
+    .map((r) => r.value);
+  const failedCount = settled.length - decryptedNotes.length;
   const decryptDuration = Date.now() - decryptStart;
 
   // Insert all notes in a single transaction for better SQLite performance
@@ -64,7 +73,7 @@ export async function buildIndex(index: SearchIndex, vault: Vault): Promise<void
 
   if (process.env.DEBUG_SEARCH) {
     console.log(
-      `[search] buildIndex: ${buildDuration}ms total (decrypt: ${decryptDuration}ms, insert: ${insertDuration}ms) for ${noteCount} notes (${(buildDuration / noteCount).toFixed(2)}ms/note)`,
+      `[search] buildIndex: ${buildDuration}ms total (decrypt: ${decryptDuration}ms, insert: ${insertDuration}ms) for ${noteCount} notes (${(buildDuration / noteCount).toFixed(2)}ms/note)${failedCount > 0 ? `, ${failedCount} note(s) skipped (failed to decrypt)` : ""}`,
     );
   }
 }

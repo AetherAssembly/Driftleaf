@@ -1,4 +1,5 @@
 import { ipcMain, dialog, type BrowserWindow } from "electron";
+import path from "node:path";
 import { IPC_CHANNELS } from "../shared/ipc";
 import * as vaultModule from "./vault";
 import type { Vault } from "./vault";
@@ -17,6 +18,25 @@ function requireVault(): Vault {
   if (!session.vault) throw new Error("No vault is unlocked");
   return session.vault;
 }
+
+// Serializes vault-mutating operations so two concurrent IPC calls (e.g. an in-flight
+// autosave racing a delete, or two rapid folder operations) can't interleave their
+// manifest read-modify-write and lose or resurrect a change. Read-only operations
+// (list/read/search) don't need to join this queue.
+let vaultOpQueue: Promise<unknown> = Promise.resolve();
+
+function serialized<T>(fn: () => Promise<T>): Promise<T> {
+  const run = vaultOpQueue.catch(() => {}).then(fn);
+  vaultOpQueue = run.catch(() => {});
+  return run;
+}
+
+// The renderer is only supposed to import files it selected via vault:pickImportFiles's
+// native OS dialog, never an arbitrary path it constructs itself — this tracks the most
+// recent picker result as a single-use allowlist so notes:import can enforce that even if
+// the renderer-side code is compromised (XSS, a malicious dependency) and calls the IPC
+// channel directly with attacker-chosen paths.
+let lastPickedImportPaths: Set<string> | null = null;
 
 // Translates raw Node fs error codes into messages a user can act on. Thrown errors from
 // an ipcMain.handle callback reject the renderer's invoke() promise with the message intact,
@@ -51,24 +71,51 @@ function handle<Args extends unknown[], Result>(
 
 async function openSession(vault: Vault): Promise<void> {
   const sessionStart = Date.now();
+  // Build the index against a fresh, not-yet-committed index handle first — session.vault/
+  // session.index are only assigned once indexing actually succeeds. Assigning them up front
+  // meant a failed unlock (buildIndex throwing) still left the main process holding a "live"
+  // vault + key internally even though the renderer was told unlock failed and returned to
+  // the lock screen.
+  const index = searchModule.openIndex();
+  try {
+    await searchModule.buildIndex(index, vault);
+  } catch (err) {
+    index.db.close();
+    throw err;
+  }
   session.vault = vault;
-  session.index = searchModule.openIndex();
-  await searchModule.buildIndex(session.index, vault);
+  session.index = index;
   const sessionDuration = Date.now() - sessionStart;
   if (process.env.DEBUG_SEARCH) {
     console.log(`[ipc] openSession (unlock + index build): ${sessionDuration}ms`);
   }
 }
 
+let currentWindow: BrowserWindow | null = null;
+let handlersRegistered = false;
+
+// Safe to call every time a window is (re)created — e.g. on macOS, clicking the dock icon
+// after closing the only window calls this again. ipcMain.handle() throws synchronously on
+// a duplicate registration for the same channel, so the actual handler wiring below only
+// runs once; later calls just repoint the dialogs (which need a live BrowserWindow to
+// anchor to) at the new window.
 export function registerIpcHandlers(win: BrowserWindow): void {
+  currentWindow = win;
+  if (handlersRegistered) return;
+  handlersRegistered = true;
+
   ipcMain.handle(IPC_CHANNELS.vaultPickDirectory, async () => {
-    const result = await dialog.showOpenDialog(win, { properties: ["openDirectory", "createDirectory"] });
+    if (!currentWindow) return null;
+    const result = await dialog.showOpenDialog(currentWindow, {
+      properties: ["openDirectory", "createDirectory"],
+    });
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
   });
 
   ipcMain.handle(IPC_CHANNELS.vaultPickImportFiles, async () => {
-    const result = await dialog.showOpenDialog(win, {
+    if (!currentWindow) return null;
+    const result = await dialog.showOpenDialog(currentWindow, {
       properties: ["openFile", "multiSelections"],
       filters: [
         { name: "Markdown and zip archives", extensions: ["md", "zip"] },
@@ -76,7 +123,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         { name: "Zip archive", extensions: ["zip"] },
       ],
     });
-    if (result.canceled || result.filePaths.length === 0) return null;
+    if (result.canceled || result.filePaths.length === 0) {
+      lastPickedImportPaths = null;
+      return null;
+    }
+    lastPickedImportPaths = new Set(result.filePaths);
     return result.filePaths;
   });
 
@@ -93,11 +144,15 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return recovery;
   });
 
-  ipcMain.handle(IPC_CHANNELS.vaultHasPassphrase, (_e, rootPath: string) => {
+  handle(IPC_CHANNELS.vaultHasPassphrase, (_e, rootPath: string) => {
     return vaultModule.vaultHasPassphrase(rootPath);
   });
 
   ipcMain.handle(IPC_CHANNELS.vaultLock, async () => {
+    // Zero the raw AES key before dropping the reference — GC timing isn't a scrub
+    // guarantee, and this app's entire pitch is "lock this vault."
+    session.vault?.key.fill(0);
+    session.index?.db.close();
     session.vault = null;
     session.index = null;
   });
@@ -110,27 +165,27 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return vaultModule.listFolders(requireVault());
   });
 
-  ipcMain.handle(IPC_CHANNELS.notesRead, (_e, id: string) => {
+  handle(IPC_CHANNELS.notesRead, (_e, id: string) => {
     return vaultModule.readNote(requireVault(), id);
   });
 
   handle(IPC_CHANNELS.notesWrite, async (_e, id: string, content: string) => {
     const vault = requireVault();
-    await vaultModule.writeNote(vault, id, content);
+    await serialized(() => vaultModule.writeNote(vault, id, content));
     const meta = vaultModule.listNotes(vault).find((n) => n.id === id);
     if (meta && session.index) searchModule.reindexNote(session.index, meta, content);
   });
 
   handle(IPC_CHANNELS.notesCreate, async (_e, folderPath: string, title: string) => {
     const vault = requireVault();
-    const meta = await vaultModule.createNote(vault, folderPath, title);
+    const meta = await serialized(() => vaultModule.createNote(vault, folderPath, title));
     if (session.index) searchModule.reindexNote(session.index, meta, "");
     return meta;
   });
 
   handle(IPC_CHANNELS.notesRename, async (_e, id: string, title: string) => {
     const vault = requireVault();
-    await vaultModule.renameNote(vault, id, title);
+    await serialized(() => vaultModule.renameNote(vault, id, title));
     const meta = vaultModule.listNotes(vault).find((n) => n.id === id);
     if (meta && session.index) {
       const content = await vaultModule.readNote(vault, id);
@@ -140,29 +195,44 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   handle(IPC_CHANNELS.notesRemove, async (_e, id: string) => {
     const vault = requireVault();
-    await vaultModule.deleteNote(vault, id);
+    await serialized(() => vaultModule.deleteNote(vault, id));
     if (session.index) searchModule.removeFromIndex(session.index, id);
   });
 
   handle(IPC_CHANNELS.foldersCreate, async (_e, folderPath: string) => {
-    await vaultModule.createFolder(requireVault(), folderPath);
+    const vault = requireVault();
+    await serialized(() => vaultModule.createFolder(vault, folderPath));
   });
 
   handle(IPC_CHANNELS.notesImport, async (_e, filePaths: string[], targetFolder: string) => {
     const vault = requireVault();
-    const result = await vaultModule.importFiles(vault, filePaths, targetFolder);
+    // Only import paths that actually came back from this session's most recent
+    // vault:pickImportFiles call — a renderer calling this channel directly with paths it
+    // made up itself (bypassing the OS file picker) shouldn't be able to pull arbitrary
+    // files off disk into the vault. Single-use: consumed immediately so it can't be
+    // replayed against a later, unrelated import call.
+    const allowed = lastPickedImportPaths;
+    lastPickedImportPaths = null;
+    const safePaths = filePaths.filter((p) => allowed?.has(p));
+    const rejectedPaths = filePaths.filter((p) => !allowed?.has(p));
+
+    const result = await serialized(() => vaultModule.importFiles(vault, safePaths, targetFolder));
     if (session.index) {
       for (const meta of result.imported) {
         const content = await vaultModule.readNote(vault, meta.id);
         searchModule.reindexNote(session.index, meta, content);
       }
     }
-    return { imported: result.imported.length, skipped: result.skipped };
+    const skipped = [
+      ...result.skipped,
+      ...rejectedPaths.map((p) => `${path.basename(p)} (not selected via the file picker)`),
+    ];
+    return { imported: result.imported.length, skipped };
   });
 
   handle(IPC_CHANNELS.notesMove, async (_e, id: string, targetFolder: string) => {
     const vault = requireVault();
-    const meta = await vaultModule.moveNote(vault, id, targetFolder);
+    const meta = await serialized(() => vaultModule.moveNote(vault, id, targetFolder));
     if (session.index) {
       const content = await vaultModule.readNote(vault, id);
       searchModule.reindexNote(session.index, meta, content);
@@ -174,14 +244,14 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     IPC_CHANNELS.foldersRename,
     async (_e, oldPath: string, newPath: string) => {
       const vault = requireVault();
-      await vaultModule.renameFolder(vault, oldPath, newPath);
+      await serialized(() => vaultModule.renameFolder(vault, oldPath, newPath));
       if (session.index) await searchModule.buildIndex(session.index, vault);
     },
   );
 
   handle(IPC_CHANNELS.foldersDelete, async (_e, folderPath: string) => {
     const vault = requireVault();
-    const deletedIds = await vaultModule.deleteFolder(vault, folderPath);
+    const deletedIds = await serialized(() => vaultModule.deleteFolder(vault, folderPath));
     if (session.index) {
       deletedIds.forEach((id) => searchModule.removeFromIndex(session.index!, id));
     }
@@ -197,7 +267,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return settingsModule.readSettings();
   });
 
-  ipcMain.handle(IPC_CHANNELS.settingsPatch, (_e, patch: Partial<settingsModule.AppSettings>) => {
+  handle(IPC_CHANNELS.settingsPatch, (_e, patch: Partial<settingsModule.AppSettings>) => {
     return settingsModule.patchSettings(patch);
   });
 }
