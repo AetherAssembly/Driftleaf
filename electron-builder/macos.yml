@@ -6,6 +6,8 @@ directories:
 files:
   - dist/**
   - dist-electron/**
+  - '!node_modules/better-sqlite3/deps/**'
+  - '!node_modules/better-sqlite3/src/**'
 asarUnpack:
   - node_modules/better-sqlite3/**/*.node
 artifactName: 'driftleaf-${version}-mac.${ext}'

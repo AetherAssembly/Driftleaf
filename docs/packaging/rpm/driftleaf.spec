@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
 Name:           driftleaf
-Version:        0.2.1
+Version:        0.3.0
 Release:        1%{?dist}
 Summary:        A local-first, encrypted-by-default notes app
 License:        AGPL-3.0-or-later
@@ -55,6 +55,28 @@ ln -s /opt/Driftleaf/driftleaf %{buildroot}%{_bindir}/driftleaf
 %{_datadir}/icons/hicolor/1024x1024/apps/driftleaf.png
 
 %changelog
+* Sat Aug 29 2026 AetherAssembly <support@aetherassembly.org> - 0.3.0-1
+- Security and data-integrity fixes from a project-wide audit: path-traversal
+  guards were missing on several vault operations (folder delete, note
+  create/move, folder rename), a folder named `.driftleaf` could permanently
+  and silently drop notes filed under it, case-insensitive filename
+  collisions could overwrite an existing note's content, and the vault
+  encryption key was not zeroed from memory on lock.
+- Data-loss fixes: concurrent vault operations are now serialized to prevent
+  manifest corruption, several operations that mutated in-memory state before
+  the matching disk operation now do the reverse with rollback on failure,
+  and the editor's autosave no longer silently drops an edit when switching
+  notes, renaming, or locking the vault in quick succession.
+- Search no longer breaks for the whole vault when a single note fails to
+  decrypt.
+- UI styling: bumped the `@aetherAssembly/ui` dependency, which previously
+  shipped design tokens only and no actual component styling — buttons,
+  cards, modals, inputs, and badges were rendering unstyled.
+- Packaging: excluded `better-sqlite3`'s build-only source files (the SQLite
+  amalgamation and C++ addon source) from the bundled application, which had
+  been tripping rpmlint's badness threshold and aborting every openSUSE OBS
+  build while passing on Fedora's more permissive profile.
+  
 * Fri Aug 28 2026 AetherAssembly <support@aetherassembly.org> - 0.2.1-1
 - Native SQLite packaging: Electron Builder now unpacks the
   `better-sqlite3` native module for stable and beta builds on Linux, macOS, and Windows.

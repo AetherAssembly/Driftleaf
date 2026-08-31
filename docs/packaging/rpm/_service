@@ -2,11 +2,11 @@
   <service name="download_url">
     <param name="protocol">https</param>
     <param name="host">github.com</param>
-    <param name="path">/AetherAssembly/Driftleaf/releases/download/v0.2.1/driftleaf-0.2.1-x86_64.rpm</param>
+    <param name="path">/AetherAssembly/Driftleaf/releases/download/v0.3.0/driftleaf-0.3.0-x86_64.rpm</param>
   </service>
   <service name="download_url">
     <param name="protocol">https</param>
     <param name="host">github.com</param>
-    <param name="path">/AetherAssembly/Driftleaf/releases/download/v0.2.1/driftleaf-0.2.1-aarch64.rpm</param>
+    <param name="path">/AetherAssembly/Driftleaf/releases/download/v0.3.0/driftleaf-0.3.0-aarch64.rpm</param>
   </service>
 </services>

@@ -1,6 +1,6 @@
 {
   "name": "driftleaf",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "So your thoughts don't drift. A local-first, encrypted-by-default notes app.",
   "main": "dist-electron/main/index.js",
   "private": true,
@@ -31,7 +31,7 @@
     "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "dependencies": {
-    "@aetherAssembly/ui": "^1.0.1",
+    "@aetherAssembly/ui": "^1.0.3",
     "adm-zip": "^0.6.0",
     "better-sqlite3": "^13.0.3",
     "dompurify": "^3.4.14",
