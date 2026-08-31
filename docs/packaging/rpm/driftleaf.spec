@@ -1,8 +1,18 @@
 %global debug_package %{nil}
+# The packaged app.asar.unpacked tree bundles better-sqlite3's prebuilt native
+# binaries for every OS/arch it supports (darwin/linux/win32 x64/arm64,
+# linuxmusl x64/arm64) — only one of those is ever loaded at runtime on a given
+# install. RPM's automatic post-install strip pass (brp-strip) tries to strip
+# every file under the buildroot regardless, and can't parse a binary for a
+# foreign architecture; on some build systems (e.g. Mageia) that failure is
+# fatal to the whole build rather than a skipped warning. Disabling the
+# automatic post-install processing is standard practice for a spec that's
+# repackaging an already-built binary bundle rather than compiling from source.
+%global __os_install_post %{nil}
 
 Name:           driftleaf
 Version:        0.3.0
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        A local-first, encrypted-by-default notes app
 License:        AGPL-3.0-or-later
 URL:            https://github.com/AetherAssembly/Driftleaf
@@ -55,7 +65,15 @@ ln -s /opt/Driftleaf/driftleaf %{buildroot}%{_bindir}/driftleaf
 %{_datadir}/icons/hicolor/1024x1024/apps/driftleaf.png
 
 %changelog
-* Sat Aug 29 2026 AetherAssembly <support@aetherassembly.org> - 0.3.0-1
+* Mon Aug 31 2026 AetherAssembly <support@aetherassembly.org> - 0.3.0-2
+- Disabled the automatic post-install strip pass (%%__os_install_post). The
+  packaged app bundles better-sqlite3's prebuilt native binaries for every
+  OS/arch it supports; brp-strip tried to strip all of them regardless of the
+  target architecture and treated a foreign-architecture binary it couldn't
+  parse as a fatal error on some build systems, aborting the build (seen on
+  Mageia 9 x86_64 in COPR while the same package's aarch64 build succeeded).
+
+* Mon Aug 31 2026 AetherAssembly <support@aetherassembly.org> - 0.3.0-1
 - Security and data-integrity fixes from a project-wide audit: path-traversal
   guards were missing on several vault operations (folder delete, note
   create/move, folder rename), a folder named `.driftleaf` could permanently
