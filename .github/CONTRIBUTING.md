@@ -53,8 +53,7 @@ npm run package:*    # Package for a specific platform (see package.json)
 
 ### Features
 
-- See [PLAN.md](../PLAN.md) for the roadmap
-- Stretch features are collected at the end of the plan
+- Check open issues and discussions for planned work
 - Always open an issue first to discuss ideas
 
 ### Documentation
@@ -161,7 +160,6 @@ Key patterns:
 If your change affects users, update:
 
 - [README.md](../README.md) - If it's user-facing
-- [PLAN.md](../PLAN.md) - If it affects the roadmap
 - [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) - If it changes internals
 - JSDoc comments on exported functions
 
@@ -172,7 +170,7 @@ By contributing, you agree that your code will be licensed under [AGPL-3.0-only]
 ## Questions?
 
 - Check [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) for how things work
-- Check [PLAN.md](../PLAN.md) for what's coming
+- Check open issues and discussions for what's coming
 - Open a discussion or ask in an issue
 
 Thank you for contributing to Driftleaf! 🍃

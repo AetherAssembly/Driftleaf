@@ -43,7 +43,7 @@ Notes are encrypted at rest from day one — this is not a bolt-on. Implemented 
 ### Design Decisions
 
 - **Plaintext manifest sidecar:** note titles and folder placement live in `manifest.json`, not inside the encrypted files. This trades some metadata privacy (an attacker with disk access can see titles and the folder tree, but not content) for a sidebar/search UI that doesn't require decrypting the whole vault on every render. Content is always encrypted; only title/folder/timestamp are plaintext.
-- **No recovery path** (PLAN.md milestone 7, explicit decision): for `"scrypt"`-mode vaults, a lost passphrase means the note content is unrecoverable (the manifest would still list titles, but not content). `UnlockScreen` gates vault creation with a confirmation modal stating this plainly before the vault is created. See [RECOVERY.md](RECOVERY.md) for the full story.
+- **No recovery path** (explicit decision, not an oversight): for `"scrypt"`-mode vaults, a lost passphrase means the note content is unrecoverable (the manifest would still list titles, but not content). `UnlockScreen` gates vault creation with a confirmation modal stating this plainly before the vault is created. See [RECOVERY.md](RECOVERY.md) for the full story.
 
 ## Vault Resilience
 
@@ -105,7 +105,7 @@ assets/
 └── installer-sidebar.png / .svg        164×314 NSIS welcome/finish page sidebar image
 ```
 
-Each platform has a `:beta` config building under a distinct `appId` / `productName` (`Driftleaf-Beta`), so a beta build can be installed side-by-side with a stable one. `package.json`'s `package:*` / `package:*:beta` scripts run `npm run build` (typecheck + Vite bundle, no packaging) followed by `electron-builder --config electron-builder/<platform>.yml`; `publish:*` scripts are the same with `--publish always`, pushing to the `Driftleaf` GitHub release matching the current version. All of this produces **unsigned** dev builds — see PLAN.md milestone 14 for code signing/notarization.
+Each platform has a `:beta` config building under a distinct `appId` / `productName` (`Driftleaf-Beta`), so a beta build can be installed side-by-side with a stable one. `package.json`'s `package:*` / `package:*:beta` scripts run `npm run build` (typecheck + Vite bundle, no packaging) followed by `electron-builder --config electron-builder/<platform>.yml`; `publish:*` scripts are the same with `--publish always`, pushing to the `Driftleaf` GitHub release matching the current version. All of this produces **unsigned** dev builds; code signing and notarization are planned but not yet implemented.
 
 ## UI Library
 

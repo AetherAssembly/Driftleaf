@@ -81,3 +81,7 @@ For answers to common questions about this code of conduct, see the FAQ at [http
 [Mozilla CoC]: https://github.com/mozilla/diversity
 [FAQ]: https://www.contributor-covenant.org/faq
 [translations]: https://www.contributor-covenant.org/translations
+
+---
+
+Also see: [Terms of Service](TERMS.md) · [Privacy Policy](PRIVACY.md)
