@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
+## [0.3.1] - 2026-10-06
+
+### Security
+
+- Resolved npm audit findings by updating the affected `brace-expansion`
+  dependency and overriding the vulnerable transitive `@electron/get`
+  dependency, avoiding its vulnerable `global-agent`, `roarr`, and `sprintf-js`
+  dependency chain. The fixes address:
+  - [`brace-expansion` quadratic-time expansion (GHSA-q2hr-2g5m-vwhr)](https://github.com/advisories/GHSA-q2hr-2g5m-vwhr)
+  - [`brace-expansion` nested-group recursion (GHSA-qhr7-859c-m2p7)](https://github.com/advisories/GHSA-qhr7-859c-m2p7)
+  - [`brace-expansion` comma-part recursion (GHSA-6j4f-fj2g-mc7p)](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p)
+  - [`sprintf-js` unbounded precision denial of service (GHSA-hp3w-g68c-fv3c)](https://github.com/advisories/GHSA-hp3w-g68c-fv3c)
+
 ## [0.3.0] - 2026-08-31
 
 Project-wide bug audit covering the vault/crypto/search data layer, IPC and app

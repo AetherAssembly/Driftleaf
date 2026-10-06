@@ -11,7 +11,7 @@
 %global __os_install_post %{nil}
 
 Name:           driftleaf
-Version:        0.3.0
+Version:        0.3.1
 Release:        2%{?dist}
 Summary:        A local-first, encrypted-by-default notes app
 License:        AGPL-3.0-or-later
@@ -65,6 +65,11 @@ ln -s /opt/Driftleaf/driftleaf %{buildroot}%{_bindir}/driftleaf
 %{_datadir}/icons/hicolor/1024x1024/apps/driftleaf.png
 
 %changelog
+* Tue Oct 06 2026 AetherAssembly <support@aetherassembly.org> - 0.3.1-1
+- Resolved npm audit findings by updating the affected brace-expansion
+  dependency and overriding the vulnerable transitive @electron/get
+  dependency to avoid its vulnerable dependency chain.
+
 * Mon Aug 31 2026 AetherAssembly <support@aetherassembly.org> - 0.3.0-2
 - Disabled the automatic post-install strip pass (%%__os_install_post). The
   packaged app bundles better-sqlite3's prebuilt native binaries for every
