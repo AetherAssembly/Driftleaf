@@ -1,4 +1,5 @@
-import { ipcMain, dialog, type BrowserWindow } from "electron";
+import { app, ipcMain, dialog, type BrowserWindow } from "electron";
+import os from "node:os";
 import path from "node:path";
 import { IPC_CHANNELS } from "../shared/ipc";
 import * as vaultModule from "./vault";
@@ -37,6 +38,7 @@ function serialized<T>(fn: () => Promise<T>): Promise<T> {
 // the renderer-side code is compromised (XSS, a malicious dependency) and calls the IPC
 // channel directly with attacker-chosen paths.
 let lastPickedImportPaths: Set<string> | null = null;
+let lastPickedBackupPath: string | null = null;
 
 // Translates raw Node fs error codes into messages a user can act on. Thrown errors from
 // an ipcMain.handle callback reject the renderer's invoke() promise with the message intact,
@@ -48,7 +50,8 @@ function friendlyError(err: unknown): Error {
     if (code === "EACCES" || code === "EPERM") {
       return new Error("Permission denied. Check that Driftleaf can write to this folder.");
     }
-    if (code === "ENOENT") return new Error("A vault file is missing. The vault folder may have moved.");
+    if (code === "ENOENT")
+      return new Error("A vault file is missing. The vault folder may have moved.");
     return err;
   }
   return new Error(String(err));
@@ -113,13 +116,26 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return result.filePaths[0];
   });
 
+  ipcMain.handle(IPC_CHANNELS.vaultPickBackupDirectory, async () => {
+    lastPickedBackupPath = null;
+    if (!currentWindow) return null;
+    const result = await dialog.showOpenDialog(currentWindow, {
+      properties: ["openDirectory"],
+      title: "Choose a Driftleaf backup folder",
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    lastPickedBackupPath = result.filePaths[0];
+    return lastPickedBackupPath;
+  });
+
   ipcMain.handle(IPC_CHANNELS.vaultPickImportFiles, async () => {
     if (!currentWindow) return null;
     const result = await dialog.showOpenDialog(currentWindow, {
       properties: ["openFile", "multiSelections"],
       filters: [
-        { name: "Markdown and zip archives", extensions: ["md", "zip"] },
+        { name: "Notes, tables, and zip archives", extensions: ["md", "csv", "json", "zip"] },
         { name: "Markdown", extensions: ["md"] },
+        { name: "Tables (CSV / JSON)", extensions: ["csv", "json"] },
         { name: "Zip archive", extensions: ["zip"] },
       ],
     });
@@ -131,11 +147,19 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return result.filePaths;
   });
 
-  handle(IPC_CHANNELS.vaultCreate, async (_e, rootPath: string, passphrase: string) => {
-    const vault = await vaultModule.createVault(rootPath, passphrase);
-    await openSession(vault);
-    await settingsModule.patchSettings({ lastVaultPath: rootPath });
-  });
+  handle(
+    IPC_CHANNELS.vaultCreate,
+    async (
+      _e,
+      rootPath: string,
+      passphrase: string,
+      template: Parameters<typeof vaultModule.createVault>[2],
+    ) => {
+      const vault = await vaultModule.createVault(rootPath, passphrase, template);
+      await openSession(vault);
+      await settingsModule.patchSettings({ lastVaultPath: rootPath });
+    },
+  );
 
   handle(IPC_CHANNELS.vaultUnlock, async (_e, rootPath: string, passphrase: string) => {
     const { vault, recovery } = await vaultModule.unlockVault(rootPath, passphrase);
@@ -146,6 +170,34 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   handle(IPC_CHANNELS.vaultHasPassphrase, (_e, rootPath: string) => {
     return vaultModule.vaultHasPassphrase(rootPath);
+  });
+
+  handle(IPC_CHANNELS.vaultHealthCheck, async () => {
+    const report = await vaultModule.inspectVault(requireVault());
+    if (session.index) {
+      const indexedCount = (
+        session.index.db.prepare("SELECT COUNT(*) AS count FROM notes_fts").get() as {
+          count: number;
+        }
+      ).count;
+      const noteCount = vaultModule.listNotes(requireVault()).length;
+      report.checks.push({
+        name: "Search index",
+        status: indexedCount === noteCount ? "ok" : "warning",
+        details:
+          indexedCount === noteCount
+            ? `${indexedCount} note(s) are indexed for search.`
+            : `Search contains ${indexedCount} of ${noteCount} indexed note(s).`,
+      });
+    }
+    return report;
+  });
+
+  handle(IPC_CHANNELS.vaultVerifyBackup, (_e, rootPath: string, passphrase: string) => {
+    if (!lastPickedBackupPath || rootPath !== lastPickedBackupPath) {
+      throw new Error("Choose the backup folder using the folder picker before verifying it");
+    }
+    return vaultModule.verifyVaultBackup(rootPath, passphrase);
   });
 
   ipcMain.handle(IPC_CHANNELS.vaultLock, async () => {
@@ -227,7 +279,47 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       ...result.skipped,
       ...rejectedPaths.map((p) => `${path.basename(p)} (not selected via the file picker)`),
     ];
-    return { imported: result.imported.length, skipped };
+    return {
+      imported: result.imported.length,
+      importedDatabases: result.importedDatabases.length,
+      skipped,
+    };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.databasesList, (_e, folderPath?: string) => {
+    return vaultModule.listDatabases(requireVault(), folderPath);
+  });
+
+  handle(IPC_CHANNELS.databasesRead, (_e, id: string) => {
+    return vaultModule.readDatabase(requireVault(), id);
+  });
+
+  handle(
+    IPC_CHANNELS.databasesUpdate,
+    async (
+      _e,
+      id: string,
+      properties: Parameters<typeof vaultModule.updateDatabase>[2],
+      rows: Parameters<typeof vaultModule.updateDatabase>[3],
+    ) => {
+      const vault = requireVault();
+      await serialized(() => vaultModule.updateDatabase(vault, id, properties, rows));
+    },
+  );
+
+  handle(IPC_CHANNELS.databasesCreateRow, async (_e, id: string) => {
+    const vault = requireVault();
+    return serialized(() => vaultModule.createDatabaseRow(vault, id));
+  });
+
+  handle(IPC_CHANNELS.databasesDeleteRow, async (_e, id: string, rowId: string) => {
+    const vault = requireVault();
+    await serialized(() => vaultModule.deleteDatabaseRow(vault, id, rowId));
+  });
+
+  handle(IPC_CHANNELS.databasesDelete, async (_e, id: string) => {
+    const vault = requireVault();
+    await serialized(() => vaultModule.deleteDatabase(vault, id));
   });
 
   handle(IPC_CHANNELS.notesMove, async (_e, id: string, targetFolder: string) => {
@@ -240,14 +332,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return meta;
   });
 
-  handle(
-    IPC_CHANNELS.foldersRename,
-    async (_e, oldPath: string, newPath: string) => {
-      const vault = requireVault();
-      await serialized(() => vaultModule.renameFolder(vault, oldPath, newPath));
-      if (session.index) await searchModule.buildIndex(session.index, vault);
-    },
-  );
+  handle(IPC_CHANNELS.foldersRename, async (_e, oldPath: string, newPath: string) => {
+    const vault = requireVault();
+    await serialized(() => vaultModule.renameFolder(vault, oldPath, newPath));
+    if (session.index) await searchModule.buildIndex(session.index, vault);
+  });
 
   handle(IPC_CHANNELS.foldersDelete, async (_e, folderPath: string) => {
     const vault = requireVault();
@@ -269,5 +358,25 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   handle(IPC_CHANNELS.settingsPatch, (_e, patch: Partial<settingsModule.AppSettings>) => {
     return settingsModule.patchSettings(patch);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.diagnosticsRead, () => {
+    const sessionType =
+      process.env.XDG_SESSION_TYPE?.toLowerCase() === "wayland" || !!process.env.WAYLAND_DISPLAY
+        ? "Wayland"
+        : process.env.XDG_SESSION_TYPE?.toLowerCase() === "x11" || !!process.env.DISPLAY
+          ? "X11"
+          : "Not detected";
+    return {
+      version: app.getVersion(),
+      platform: process.platform,
+      osRelease: os.release(),
+      architecture: process.arch,
+      electron: process.versions.electron ?? "Unknown",
+      chromium: process.versions.chrome ?? "Unknown",
+      displayServer: sessionType,
+      desktopEnvironment:
+        process.env.XDG_CURRENT_DESKTOP ?? process.env.XDG_SESSION_DESKTOP ?? "Not detected",
+    };
   });
 }

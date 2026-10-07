@@ -5,11 +5,18 @@ import type { AppSettings } from "../../shared/ipc";
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
+  onOpenTools: () => void;
   settings: AppSettings;
   onPatch: (update: Partial<AppSettings>) => void;
 }
 
-export function SettingsModal({ open, onClose, settings, onPatch }: SettingsModalProps) {
+export function SettingsModal({
+  open,
+  onClose,
+  onOpenTools,
+  settings,
+  onPatch,
+}: SettingsModalProps) {
   const [fontSize, setFontSize] = useState(settings.editorFontSizePx);
   const [autosave, setAutosave] = useState(settings.autosaveIntervalMs);
   const fontDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -40,7 +47,7 @@ export function SettingsModal({ open, onClose, settings, onPatch }: SettingsModa
   ];
 
   const lastVaultName = settings.lastVaultPath
-    ? settings.lastVaultPath.split("/").pop() ?? settings.lastVaultPath
+    ? (settings.lastVaultPath.split("/").pop() ?? settings.lastVaultPath)
     : null;
 
   return (
@@ -105,9 +112,16 @@ export function SettingsModal({ open, onClose, settings, onPatch }: SettingsModa
         )}
 
         <section className="settings__section">
+          <label className="settings__label">Diagnostics and vault</label>
+          <Button variant="secondary" size="sm" onClick={onOpenTools}>
+            Diagnostics &amp; Vault Health
+          </Button>
+        </section>
+
+        <section className="settings__section">
           <p className="settings__about">
-            Notes are encrypted at rest and never leave this device. There is no passphrase
-            reset — see the &ldquo;Welcome to Driftleaf&rdquo; note in your vault, or
+            Notes are encrypted at rest and never leave this device. There is no passphrase reset —
+            see the &ldquo;Welcome to Driftleaf&rdquo; note in your vault, or
             <code>docs/RECOVERY.md</code> in the project repo, for the full recovery story.
           </p>
         </section>

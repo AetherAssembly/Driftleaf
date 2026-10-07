@@ -6,8 +6,16 @@ import { SettingsModal } from "./components/SettingsModal";
 import { MoveNoteModal } from "./components/MoveNoteModal";
 import { WelcomeModal } from "./components/WelcomeModal";
 import { QuickCapture } from "./components/QuickCapture";
+import { VaultToolsModal } from "./components/VaultToolsModal";
+import { DatabaseView } from "./components/DatabaseView";
 import { CommandPalette, type Command } from "./components/CommandPalette";
-import type { AppSettings, NoteMeta, SearchResult, VaultRecoveryReport } from "../shared/ipc";
+import type {
+  AppSettings,
+  DatabaseMeta,
+  NoteMeta,
+  SearchResult,
+  VaultRecoveryReport,
+} from "../shared/ipc";
 
 const WELCOMED_KEY = "driftleaf:welcomed";
 const DAILY_FOLDER = "Daily";
@@ -38,7 +46,9 @@ function describeRecovery(report: VaultRecoveryReport): string | null {
     parts.push(`renamed ${report.renamedLegacy.length} note file(s) to match their title`);
   }
   if (report.removedDangling.length > 0) {
-    parts.push(`removed ${report.removedDangling.length} stale entr${report.removedDangling.length === 1 ? "y" : "ies"}`);
+    parts.push(
+      `removed ${report.removedDangling.length} stale entr${report.removedDangling.length === 1 ? "y" : "ies"}`,
+    );
   }
   if (parts.length === 0) return null;
   return `Vault self-check: ${parts.join(", ")}.`;
@@ -50,8 +60,10 @@ export default function App() {
   const [unlocked, setUnlocked] = useState(false);
   const [folders, setFolders] = useState<string[]>([""]);
   const [notes, setNotes] = useState<NoteMeta[]>([]);
+  const [databases, setDatabases] = useState<DatabaseMeta[]>([]);
   const [selectedFolder, setSelectedFolder] = useState("");
   const [selectedNote, setSelectedNote] = useState<NoteMeta | null>(null);
+  const [selectedDatabaseId, setSelectedDatabaseId] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [searchQuery, setSearchQuery] = useState("");
@@ -63,6 +75,7 @@ export default function App() {
     autosaveIntervalMs: 500,
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [vaultToolsOpen, setVaultToolsOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [moveNoteId, setMoveNoteId] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -129,12 +142,14 @@ export default function App() {
   }, [flushPendingSave, flushPendingRename]);
 
   const refreshVaultState = useCallback(async () => {
-    const [folderList, noteList] = await Promise.all([
+    const [folderList, noteList, databaseList] = await Promise.all([
       window.driftleaf.notes.listFolders(),
       window.driftleaf.notes.list(),
+      window.driftleaf.databases.list(),
     ]);
     setFolders(folderList);
     setNotes(noteList);
+    setDatabases(databaseList);
   }, []);
 
   useEffect(() => {
@@ -167,13 +182,13 @@ export default function App() {
         // Don't stack the command palette on top of another already-open overlay — none of
         // these native/hand-rolled modals currently stop this window-level listener from
         // firing while they're focused.
-        if (settingsOpen || moveNoteId || quickCaptureOpen || showWelcome) return;
+        if (settingsOpen || vaultToolsOpen || moveNoteId || quickCaptureOpen || showWelcome) return;
         setCommandPaletteOpen((v) => !v);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [unlocked, settingsOpen, moveNoteId, quickCaptureOpen, showWelcome]);
+  }, [unlocked, settingsOpen, vaultToolsOpen, moveNoteId, quickCaptureOpen, showWelcome]);
 
   async function handlePatchSettings(update: Partial<AppSettings>) {
     const next = await window.driftleaf.settings.patch(update);
@@ -187,12 +202,18 @@ export default function App() {
     try {
       const text = await window.driftleaf.notes.read(id);
       setSelectedNote(note);
+      setSelectedDatabaseId(null);
       setSelectedFolder(note.folderPath);
       setContent(text);
       setSaveStatus("idle");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to open note");
     }
+  }
+
+  function openDatabase(id: string) {
+    setSelectedNote(null);
+    setSelectedDatabaseId(id);
   }
 
   async function findNoteAnywhere(id: string): Promise<NoteMeta | undefined> {
@@ -246,6 +267,7 @@ export default function App() {
       const meta = await window.driftleaf.notes.create(selectedFolder, "Untitled");
       setNotes((prev) => [...prev, meta]);
       setSelectedNote(meta);
+      setSelectedDatabaseId(null);
       setContent("");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to create note");
@@ -308,6 +330,7 @@ export default function App() {
       setFolders((prev) => (prev.includes(DAILY_FOLDER) ? prev : [...prev, DAILY_FOLDER].sort()));
       setSelectedFolder(DAILY_FOLDER);
       setSelectedNote(meta);
+      setSelectedDatabaseId(null);
       setContent("");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to open daily note");
@@ -320,11 +343,23 @@ export default function App() {
     try {
       const result = await window.driftleaf.notes.import(paths, selectedFolder);
       await refreshVaultState();
-      const noun = result.imported === 1 ? "note" : "notes";
+      const importedParts: string[] = [];
+      if (result.imported > 0) {
+        importedParts.push(`${result.imported} ${result.imported === 1 ? "note" : "notes"}`);
+      }
+      if (result.importedDatabases > 0) {
+        importedParts.push(
+          `${result.importedDatabases} ${result.importedDatabases === 1 ? "database" : "databases"}`,
+        );
+      }
+      const summary =
+        importedParts.length > 0
+          ? `Imported ${importedParts.join(" and ")}.`
+          : "Nothing was imported.";
       if (result.skipped.length > 0) {
-        showToast(`Imported ${result.imported} ${noun}. Skipped: ${result.skipped.join("; ")}`);
+        showToast(`${summary} Skipped: ${result.skipped.join("; ")}`);
       } else {
-        showToast(`Imported ${result.imported} ${noun}.`);
+        showToast(summary);
       }
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Import failed");
@@ -361,7 +396,9 @@ export default function App() {
       // Functional updaters read the latest state at update time regardless of how stale
       // this closure is, so these two don't need the selectedNoteRef workaround above.
       setSelectedFolder((prev) => (prev === oldPath ? newPath : prev));
-      setSelectedNote((prev) => (prev?.folderPath === oldPath ? { ...prev, folderPath: newPath } : prev));
+      setSelectedNote((prev) =>
+        prev?.folderPath === oldPath ? { ...prev, folderPath: newPath } : prev,
+      );
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to rename folder");
     }
@@ -369,8 +406,14 @@ export default function App() {
 
   async function handleDeleteFolder(folderPath: string) {
     try {
+      const deletingSelectedDatabase = databases.some(
+        (database) =>
+          database.id === selectedDatabaseId &&
+          (database.folderPath === folderPath || database.folderPath.startsWith(folderPath + "/")),
+      );
       const deletedIds = await window.driftleaf.folders.delete(folderPath);
       await refreshVaultState();
+      if (deletingSelectedDatabase) setSelectedDatabaseId(null);
       if (deletedIds.includes(selectedNote?.id ?? "")) {
         setSelectedNote(null);
         setContent("");
@@ -411,6 +454,7 @@ export default function App() {
     await window.driftleaf.vault.lock();
     setUnlocked(false);
     setSelectedNote(null);
+    setSelectedDatabaseId(null);
     setContent("");
     setSearchQuery("");
     setSearchResults([]);
@@ -436,7 +480,11 @@ export default function App() {
 
   const commands: Command[] = [
     { id: "new-note", label: "New note", run: () => void handleCreateNote() },
-    { id: "import", label: "Import notes (.md / .zip)…", run: () => void handleImport() },
+    {
+      id: "import",
+      label: "Import notes or databases (.md / .csv / .json / .zip)…",
+      run: () => void handleImport(),
+    },
     { id: "daily-note", label: "Daily note (today)", run: () => void handleOpenDailyNote() },
     { id: "open-settings", label: "Open settings", run: () => setSettingsOpen(true) },
     { id: "lock-vault", label: "Lock vault", run: () => void handleLock() },
@@ -452,10 +500,16 @@ export default function App() {
       <Sidebar
         folders={folders}
         notes={notes}
+        databases={databases}
         selectedFolder={selectedFolder}
-        onSelectFolder={setSelectedFolder}
+        onSelectFolder={(folder) => {
+          setSelectedFolder(folder);
+          setSelectedDatabaseId(null);
+        }}
         selectedNoteId={selectedNote?.id ?? null}
+        selectedDatabaseId={selectedDatabaseId}
         onSelectNote={(id) => void openNote(id)}
+        onSelectDatabase={openDatabase}
         onCreateNote={() => void handleCreateNote()}
         onCreateFolder={(path) => void handleCreateFolder(path)}
         onImport={() => void handleImport()}
@@ -470,7 +524,16 @@ export default function App() {
         onDeleteFolder={(fp) => void handleDeleteFolder(fp)}
       />
       <main className="main">
-        {selectedNote ? (
+        {selectedDatabaseId ? (
+          <DatabaseView
+            key={selectedDatabaseId}
+            databaseId={selectedDatabaseId}
+            onDeleted={() => {
+              setSelectedDatabaseId(null);
+              void refreshVaultState();
+            }}
+          />
+        ) : selectedNote ? (
           <Editor
             note={selectedNote}
             content={content}
@@ -487,8 +550,18 @@ export default function App() {
       <SettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+        onOpenTools={() => {
+          setSettingsOpen(false);
+          setVaultToolsOpen(true);
+        }}
         settings={settings}
         onPatch={(update) => void handlePatchSettings(update)}
+      />
+      <VaultToolsModal
+        open={vaultToolsOpen}
+        onClose={() => setVaultToolsOpen(false)}
+        theme={settings.theme}
+        noteCount={notes.length}
       />
       {moveNoteId && (
         <MoveNoteModal

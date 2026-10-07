@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button, Card, Input, Modal } from "@aetherAssembly/ui";
-import type { VaultRecoveryReport } from "../../shared/ipc";
+import type { VaultRecoveryReport, VaultTemplateId } from "../../shared/ipc";
 
 interface UnlockScreenProps {
   onUnlocked: (recovery?: VaultRecoveryReport) => void;
@@ -10,6 +10,7 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
   const [rootPath, setRootPath] = useState<string | null>(null);
   const [passphrase, setPassphrase] = useState("");
   const [mode, setMode] = useState<"create" | "unlock" | null>(null);
+  const [template, setTemplate] = useState<VaultTemplateId>("blank");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [lastVaultPath, setLastVaultPath] = useState<string | null>(null);
@@ -50,6 +51,7 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
 
     setRootPath(picked);
     setMode(next);
+    if (next === "create") setTemplate("blank");
   }
 
   async function performSubmit() {
@@ -58,7 +60,7 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
     setError(null);
     try {
       if (mode === "create") {
-        await window.driftleaf.vault.create(rootPath, passphrase);
+        await window.driftleaf.vault.create(rootPath, passphrase, template);
         onUnlocked();
       } else {
         const recovery = await window.driftleaf.vault.unlock(rootPath, passphrase);
@@ -118,6 +120,24 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
             }}
           >
             <p className="unlock-screen__path">{rootPath}</p>
+            {mode === "create" && (
+              <label className="unlock-screen__template">
+                Vault template
+                <select
+                  value={template}
+                  onChange={(event) => setTemplate(event.target.value as VaultTemplateId)}
+                >
+                  <option value="blank">Blank vault</option>
+                  <option value="general">General notes</option>
+                  <option value="productivity">To-do / Productivity</option>
+                  <option value="journal">Journal</option>
+                  <option value="study">Study / School</option>
+                </select>
+                <span className="unlock-screen__template-hint">
+                  Templates create ordinary folders and Markdown notes in your vault.
+                </span>
+              </label>
+            )}
             <Input
               type="password"
               label="Passphrase (optional)"
@@ -169,8 +189,8 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
         title="This passphrase cannot be recovered"
       >
         <p>
-          Driftleaf never stores or transmits your passphrase. If you forget it, there is no
-          reset — your notes cannot be recovered.
+          Driftleaf never stores or transmits your passphrase. If you forget it, there is no reset —
+          your notes cannot be recovered.
         </p>
         <p>Write it down and keep it somewhere safe before you continue.</p>
         <div className="modal-actions">

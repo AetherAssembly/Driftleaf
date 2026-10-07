@@ -1,15 +1,18 @@
 import { useState } from "react";
 import { Button, Input, Badge, Modal } from "@aetherAssembly/ui";
-import type { NoteMeta, SearchResult } from "../../shared/ipc";
+import type { DatabaseMeta, NoteMeta, SearchResult } from "../../shared/ipc";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 
 interface SidebarProps {
   folders: string[];
   notes: NoteMeta[];
+  databases: DatabaseMeta[];
   selectedFolder: string;
   onSelectFolder: (folderPath: string) => void;
   selectedNoteId: string | null;
+  selectedDatabaseId: string | null;
   onSelectNote: (id: string) => void;
+  onSelectDatabase: (id: string) => void;
   onCreateNote: () => void;
   onCreateFolder: (folderPath: string) => void;
   onImport: () => void;
@@ -32,10 +35,13 @@ function folderLabel(folderPath: string): string {
 export function Sidebar({
   folders,
   notes,
+  databases,
   selectedFolder,
   onSelectFolder,
   selectedNoteId,
+  selectedDatabaseId,
   onSelectNote,
+  onSelectDatabase,
   onCreateNote,
   onCreateFolder,
   onImport,
@@ -64,14 +70,13 @@ export function Sidebar({
   const isSearching = searchQuery.trim().length > 0;
 
   const visibleNotes = isSearching
-    ? searchResults.map((r) => notes.find((n) => n.id === r.id)).filter(Boolean) as NoteMeta[]
+    ? (searchResults.map((r) => notes.find((n) => n.id === r.id)).filter(Boolean) as NoteMeta[])
     : notes.filter((n) => n.folderPath === selectedFolder);
 
   function noteCountForFolder(folder: string) {
     if (folder === "") return notes.length;
-    return notes.filter(
-      (n) => n.folderPath === folder || n.folderPath.startsWith(folder + "/"),
-    ).length;
+    return notes.filter((n) => n.folderPath === folder || n.folderPath.startsWith(folder + "/"))
+      .length;
   }
 
   function folderDepth(folderPath: string): number {
@@ -97,15 +102,16 @@ export function Sidebar({
     } else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && visibleNotes.length > 0) {
       // Navigate notes list with arrow keys
       e.preventDefault();
-      const newIndex = keyboardFocusedNoteIndex === null
-        ? 0
-        : Math.max(
-            0,
-            Math.min(
-              visibleNotes.length - 1,
-              keyboardFocusedNoteIndex + (e.key === "ArrowDown" ? 1 : -1),
-            ),
-          );
+      const newIndex =
+        keyboardFocusedNoteIndex === null
+          ? 0
+          : Math.max(
+              0,
+              Math.min(
+                visibleNotes.length - 1,
+                keyboardFocusedNoteIndex + (e.key === "ArrowDown" ? 1 : -1),
+              ),
+            );
       setKeyboardFocusedNoteIndex(newIndex);
     } else if (e.key === "Enter" && keyboardFocusedNoteIndex !== null) {
       // Select focused note
@@ -149,9 +155,7 @@ export function Sidebar({
             onClick: () => setDeletingFolder(contextMenu.target),
           },
         ]
-      : [
-          { label: "Move to…", onClick: () => onMoveNote(contextMenu.target) },
-        ]
+      : [{ label: "Move to…", onClick: () => onMoveNote(contextMenu.target) }]
     : [];
 
   return (
@@ -178,9 +182,7 @@ export function Sidebar({
                 aria-label={`${result.title || "Untitled"} in ${result.folderPath || "root"}`}
               >
                 <strong>{result.title || "Untitled"}</strong>
-                <span className="sidebar__result-folder">
-                  {result.folderPath || "Root"}
-                </span>
+                <span className="sidebar__result-folder">{result.folderPath || "Root"}</span>
                 <span
                   className="sidebar__snippet"
                   dangerouslySetInnerHTML={{ __html: result.snippet }}
@@ -195,10 +197,21 @@ export function Sidebar({
           <div className="sidebar__folders-header">
             <span className="sidebar__section-label">Folders</span>
             <div className="sidebar__folders-header-actions">
-              <Button variant="ghost" size="sm" onClick={onImport} title="Import .md or .zip files" aria-label="Import files">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onImport}
+                title="Import Markdown notes and CSV/JSON databases, including from ZIP files"
+                aria-label="Import files"
+              >
                 Import
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setShowNewFolder(true)} aria-label="Create new folder">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowNewFolder(true)}
+                aria-label="Create new folder"
+              >
                 + Folder
               </Button>
             </div>
@@ -270,7 +283,12 @@ export function Sidebar({
 
           <div className="sidebar__notes-header">
             <span>{folderLabel(selectedFolder)}</span>
-            <Button size="sm" variant="secondary" onClick={onCreateNote} aria-label="Create new note">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={onCreateNote}
+              aria-label="Create new note"
+            >
               + Note
             </Button>
           </div>
@@ -293,7 +311,7 @@ export function Sidebar({
                 </li>
               ))}
             {notes.filter((n) => n.folderPath === selectedFolder).length === 0 &&
-              (notes.length === 0 ? (
+              (notes.length === 0 && databases.length === 0 ? (
                 <li className="sidebar__empty">
                   Your vault is empty. Click &ldquo;+ Note&rdquo; to create your first note.
                 </li>
@@ -301,6 +319,26 @@ export function Sidebar({
                 <li className="sidebar__empty">This folder is empty.</li>
               ))}
           </ul>
+          {databases.filter((database) => database.folderPath === selectedFolder).length > 0 && (
+            <>
+              <div className="sidebar__notes-header">Databases</div>
+              <ul className="sidebar__list">
+                {databases
+                  .filter((database) => database.folderPath === selectedFolder)
+                  .map((database) => (
+                    <li key={database.id}>
+                      <button
+                        className={`sidebar__item${database.id === selectedDatabaseId ? " sidebar__item--active" : ""}`}
+                        onClick={() => onSelectDatabase(database.id)}
+                        aria-label={`${database.title} database`}
+                      >
+                        {database.title}
+                      </button>
+                    </li>
+                  ))}
+              </ul>
+            </>
+          )}
         </>
       )}
 
@@ -322,11 +360,7 @@ export function Sidebar({
         />
       )}
 
-      <Modal
-        open={!!deletingFolder}
-        onClose={() => setDeletingFolder(null)}
-        title="Delete folder?"
-      >
+      <Modal open={!!deletingFolder} onClose={() => setDeletingFolder(null)} title="Delete folder?">
         <p>
           &ldquo;{deletingFolder?.split("/").pop()}&rdquo; and all notes inside it will be
           permanently deleted.
