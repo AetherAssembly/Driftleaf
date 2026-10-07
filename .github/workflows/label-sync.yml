@@ -1,0 +1,91 @@
+name: Label sync
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/labels.yml
+  workflow_dispatch:
+
+jobs:
+  sync:
+    name: Sync labels to GitHub
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Parse .github/labels.yml → labels.json using Python's built-in yaml module
+      - name: Parse labels.yml
+        run: |
+          python3 -c "
+          import yaml, json
+          with open('.github/labels.yml') as f:
+              labels = yaml.safe_load(f)
+          with open('labels.json', 'w') as f:
+              json.dump(labels, f)
+          "
+
+      # Syncs labels.json → GitHub issue labels.
+      # Labels in the file but not on GitHub are created.
+      # Labels on GitHub but not in the file are deleted.
+      # Labels that exist in both are updated if name/color/description changed.
+      - name: Sync labels
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const desired = JSON.parse(fs.readFileSync('labels.json', 'utf8'));
+
+            const { data: existing } = await github.rest.issues.listLabelsForRepo({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              per_page: 100,
+            });
+
+            const desiredMap  = new Map(desired.map(l => [l.name, l]));
+            const existingMap = new Map(existing.map(l => [l.name, l]));
+
+            // Create or update
+            for (const label of desired) {
+              const current = existingMap.get(label.name);
+              const color   = label.color.replace('#', '');
+
+              if (!current) {
+                await github.rest.issues.createLabel({
+                  owner:       context.repo.owner,
+                  repo:        context.repo.repo,
+                  name:        label.name,
+                  color,
+                  description: label.description ?? '',
+                });
+                console.log(`Created: ${label.name}`);
+              } else if (current.color !== color || current.description !== (label.description ?? '')) {
+                await github.rest.issues.updateLabel({
+                  owner:       context.repo.owner,
+                  repo:        context.repo.repo,
+                  name:        label.name,
+                  color,
+                  description: label.description ?? '',
+                });
+                console.log(`Updated: ${label.name}`);
+              } else {
+                console.log(`Unchanged: ${label.name}`);
+              }
+            }
+
+            // Delete labels on GitHub that aren't in the file
+            for (const label of existing) {
+              if (!desiredMap.has(label.name)) {
+                await github.rest.issues.deleteLabel({
+                  owner: context.repo.owner,
+                  repo:  context.repo.repo,
+                  name:  label.name,
+                });
+                console.log(`Deleted: ${label.name}`);
+              }
+            }
