@@ -42,6 +42,7 @@ export function VaultToolsModal({ open, onClose, theme, noteCount }: VaultToolsM
   const [diagnostics, setDiagnostics] = useState<AppDiagnostics | null>(null);
   const [healthReport, setHealthReport] = useState<VaultHealthReport | null>(null);
   const [backupReport, setBackupReport] = useState<VaultHealthReport | null>(null);
+  const [createdBackupPath, setCreatedBackupPath] = useState<string | null>(null);
   const [backupPath, setBackupPath] = useState<string | null>(null);
   const [backupPassphrase, setBackupPassphrase] = useState("");
   const [backupNeedsPassphrase, setBackupNeedsPassphrase] = useState(false);
@@ -115,9 +116,46 @@ export function VaultToolsModal({ open, onClose, theme, noteCount }: VaultToolsM
     }
   }
 
+  async function createBackup() {
+    setBusy(true);
+    setError(null);
+    setCreatedBackupPath(null);
+    try {
+      const destination = await window.driftleaf.vault.pickBackupDestination();
+      if (!destination) return;
+      setCreatedBackupPath(await window.driftleaf.vault.createBackup(destination));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create backup");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Modal open={open} onClose={onClose} title="Diagnostics & Vault Health">
       <div className="tools-modal">
+        <section className="tools-modal__section">
+          <strong>Create a backup</strong>
+          <p className="settings__about">
+            Copy the open vault, including its hidden encrypted database files, into a new dated
+            folder. Existing backups are never overwritten. Choose a destination outside the vault.
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={busy}
+            disabled={busy}
+            onClick={() => void createBackup()}
+          >
+            Create backup…
+          </Button>
+          {createdBackupPath && (
+            <p className="settings__about" role="status">
+              Backup created at <span className="unlock-screen__path">{createdBackupPath}</span>
+            </p>
+          )}
+        </section>
+
         <section className="tools-modal__section">
           <strong>Diagnostics</strong>
           <p className="settings__about">

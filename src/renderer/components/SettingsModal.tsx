@@ -44,6 +44,10 @@ export function SettingsModal({
     { value: "system", label: "System" },
     { value: "light", label: "Light" },
     { value: "dark", label: "Dark" },
+    { value: "aquatic", label: "Aquatic" },
+    { value: "mossy", label: "Mossy" },
+    { value: "sunset", label: "Sunset" },
+    { value: "space", label: "Space" },
   ];
 
   const lastVaultName = settings.lastVaultPath
@@ -62,14 +66,15 @@ export function SettingsModal({
                 variant={settings.theme === t.value ? "primary" : "ghost"}
                 size="sm"
                 onClick={() => onPatch({ theme: t.value })}
+                aria-pressed={settings.theme === t.value}
               >
                 {t.label}
               </Button>
             ))}
           </div>
           <p className="settings__about">
-            System follows your operating-system color preference when available; otherwise it
-            defaults to Light.
+            System follows your operating-system color preference. Aquatic, Mossy, Sunset, and
+            Space are dark color themes.
           </p>
         </section>
 

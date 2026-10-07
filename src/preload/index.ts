@@ -5,6 +5,10 @@ const api: DriftleafApi = {
   vault: {
     pickDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.vaultPickDirectory),
     pickBackupDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.vaultPickBackupDirectory),
+    pickBackupDestination: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.vaultPickBackupDestination),
+    createBackup: (destinationPath) =>
+      ipcRenderer.invoke(IPC_CHANNELS.vaultCreateBackup, destinationPath),
     pickImportFiles: () => ipcRenderer.invoke(IPC_CHANNELS.vaultPickImportFiles),
     create: (rootPath, passphrase, template) =>
       ipcRenderer.invoke(IPC_CHANNELS.vaultCreate, rootPath, passphrase, template),
@@ -31,6 +35,8 @@ const api: DriftleafApi = {
   databases: {
     list: (folderPath) => ipcRenderer.invoke(IPC_CHANNELS.databasesList, folderPath),
     read: (id) => ipcRenderer.invoke(IPC_CHANNELS.databasesRead, id),
+    create: (title, folderPath) =>
+      ipcRenderer.invoke(IPC_CHANNELS.databasesCreate, title, folderPath),
     update: (id, properties, rows) =>
       ipcRenderer.invoke(IPC_CHANNELS.databasesUpdate, id, properties, rows),
     createRow: (databaseId) => ipcRenderer.invoke(IPC_CHANNELS.databasesCreateRow, databaseId),

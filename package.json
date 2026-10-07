@@ -1,6 +1,6 @@
 {
   "name": "driftleaf",
-  "version": "0.4.1",
+  "version": "0.4.4",
   "description": "So your thoughts don't drift. A local-first, encrypted-by-default notes app.",
   "main": "dist-electron/main/index.js",
   "private": true,

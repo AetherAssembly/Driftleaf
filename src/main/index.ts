@@ -1,9 +1,13 @@
-import { app, BrowserWindow, globalShortcut } from "electron";
+import { app, BrowserWindow, globalShortcut, shell } from "electron";
 import path from "node:path";
 import { registerIpcHandlers } from "./ipc";
 import { RENDERER_EVENTS } from "../shared/ipc";
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
+
+if (process.platform === "linux") {
+  app.setDesktopName("driftleaf.desktop");
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -15,6 +19,34 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (URL.canParse(url)) {
+      const externalUrl = new URL(url);
+      if (externalUrl.protocol === "https:") {
+        void shell.openExternal(externalUrl.href).catch((err: unknown) => {
+          console.error("Failed to open external link:", err);
+        });
+      }
+    }
+    return { action: "deny" };
+  });
+  win.webContents.on("will-navigate", (event, url) => {
+    if (!URL.canParse(url)) return;
+    const destination = new URL(url);
+    const current = URL.canParse(win.webContents.getURL())
+      ? new URL(win.webContents.getURL())
+      : null;
+    if (current?.origin === destination.origin) return;
+    if (destination.protocol === "http:" || destination.protocol === "https:") {
+      event.preventDefault();
+      if (destination.protocol === "https:") {
+        void shell.openExternal(destination.href).catch((err: unknown) => {
+          console.error("Failed to open external link:", err);
+        });
+      }
+    }
   });
 
   registerIpcHandlers(win);

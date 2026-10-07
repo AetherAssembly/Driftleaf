@@ -21,7 +21,7 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
     void window.driftleaf.settings.read().then((s) => setLastVaultPath(s.lastVaultPath));
   }, []);
 
-  async function openWithoutPassphrase(path: string) {
+  async function openLegacyVault(path: string) {
     setBusy(true);
     setError(null);
     try {
@@ -44,7 +44,7 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
     if (next === "unlock") {
       const needsPassphrase = await window.driftleaf.vault.hasPassphrase(picked);
       if (!needsPassphrase) {
-        await openWithoutPassphrase(picked);
+        await openLegacyVault(picked);
         return;
       }
     }
@@ -60,6 +60,9 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
     setError(null);
     try {
       if (mode === "create") {
+        if (!passphrase || passphrase.trim().length === 0) {
+          throw new Error("A passphrase is required to create a vault.");
+        }
         await window.driftleaf.vault.create(rootPath, passphrase, template);
         onUnlocked();
       } else {
@@ -74,9 +77,15 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
   }
 
   function submit() {
-    if (mode === "create" && passphrase && !acknowledgedNoRecovery) {
-      setConfirmingNoRecovery(true);
-      return;
+    if (mode === "create") {
+      if (!passphrase || passphrase.trim().length === 0) {
+        setError("A passphrase is required to create a vault.");
+        return;
+      }
+      if (!acknowledgedNoRecovery) {
+        setConfirmingNoRecovery(true);
+        return;
+      }
     }
     void performSubmit();
   }
@@ -96,7 +105,7 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
               <Button
                 variant="primary"
                 loading={busy}
-                onClick={() => void openWithoutPassphrase(lastVaultPath)}
+                onClick={() => void openLegacyVault(lastVaultPath)}
               >
                 Reopen {lastVaultPath.split("/").pop()}
               </Button>
@@ -148,7 +157,7 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
             )}
             <Input
               type="password"
-              label="Passphrase (optional)"
+              label="Passphrase"
               autoFocus
               value={passphrase}
               onChange={(e) => {
@@ -158,23 +167,18 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
                 // (e.g. retrying after a failed create) shouldn't carry that acknowledgment
                 // over to a passphrase the user never actually confirmed.
                 setAcknowledgedNoRecovery(false);
+                if (error) setError(null);
               }}
               error={error ?? undefined}
               hint={
                 mode === "create"
-                  ? passphrase
-                    ? "There is no password recovery — write this down somewhere safe."
-                    : "No passphrase — anyone with access to this device can open this vault."
+                  ? "There is no password recovery — write this down somewhere safe."
                   : undefined
               }
             />
             <div className="unlock-screen__actions">
               <Button type="submit" variant="primary" loading={busy}>
-                {mode === "create"
-                  ? passphrase
-                    ? "Create vault"
-                    : "Create vault without a passphrase"
-                  : "Unlock"}
+                {mode === "create" ? "Create vault" : "Unlock"}
               </Button>
               <Button
                 type="button"

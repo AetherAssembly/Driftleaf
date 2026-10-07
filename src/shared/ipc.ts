@@ -3,10 +3,12 @@
 
 export interface AppSettings {
   lastVaultPath: string | null;
-  theme: "system" | "light" | "dark";
+  theme: Theme;
   editorFontSizePx: number;
   autosaveIntervalMs: number;
 }
+
+export type Theme = "system" | "light" | "dark" | "aquatic" | "mossy" | "sunset" | "space";
 
 export type VaultTemplateId = "blank" | "general" | "productivity" | "journal" | "study";
 
@@ -120,6 +122,8 @@ export interface DriftleafApi {
   vault: {
     pickDirectory(): Promise<string | null>;
     pickBackupDirectory(): Promise<string | null>;
+    pickBackupDestination(): Promise<string | null>;
+    createBackup(destinationPath: string): Promise<string>;
     pickImportFiles(): Promise<string[] | null>;
     create(rootPath: string, passphrase: string, template: VaultTemplateId): Promise<void>;
     unlock(rootPath: string, passphrase: string): Promise<VaultRecoveryReport>;
@@ -142,6 +146,7 @@ export interface DriftleafApi {
   databases: {
     list(folderPath?: string): Promise<DatabaseMeta[]>;
     read(id: string): Promise<DatabaseData>;
+    create(title: string, folderPath: string): Promise<DatabaseMeta>;
     update(id: string, properties: DatabaseProperty[], rows: DatabaseRow[]): Promise<void>;
     createRow(databaseId: string): Promise<DatabaseRow>;
     deleteRow(databaseId: string, rowId: string): Promise<void>;
@@ -177,6 +182,8 @@ export const RENDERER_EVENTS = {
 export const IPC_CHANNELS = {
   vaultPickDirectory: "vault:pickDirectory",
   vaultPickBackupDirectory: "vault:pickBackupDirectory",
+  vaultPickBackupDestination: "vault:pickBackupDestination",
+  vaultCreateBackup: "vault:createBackup",
   vaultPickImportFiles: "vault:pickImportFiles",
   vaultCreate: "vault:create",
   vaultUnlock: "vault:unlock",
@@ -194,6 +201,7 @@ export const IPC_CHANNELS = {
   notesImport: "notes:import",
   databasesList: "databases:list",
   databasesRead: "databases:read",
+  databasesCreate: "databases:create",
   databasesUpdate: "databases:update",
   databasesCreateRow: "databases:createRow",
   databasesDeleteRow: "databases:deleteRow",

@@ -4,7 +4,18 @@
 // can render without decrypting every note — only note *content* is encrypted.
 
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile, rm, rename, readdir, stat } from "node:fs/promises";
+import {
+  access,
+  cp,
+  mkdir,
+  readFile,
+  realpath,
+  writeFile,
+  rm,
+  rename,
+  readdir,
+  stat,
+} from "node:fs/promises";
 import path from "node:path";
 import AdmZip from "adm-zip";
 import {
@@ -14,7 +25,6 @@ import {
   packPayload,
   unpackPayload,
   generateSalt,
-  generateKey,
 } from "./crypto";
 import { getVaultTemplate } from "./templates";
 import { parseCsvDatabase, parseJsonDatabase } from "./database-import";
@@ -376,9 +386,8 @@ function databasePath(vault: Vault, id: string): string {
   return databaseFilePath(vault.rootPath, id);
 }
 
-// "scrypt" vaults derive their key from a passphrase; "none" vaults hold the
-// (unprotected) key directly, for people who don't want a passphrase prompt.
-// Note content is encrypted at rest either way — only the passphrase gate is optional.
+// "scrypt" vaults derive their key from a passphrase. "none" remains only for
+// compatibility with legacy vaults created before this requirement was enforced.
 type VaultConfig =
   { version: 1; kdf: "scrypt"; saltHex: string } | { version: 1; kdf: "none"; keyHex: string };
 
@@ -386,6 +395,58 @@ export interface Vault {
   rootPath: string;
   key: Buffer;
   manifest: Manifest;
+}
+
+function pathIsWithin(parentPath: string, childPath: string): boolean {
+  const relative = path.relative(parentPath, childPath);
+  return (
+    relative === "" ||
+    (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`))
+  );
+}
+
+export async function createVaultBackup(vault: Vault, destinationParent: string): Promise<string> {
+  const sourcePath = await realpath(vault.rootPath);
+  const destinationPath = await realpath(destinationParent);
+  if (pathIsWithin(sourcePath, destinationPath)) {
+    throw new Error("Choose a backup destination outside the open vault folder");
+  }
+
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/:/g, "-")
+    .replace(/\.\d{3}Z$/, "Z");
+  const baseName = `Driftleaf-Backup-${timestamp}`;
+  let backupName = baseName;
+  for (let suffix = 2; ; suffix++) {
+    try {
+      await access(path.join(destinationPath, backupName));
+      backupName = `${baseName}-${suffix}`;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") break;
+      throw err;
+    }
+  }
+
+  const backupPath = path.join(destinationPath, backupName);
+  const temporaryPath = path.join(destinationPath, `.${backupName}.tmp-${randomUUID()}`);
+  try {
+    await cp(sourcePath, temporaryPath, {
+      recursive: true,
+      errorOnExist: true,
+      force: false,
+      preserveTimestamps: true,
+    });
+    await rename(temporaryPath, backupPath);
+    return backupPath;
+  } catch (err) {
+    try {
+      await rm(temporaryPath, { recursive: true, force: true });
+    } catch (cleanupError) {
+      console.error("Failed to remove incomplete vault backup:", cleanupError);
+    }
+    throw err;
+  }
 }
 
 // Reports what reconcileVault() found and fixed by cross-checking the manifest against
@@ -545,19 +606,16 @@ export async function createVault(
   passphrase: string,
   templateId: VaultTemplateId = "blank",
 ): Promise<Vault> {
+  if (!passphrase || passphrase.trim().length === 0) {
+    throw new Error("A passphrase is required to create a vault.");
+  }
+
   const template = getVaultTemplate(templateId);
   await mkdir(path.join(rootPath, DRIFTLEAF_DIR), { recursive: true });
 
-  let key: Buffer;
-  let config: VaultConfig;
-  if (passphrase) {
-    const salt = generateSalt();
-    key = await deriveVaultKey(passphrase, salt);
-    config = { version: 1, kdf: "scrypt", saltHex: salt.toString("hex") };
-  } else {
-    key = generateKey();
-    config = { version: 1, kdf: "none", keyHex: key.toString("hex") };
-  }
+  const salt = generateSalt();
+  const key = await deriveVaultKey(passphrase, salt);
+  const config: VaultConfig = { version: 1, kdf: "scrypt", saltHex: salt.toString("hex") };
   await writeFile(configPath(rootPath), JSON.stringify(config, null, 2), "utf-8");
 
   const canary = encrypt(Buffer.from(CANARY_TEXT, "utf-8"), key);

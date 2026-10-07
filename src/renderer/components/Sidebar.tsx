@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button, Input, Badge, Modal } from "@aetherAssembly/ui";
+import DOMPurify from "dompurify";
 import type { DatabaseMeta, NoteMeta, SearchResult } from "../../shared/ipc";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 
@@ -14,6 +15,7 @@ interface SidebarProps {
   onSelectNote: (id: string) => void;
   onSelectDatabase: (id: string) => void;
   onCreateNote: () => void;
+  onCreateDatabase: (title: string) => void;
   onCreateFolder: (folderPath: string) => void;
   onImport: () => void;
   searchQuery: string;
@@ -43,6 +45,7 @@ export function Sidebar({
   onSelectNote,
   onSelectDatabase,
   onCreateNote,
+  onCreateDatabase,
   onCreateFolder,
   onImport,
   searchQuery,
@@ -66,6 +69,8 @@ export function Sidebar({
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
+  const [creatingDatabase, setCreatingDatabase] = useState(false);
+  const [newDatabaseName, setNewDatabaseName] = useState("");
   const [keyboardFocusedNoteIndex, setKeyboardFocusedNoteIndex] = useState<number | null>(null);
   const isSearching = searchQuery.trim().length > 0;
 
@@ -145,6 +150,15 @@ export function Sidebar({
     setRenamingFolder(null);
   }
 
+  function submitCreateDatabase(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const title = newDatabaseName.trim();
+    if (!title) return;
+    onCreateDatabase(title);
+    setCreatingDatabase(false);
+    setNewDatabaseName("");
+  }
+
   const contextMenuItems: ContextMenuItem[] = contextMenu
     ? contextMenu.type === "folder"
       ? [
@@ -185,7 +199,12 @@ export function Sidebar({
                 <span className="sidebar__result-folder">{result.folderPath || "Root"}</span>
                 <span
                   className="sidebar__snippet"
-                  dangerouslySetInnerHTML={{ __html: result.snippet }}
+                  dangerouslySetInnerHTML={{
+                    __html: DOMPurify.sanitize(result.snippet, {
+                      ALLOWED_TAGS: ["mark"],
+                      ALLOWED_ATTR: [],
+                    }),
+                  }}
                 />
               </button>
             </li>
@@ -283,14 +302,27 @@ export function Sidebar({
 
           <div className="sidebar__notes-header">
             <span>{folderLabel(selectedFolder)}</span>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={onCreateNote}
-              aria-label="Create new note"
-            >
-              + Note
-            </Button>
+            <div className="sidebar__folders-header-actions">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={onCreateNote}
+                aria-label="Create new note"
+              >
+                + Note
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setNewDatabaseName("");
+                  setCreatingDatabase(true);
+                }}
+                aria-label="Create new database"
+              >
+                + Database
+              </Button>
+            </div>
           </div>
 
           <ul className="sidebar__list">
@@ -380,6 +412,30 @@ export function Sidebar({
             Yes, delete
           </Button>
         </div>
+      </Modal>
+
+      <Modal
+        open={creatingDatabase}
+        onClose={() => setCreatingDatabase(false)}
+        title="Create database"
+      >
+        <form onSubmit={submitCreateDatabase}>
+          <Input
+            autoFocus
+            label="Database name"
+            placeholder="Untitled database"
+            value={newDatabaseName}
+            onChange={(event) => setNewDatabaseName(event.target.value)}
+          />
+          <div className="modal-actions">
+            <Button variant="ghost" size="sm" onClick={() => setCreatingDatabase(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" type="submit" disabled={!newDatabaseName.trim()}>
+              Create
+            </Button>
+          </div>
+        </form>
       </Modal>
     </aside>
   );

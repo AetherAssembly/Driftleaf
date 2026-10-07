@@ -96,6 +96,10 @@ function toMatchQuery(query: string): string {
   return words.map((w) => `"${w.replace(/"/g, "")}"*`).join(" ");
 }
 
+function sanitizeSearchSnippet(snippet: string): string {
+  return snippet.replace(/<\/?(?!mark\b)[^>]+>/gi, "");
+}
+
 export function search(index: SearchIndex, query: string): SearchResult[] {
   const searchStart = Date.now();
   const matchQuery = toMatchQuery(query);
@@ -106,9 +110,10 @@ export function search(index: SearchIndex, query: string): SearchResult[] {
        FROM notes_fts WHERE notes_fts MATCH ? ORDER BY rank LIMIT 50`,
     )
     .all(matchQuery) as SearchResult[];
+  const safeRows = rows.map((row) => ({ ...row, snippet: sanitizeSearchSnippet(row.snippet) }));
   const searchDuration = Date.now() - searchStart;
   if (process.env.DEBUG_SEARCH) {
-    console.log(`[search] query "${query}": ${searchDuration}ms, ${rows.length} results`);
+    console.log(`[search] query "${query}": ${searchDuration}ms, ${safeRows.length} results`);
   }
-  return rows;
+  return safeRows;
 }

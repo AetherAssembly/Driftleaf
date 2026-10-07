@@ -1,4 +1,5 @@
 import { app, ipcMain, dialog, type BrowserWindow } from "electron";
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { IPC_CHANNELS } from "../shared/ipc";
@@ -39,6 +40,7 @@ function serialized<T>(fn: () => Promise<T>): Promise<T> {
 // channel directly with attacker-chosen paths.
 let lastPickedImportPaths: Set<string> | null = null;
 let lastPickedBackupPath: string | null = null;
+let lastPickedBackupDestination: string | null = null;
 
 // Translates raw Node fs error codes into messages a user can act on. Thrown errors from
 // an ipcMain.handle callback reject the renderer's invoke() promise with the message intact,
@@ -126,6 +128,28 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     if (result.canceled || result.filePaths.length === 0) return null;
     lastPickedBackupPath = result.filePaths[0];
     return lastPickedBackupPath;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.vaultPickBackupDestination, async () => {
+    lastPickedBackupDestination = null;
+    if (!currentWindow) return null;
+    const result = await dialog.showOpenDialog(currentWindow, {
+      properties: ["openDirectory"],
+      title: "Choose where to save the backup",
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    lastPickedBackupDestination = result.filePaths[0];
+    return lastPickedBackupDestination;
+  });
+
+  handle(IPC_CHANNELS.vaultCreateBackup, async (_e, destinationPath: string) => {
+    const selectedDestination = lastPickedBackupDestination;
+    lastPickedBackupDestination = null;
+    if (!selectedDestination || destinationPath !== selectedDestination) {
+      throw new Error("Choose the backup destination using the folder picker first");
+    }
+    const vault = requireVault();
+    return serialized(() => vaultModule.createVaultBackup(vault, selectedDestination));
   });
 
   ipcMain.handle(IPC_CHANNELS.vaultPickImportFiles, async () => {
@@ -292,6 +316,15 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   handle(IPC_CHANNELS.databasesRead, (_e, id: string) => {
     return vaultModule.readDatabase(requireVault(), id);
+  });
+
+  handle(IPC_CHANNELS.databasesCreate, async (_e, title: string, folderPath: string) => {
+    const vault = requireVault();
+    return serialized(() =>
+      vaultModule.createDatabase(vault, title, folderPath, [
+        { id: randomUUID(), name: "Title", type: "title" },
+      ], []),
+    );
   });
 
   handle(

@@ -24,9 +24,10 @@ function applyTheme(theme: AppSettings["theme"]) {
   const prefersDark =
     theme === "dark" ||
     (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  const resolvedTheme = prefersDark ? "dark" : "light";
+  const resolvedTheme =
+    theme === "system" ? (prefersDark ? "dark" : "light") : theme;
   document.documentElement.setAttribute("data-theme", resolvedTheme);
-  document.documentElement.style.colorScheme = resolvedTheme;
+  document.documentElement.style.colorScheme = resolvedTheme === "light" ? "light" : "dark";
 }
 
 function todayNoteTitle(): string {
@@ -274,6 +275,18 @@ export default function App() {
     }
   }
 
+  async function handleCreateDatabase(title: string) {
+    await flushPendingWrites();
+    try {
+      const database = await window.driftleaf.databases.create(title, selectedFolder);
+      setDatabases((previous) => [...previous, database]);
+      setSelectedNote(null);
+      setSelectedDatabaseId(database.id);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to create database");
+    }
+  }
+
   async function handleCreateFolder(folderPath: string) {
     try {
       await window.driftleaf.folders.create(folderPath);
@@ -511,6 +524,7 @@ export default function App() {
         onSelectNote={(id) => void openNote(id)}
         onSelectDatabase={openDatabase}
         onCreateNote={() => void handleCreateNote()}
+        onCreateDatabase={(title) => void handleCreateDatabase(title)}
         onCreateFolder={(path) => void handleCreateFolder(path)}
         onImport={() => void handleImport()}
         searchQuery={searchQuery}
