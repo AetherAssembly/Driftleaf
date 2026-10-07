@@ -18,7 +18,8 @@ my-vault/
 ├── .driftleaf/
 │   ├── vault.json        vault metadata: format version, scrypt salt (not the key)
 │   ├── canary.enc        known-plaintext blob, used to verify a passphrase on unlock
-│   └── manifest.json     plaintext note metadata: {id, title, folderPath, fileName, updatedAt}[]
+│   ├── manifest.json     plaintext note, folder, and database metadata
+│   └── <database-id>.db.enc  encrypted database schema and rows
 ├── Inbox/
 │   └── Grocery list.md.enc
 ├── Projects/
@@ -28,21 +29,24 @@ my-vault/
 
 Each note's `.enc` filename is derived from its title (`<title>.md.enc`, with a " (2)" suffix on a same-folder title collision). Like any encrypted file, it keeps its name with the extension changed, so the vault folder is browsable in a normal file manager. `fileName` stays in sync with `title` via `renameNote()` / `moveNote()` (see [Vault Resilience](#vault-resilience)). The `id` is purely an internal handle (React keys, search index, IPC references) — decoupled from where the file lives on disk.
 
+Database titles, IDs, folder placement, and update times are listed in the plaintext manifest. Each database's properties and rows are serialized and encrypted together in `.driftleaf/<database-id>.db.enc` with the vault key. A database is shown as a table in the app; it is not stored as a normal Markdown file.
+
 The search index is **not** persisted to disk. See [Search](#search) below.
 
 ## Encryption
 
-Notes are encrypted at rest from day one — this is not a bolt-on. Implemented in `src/main/crypto.ts` and `src/main/vault.ts`:
+Notes and database contents are encrypted at rest — this is not a bolt-on. Implemented in `src/main/crypto.ts` and `src/main/vault.ts`:
 
 - One key per vault, AES-256-GCM, in one of two modes (`vault.json`'s `kdf` field). Encryption itself is never optional — only the passphrase gate varies:
   - **`"scrypt"`** — key derived from a user passphrase via scrypt (`N=2^17, r=8, p=1`, `maxmem=256MB`) and a stored salt. Nothing about the key is recoverable without the passphrase.
   - **`"none"`** — a random key generated at vault creation and stored directly in `vault.json` (`keyHex`). No passphrase prompt on unlock. Notes are still encrypted at rest — this only removes the *gate*, not the encryption. But the key sits next to the ciphertext, so it protects against "someone skims your files" but not "someone has access to this device." For people who don't want a passphrase prompt (see `UnlockScreen`'s "Create vault without a passphrase" path).
 - Each note file's markdown content is encrypted individually, framed on disk as `[iv][authTag][ciphertext]` (`<title>.md.enc`), regardless of which kdf mode the vault uses.
+- Database schema and row values are encrypted as a single payload per database (`.driftleaf/<database-id>.db.enc`). The manifest contains only database metadata needed to list and locate it.
 - A canary file (`canary.enc`, a known plaintext string encrypted with the vault key) lets unlock fail fast with "incorrect passphrase" instead of surfacing a raw AES-GCM auth-tag error. Also doubles as a corruption check for `"none"`-mode vaults, which have no passphrase to get wrong.
 
 ### Design Decisions
 
-- **Plaintext manifest sidecar:** note titles and folder placement live in `manifest.json`, not inside the encrypted files. This trades some metadata privacy (an attacker with disk access can see titles and the folder tree, but not content) for a sidebar/search UI that doesn't require decrypting the whole vault on every render. Content is always encrypted; only title/folder/timestamp are plaintext.
+- **Plaintext manifest sidecar:** note titles, database titles, IDs, and folder placement live in `manifest.json`, not inside the encrypted files. This trades some metadata privacy (an attacker with disk access can see titles and the folder tree, but not content) for a sidebar/search UI that doesn't require decrypting the whole vault on every render. Note content and database properties/rows are encrypted; names, IDs, folder placement, and timestamps are plaintext.
 - **No recovery path** (explicit decision, not an oversight): for `"scrypt"`-mode vaults, a lost passphrase means the note content is unrecoverable (the manifest would still list titles, but not content). `UnlockScreen` gates vault creation with a confirmation modal stating this plainly before the vault is created. See [RECOVERY.md](RECOVERY.md) for the full story.
 
 ## Vault Resilience
@@ -62,16 +66,20 @@ Vault writes are structured so a crash or power loss mid-operation can't corrupt
 
 ### If Your Vault Won't Open at All
 
-If `.driftleaf/vault.json` or `canary.enc` is missing or unreadable, the vault can't be unlocked — these hold key material and aren't self-healing. Restore them from a backup of the `.driftleaf/` directory. `manifest.json` alone, by contrast, is disposable: delete it and the next unlock's `reconcileVault()` pass will rebuild it from the `.enc` files it finds on disk (titles are lost, content is not).
+If `.driftleaf/vault.json` or `canary.enc` is missing or unreadable, the vault can't be unlocked — these hold key material and aren't self-healing. Restore them from a backup of the `.driftleaf/` directory. Note files can be re-indexed from disk if `manifest.json` is lost, but database metadata cannot: database files are named by internal ID and are not automatically recovered. Restore the manifest (preferably the entire `.driftleaf/` directory) from a backup to retain databases.
 
 ## Import
 
-`importFiles()` (`src/main/vault.ts`) imports a batch of `.md` files and/or `.zip` archives into the currently selected folder:
+`importFiles()` (`src/main/vault.ts`) imports a batch of Markdown notes and databases into the currently selected folder:
 
-- **`.md` files** become a note titled after the filename (minus extension), with the file's contents as note content.
-- **`.zip` archives** (parsed with `adm-zip`, a pure-JS dependency — no native module rebuild step) are walked for every `.md` entry at any depth. The archive's internal folder structure is recreated as nested vault folders under the target folder, and each `.md` entry becomes a note. Non-`.md` entries are ignored. Zip entry paths are validated the same way as any other `folderPath` (rejecting `..` and absolute paths) to rule out zip-slip.
+- **`.md` files** become notes titled after the filename (minus extension), with the file's contents as note content.
+- **`.csv` files** become databases. Column names become properties, common types are inferred, and common headers such as tags, status, URL, email, and phone receive type hints.
+- **`.json` files** become databases from an array of objects or a top-level `data`, `results`, or `records` array. Notion-style exported property values and common type hints are normalized where supported.
+- **`.zip` archives** (parsed with `adm-zip`, a pure-JS dependency — no native module rebuild step) are walked for `.md`, `.csv`, and `.json` entries at any depth. The archive's internal folder structure is recreated under the target folder. Other entry types are ignored. Zip paths reject traversal and absolute paths to prevent zip-slip. Archives are limited to 20,000 entries and imported entries to 20 MiB each.
 
-One bad file or zip entry doesn't abort the batch — failures are collected into a `skipped` list (shown in the renderer's toast) rather than thrown, so a single malformed `.md` file in a large zip doesn't lose the rest of the import.
+Database tables support editable rows and properties, formula properties, relations to other Driftleaf databases, and basic rollups. Notion CSV exports do not include formula definitions, and formulas/relations are not guaranteed to transfer from JSON exports; formulas can be recreated in Driftleaf and relations between imported databases must be set up manually. Formula evaluation is a safe, limited implementation rather than full Notion formula-language compatibility.
+
+One bad file or archive entry doesn't abort the batch — failures are reported as skipped items so a single malformed file doesn't lose the rest of the import. See [DATABASES.md](DATABASES.md) for user-facing import, editing, formula, and relation details.
 
 ## Search
 
