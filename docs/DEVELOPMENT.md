@@ -24,6 +24,12 @@ Everything you need to build, test, and package Driftleaf locally.
 | Ruby | v2.7+ | `.deb` / `.rpm` packaging |
 | QEMU (optional) | Latest | ARM64 cross-compilation |
 
+### Important Notice
+
+> Installing build tools, package manager dependencies, or third-party packages can modify your system, add services, change package versions, and in some cases break software already installed on your machine. Only install packages you understand and trust, and use the commands in this guide at your own risk.
+>
+> AetherAssembly and its contributors are not responsible for any system breakage, dependency conflicts, data loss, or other issues caused by following these instructions or installing packages from external sources.
+
 ### Platform-Specific Build Tools
 
 #### **Arch Linux**
@@ -32,8 +38,11 @@ Everything you need to build, test, and package Driftleaf locally.
 sudo pacman -S --needed ruby gcc make fakeroot dpkg rpm-tools qemu-full virt-manager
 ```
 
-> **Note:** On Arch, you need both `dpkg` and `rpm-tools` to generate `.deb` and `.rpm` artifacts respectively, even though you're on an RPM-native system.
+> **Note:** On Arch-based distros, you need both `dpkg` and `rpm-tools` to generate `.deb` and `.rpm` artifacts respectively, even though you're on an RPM-native system.
+>
 > If you use CachyOS, follow [their wiki](https://wiki.cachyos.org/virtualization/qemu_and_vmm_setup/) on QEMU installation/setup.
+>
+> If you use Arch Linux, follow [their wiki](https://wiki.archlinux.org/title/QEMU) on QEMU installation/setup.
 
 #### **Debian/Ubuntu**
 
@@ -57,7 +66,7 @@ sudo zypper install ruby patterns-devel-base-devel_basis rpm-build dpkg qemu-sys
 
 ## Local Development
 
-### Initial Setup
+### Initial Setup for Linux
 
 ```sh
 # GitHub Packages auth (one-time setup)
@@ -69,6 +78,51 @@ npm install
 # Launch in development mode
 npm run dev
 ```
+
+### Initial Setup for Windows
+
+### 1. Open your User Folder
+
+1. Press **`Windows Key + R`** to open the Run dialog.
+2. Type `%userprofile%` and press **Enter**. 
+   *(This opens your user folder, like `C:\Users\YourName`)*.
+
+### 2. Create the `.npmrc` file
+
+1. Inside that folder, right-click and select **New > Text Document**.
+2. Name the file exactly: **`.npmrc`**
+3. **Important:** Windows might add `.txt` to the end. You need to make sure the final name is `.npmrc`, not `.npmrc.txt`.
+   * If you can't see file extensions: In File Explorer, click **View** at the top, and check the box for **File name extensions**. Then rename the file to remove the `.txt`.
+   * Alternatively, when saving, select "All Files" as the file type and name it `.npmrc`.
+
+   <details>
+   <summary>Show example</summary>
+
+   ![Windows .npmrc example](./screenshots/npmrc-example.png)
+
+   </details>
+
+### 3. Add the content
+
+1. Right-click the newly created `.npmrc` file and choose **Open with > Notepad**.
+2. Paste the following line inside:
+
+   ```text
+   //npm.pkg.github.com/:_authToken=YOUR_TOKEN
+   ```
+
+3. Replace `YOUR_TOKEN` with your actual GitHub Personal Access Token (PAT).
+   *(Make sure the token has the `read:packages` scope enabled, as the image notes).*
+4. **Save** the file and close Notepad.
+
+> In-Depth `aether-packages` installation notes are available in the [repo](https://github.com/AetherAssembly/aether-packages) and on the [wiki](https://wiki.aetherassembly.org/aether-packages/).
+
+### 4. Verify and use
+
+1. Open a new **PowerShell** or **CMD** window.
+2. Run `npm install` again. It should now use the token in that file to authenticate with GitHub Packages.
+
+**⚠️ Note: Never commit this `.npmrc` file to a public Git repository, as it contains your secret token!**
 
 ### Common Commands
 
@@ -112,14 +166,16 @@ npm run package:linux:arm64:beta   # Beta ARM64 builds
 
 ### Output Locations
 
-Artifacts are generated placed in `dist/`:
+Artifacts are generated in `release/` and named with the same version as proper releases unless changed.
+
+> If you test locally while the released version of Driftleaf is installed, either change the version before building or uninstall the released copy first. Otherwise, a local build may overwrite or replace the installed application and its system integrations.
 
 ```bash
 release/
-├── Driftleaf-0.2.1.AppImage
-├── driftleaf_0.2.1_amd64.deb
-├── driftleaf-0.2.1-1.x86_64.rpm
-└── Driftleaf Setup 0.2.1.exe
+├── Driftleaf-0.4.1.AppImage
+├── driftleaf_0.4.1_amd64.deb
+├── driftleaf-0.4.1-1.x86_64.rpm
+└── Driftleaf Setup 0.4.1.exe
 ```
 
 ---
