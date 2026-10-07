@@ -105,6 +105,12 @@ body {
   opacity: 0.7;
 }
 
+.unlock-screen__template-link {
+  width: fit-content;
+  font-size: 0.85em;
+  color: var(--ae-color-primary, #4f7d5a);
+}
+
 .app {
   display: flex;
   height: 100vh;

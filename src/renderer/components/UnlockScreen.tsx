@@ -136,6 +136,14 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
                 <span className="unlock-screen__template-hint">
                   Templates create ordinary folders and Markdown notes in your vault.
                 </span>
+                <a
+                  className="unlock-screen__template-link"
+                  href="https://github.com/AetherAssembly/Driftleaf-Templates"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Browse more vault templates
+                </a>
               </label>
             )}
             <Input
