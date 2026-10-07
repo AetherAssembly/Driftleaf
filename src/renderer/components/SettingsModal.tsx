@@ -60,6 +60,10 @@ export function SettingsModal({ open, onClose, settings, onPatch }: SettingsModa
               </Button>
             ))}
           </div>
+          <p className="settings__about">
+            System follows your operating-system color preference when available; otherwise it
+            defaults to Light.
+          </p>
         </section>
 
         <section className="settings__section">

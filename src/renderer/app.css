@@ -3,6 +3,34 @@
   color-scheme: light dark;
 }
 
+:root[data-theme="dark"] {
+  --ae-color-primary: #78a886;
+  --ae-color-primary-hover: #659574;
+  --ae-color-primary-active: #527f60;
+  --ae-color-primary-fg: #101b13;
+
+  --ae-color-secondary: #2d3930;
+  --ae-color-secondary-hover: #3a493d;
+  --ae-color-secondary-fg: #e5ece7;
+
+  --ae-color-danger: #f87171;
+  --ae-color-danger-hover: #ef4444;
+  --ae-color-danger-fg: #1f0808;
+  --ae-color-success: #4ade80;
+  --ae-color-warning: #fbbf24;
+  --ae-color-info: #60a5fa;
+
+  --ae-color-bg: #111713;
+  --ae-color-surface: #1a211c;
+  --ae-color-surface-hover: #27332b;
+  --ae-color-border: #344239;
+  --ae-color-border-focus: #78a886;
+
+  --ae-color-text: #e5ece7;
+  --ae-color-text-muted: #aab8ae;
+  --ae-color-text-placeholder: #809087;
+}
+
 /* Accessibility: visible focus indicators for keyboard navigation */
 button:focus-visible,
 input:focus-visible,

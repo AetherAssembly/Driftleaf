@@ -12,6 +12,15 @@ import type { AppSettings, NoteMeta, SearchResult, VaultRecoveryReport } from ".
 const WELCOMED_KEY = "driftleaf:welcomed";
 const DAILY_FOLDER = "Daily";
 
+function applyTheme(theme: AppSettings["theme"]) {
+  const prefersDark =
+    theme === "dark" ||
+    (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const resolvedTheme = prefersDark ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", resolvedTheme);
+  document.documentElement.style.colorScheme = resolvedTheme;
+}
+
 function todayNoteTitle(): string {
   const d = new Date();
   const yyyy = d.getFullYear();
@@ -129,14 +138,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (unlocked) {
-      void refreshVaultState();
-      void window.driftleaf.settings.read().then((s) => {
-        setSettings(s);
-        applyTheme(s.theme);
-      });
-    }
+    if (unlocked) void refreshVaultState();
+    void window.driftleaf.settings.read().then(setSettings);
   }, [unlocked, refreshVaultState]);
+
+  useEffect(() => {
+    applyTheme(settings.theme);
+    if (settings.theme !== "system") return;
+
+    const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleSystemThemeChange = () => applyTheme("system");
+    systemTheme.addEventListener("change", handleSystemThemeChange);
+    return () => systemTheme.removeEventListener("change", handleSystemThemeChange);
+  }, [settings.theme]);
 
   // Global hotkey (registered in main/index.ts) works even when the window wasn't focused.
   useEffect(() => {
@@ -161,18 +175,9 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [unlocked, settingsOpen, moveNoteId, quickCaptureOpen, showWelcome]);
 
-  function applyTheme(theme: AppSettings["theme"]) {
-    if (theme === "system") {
-      document.documentElement.removeAttribute("data-theme");
-    } else {
-      document.documentElement.setAttribute("data-theme", theme);
-    }
-  }
-
   async function handlePatchSettings(update: Partial<AppSettings>) {
     const next = await window.driftleaf.settings.patch(update);
     setSettings(next);
-    if (update.theme !== undefined) applyTheme(update.theme);
   }
 
   async function openNote(id: string) {
