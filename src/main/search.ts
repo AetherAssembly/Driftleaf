@@ -96,8 +96,20 @@ function toMatchQuery(query: string): string {
   return words.map((w) => `"${w.replace(/"/g, "")}"*`).join(" ");
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function sanitizeSearchSnippet(snippet: string): string {
-  return snippet.replace(/<\/?(?!mark\b)[^>]+>/gi, "");
+  const escaped = escapeHtml(snippet);
+  return escaped
+    .replace(/&lt;mark&gt;/gi, "<mark>")
+    .replace(/&lt;\/mark&gt;/gi, "</mark>");
 }
 
 export function search(index: SearchIndex, query: string): SearchResult[] {
