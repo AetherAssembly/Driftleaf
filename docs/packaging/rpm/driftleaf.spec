@@ -66,7 +66,7 @@ ln -s /opt/Driftleaf/driftleaf %{buildroot}%{_bindir}/driftleaf
 %{_datadir}/icons/hicolor/1024x1024/apps/driftleaf.png
 
 %changelog
-* Wed Oct 07 2026 AetherAssembly <support@aetherassembly.org> - 0.5.0-1
+* Thu Oct 08 2026 AetherAssembly <support@aetherassembly.org> - 0.5.0-1
 - Added direct creation of encrypted editable databases, with a default title
   property, alongside fixes for note selection, external links, and Wayland
   application icon association.
