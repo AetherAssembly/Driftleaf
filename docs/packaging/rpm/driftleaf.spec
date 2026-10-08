@@ -11,7 +11,7 @@
 %global __os_install_post %{nil}
 
 Name:           driftleaf
-Version:        0.4.1
+Version:        0.5.0
 Release:        1%{?dist}
 Summary:        A local-first encrypted notes and database app
 License:        AGPL-3.0-or-later
@@ -66,6 +66,11 @@ ln -s /opt/Driftleaf/driftleaf %{buildroot}%{_bindir}/driftleaf
 %{_datadir}/icons/hicolor/1024x1024/apps/driftleaf.png
 
 %changelog
+* Wed Oct 07 2026 AetherAssembly <support@aetherassembly.org> - 0.5.0-1
+- Added direct creation of encrypted editable databases, with a default title
+  property, alongside fixes for note selection, external links, and Wayland
+  application icon association.
+
 * Wed Oct 07 2026 AetherAssembly <support@aetherassembly.org> - 0.4.1-1
 - Updated package version and description for the 0.4.1 feature set, including
   encrypted editable databases imported from CSV and JSON.

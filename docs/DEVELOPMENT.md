@@ -172,10 +172,10 @@ Artifacts are generated in `release/` and named with the same version as proper 
 
 ```bash
 release/
-├── Driftleaf-0.4.1.AppImage
-├── driftleaf_0.4.1_amd64.deb
-├── driftleaf-0.4.1-1.x86_64.rpm
-└── Driftleaf Setup 0.4.1.exe
+├── Driftleaf-0.4.2.AppImage
+├── driftleaf_0.4.2_amd64.deb
+├── driftleaf-0.4.2-1.x86_64.rpm
+└── Driftleaf Setup 0.4.2.exe
 ```
 
 ---

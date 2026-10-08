@@ -51,14 +51,16 @@ None, by design — the passphrase (or the derived key) is never stored anywhere
 
 ## Backing Up Your Vault
 
+Create a copy from **Settings → Diagnostics & Vault Health → Create backup**. Choose a destination outside the vault; Driftleaf creates a uniquely named, dated folder there and does not overwrite existing backups. The copy includes the hidden `.driftleaf/` directory. Keep the destination on a different drive or device for protection against device failure.
+
 After copying, verify the backup from **Settings → Diagnostics & Vault Health → Choose backup folder**. Driftleaf checks the backup's key-check file, manifest, encrypted note files, and encrypted databases. Enter the passphrase if the backup uses one. Verification is read-only: it does not unlock the backup as the active vault, reconcile its files, or change it.
 
 The same Settings screen can run a health check on the currently open vault. It checks vault metadata, manifest consistency, encrypted note and database integrity, recoverable unindexed files, leftover temporary writes, and search-index coverage. It reports issues without attempting repairs; unlock-time reconciliation repairs supported note manifest/file mismatches. Database files missing from the manifest are reported as unindexed but are not automatically recovered.
 
 **Copy Diagnostics** in that screen copies app/platform and display-session details plus the active theme. It does not include vault paths, note contents, or passphrases.
 
-The vault is just a folder — copy `my-vault/` (including the hidden `.driftleaf/` directory) to an external drive or another machine. There's no special export/import step; the folder is the vault.
+The vault is just a folder — a backup can also be made manually by copying `my-vault/` (including the hidden `.driftleaf/` directory) to an external drive or another machine.
 
 ## Imported Databases
 
-CSV and JSON imports create encrypted databases stored inside `.driftleaf/`. Include the entire `.driftleaf/` directory when backing up; copying only the visible note folders will omit database data and its index. For supported import formats, editing, formulas, and known Notion-export limitations, see [DATABASES.md](DATABASES.md).
+Databases created in Driftleaf or imported from CSV and JSON are encrypted and stored inside `.driftleaf/`. Include the entire `.driftleaf/` directory when backing up; copying only the visible note folders will omit database data and its index. For supported import formats, editing, formulas, and known Notion-export limitations, see [DATABASES.md](DATABASES.md).

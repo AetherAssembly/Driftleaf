@@ -1,9 +1,15 @@
 # Databases
 
-Driftleaf can import CSV and JSON data as encrypted, editable databases. Databases
-appear in the vault's folder in the sidebar and open in a table view. Their rows
-and property definitions are stored encrypted in the vault; they are not
-converted into Markdown notes.
+Driftleaf databases can be created directly or imported from CSV and JSON.
+Databases appear in the vault's folder in the sidebar and open in a table view.
+Their rows and property definitions are stored encrypted in the vault; they are
+not converted into Markdown notes.
+
+## Create a database
+
+Choose **+ Database** beside **+ Note** in the sidebar. The new database is
+created in the currently selected folder with a **Title** property, and its
+name can be entered when prompted. Add rows and properties in the table view.
 
 ## Import a database
 
@@ -82,9 +88,9 @@ not required for importing and browsing the source CSV or JSON data.
 The manifest stores database titles, IDs, folder paths, and timestamps in
 plaintext so Driftleaf can list databases. Property definitions and row values
 are encrypted together in `.driftleaf/<database-id>.db.enc` with the vault key.
-When backing up a vault, copy the complete vault folder, including the hidden
-`.driftleaf/` directory. Health checks and backup verification also validate
-encrypted database files.
+Create backups from **Settings → Diagnostics & Vault Health → Create backup**;
+this includes the hidden `.driftleaf/` directory. Health checks and backup
+verification also validate encrypted database files.
 
 The database index metadata is stored in `manifest.json`. Unlike Markdown notes,
 database files cannot currently be re-indexed automatically if that manifest is

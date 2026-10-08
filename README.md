@@ -60,7 +60,9 @@ Driftleaf works great with screen readers and keyboard-only navigation:
 
 ### Importing Notes and Databases
 
-Use **Import** to bring in Markdown notes (`.md`), database files (`.csv` or `.json`), or a ZIP export containing these files. CSV and JSON imports become editable, encrypted Driftleaf databases with a table view; ZIP folder paths are preserved. Notion exports commonly include CSV database files alongside Markdown pages.
+Use **+ Database** to create an editable database in the current folder, or use **Import** to bring in Markdown notes (`.md`), database files (`.csv` or `.json`), or a ZIP export containing these files. CSV and JSON imports become encrypted Driftleaf databases with a table view; ZIP folder paths are preserved. Notion exports commonly include CSV database files alongside Markdown pages.
+
+Choose System, Light, Dark, Aquatic, Mossy, Sunset, or Space in Settings to change the app's appearance.
 
 Imported CSVs preserve their current cell values, but CSV exports do not contain Notion formula definitions. Add formula properties in the database table after import. Formula properties support Notion-style `prop("Property")` references, arithmetic/comparison/logical operators, and common functions such as `if`, `empty`, `contains`, `round`, `dateAdd`, and `dateBetween`; this is not full Notion formula-language parity. Relations between separately imported Notion databases are not connected automatically and need to be recreated in Driftleaf.
 
@@ -76,13 +78,7 @@ For more details on security and recovery, see [docs/RECOVERY.md](docs/RECOVERY.
 
 ### Backing Up Your Vault
 
-Your vault is just a folder on your computer. To back it up:
-
-1. Locate your vault folder (Driftleaf shows you where it is)
-2. Copy the entire folder (including the hidden `.driftleaf/` directory)
-3. Store the copy on an external drive, another computer, or both
-
-That's it. No export/import needed. From **Settings → Diagnostics & Vault Health**, run a health check on the open vault or verify a copied backup. Backup verification asks for the passphrase when needed and does not modify the selected folder. When you need to restore, copy the folder back.
+Your vault is just a folder on your computer. From **Settings → Diagnostics & Vault Health → Create backup**, choose a destination outside the vault. Driftleaf creates a dated copy (including the hidden `.driftleaf/` directory) without overwriting existing backups. For resilience against device failure, store it on an external drive or another computer. You can verify a copied backup from the same screen; verification asks for the passphrase when needed and does not modify the backup. To restore, copy the backup folder back.
 
 ---
 
