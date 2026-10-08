@@ -4,6 +4,53 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
+## [0.5.0] - 2026-10-08
+
+### Added
+
+- Added vault backup creation to Diagnostics & Vault Health, saving a dated
+  copy without overwriting existing backups.
+- Added the ability to create a new editable database directly in the current
+  vault folder.
+- Added Aquatic, Mossy, Sunset, and Space color themes.
+- Added vault starter templates: Blank, General, Productivity, Journal, and Study.
+- Added a diagnostics and vault-tools screen with copyable app/platform details,
+  vault health checks, and read-only backup verification.
+- Added CSV and JSON database import, both as standalone files and inside ZIP
+  archives. Imported databases are encrypted in the vault and support an
+  editable table, rows, properties, formulas, relations, and basic rollups.
+- Added Notion-style JSON property normalization and common formula functions.
+
+### Changed
+
+- ZIP imports now include CSV and JSON database files alongside Markdown notes,
+  preserving archive folder paths.
+- System theme follows the operating system's light/dark preference, including
+  preference changes while Driftleaf is open.
+- Theme selection now includes the four new color themes in addition to System,
+  Light, and Dark.
+- Added a link on the vault-creation screen to the community
+  [Driftleaf-Templates repository](https://github.com/AetherAssembly/Driftleaf-Templates).
+
+### Documentation
+
+- Added a database guide covering database creation, CSV/JSON imports, editable
+  tables, formulas, relations, limitations, and backup considerations.
+- Updated architecture and recovery documentation for encrypted database
+  storage, vault health checks, and database recovery limitations.
+- Added standalone Markdown copies and additional template ideas under
+  `vault-templates/`; these are not bundled in or registered by the app.
+
+### Fixed
+
+- Selected notes and databases now have a visible sidebar highlight.
+- Vault-template repository links open in the system browser instead of a
+  secondary Electron window.
+- Set the Linux desktop-file identity explicitly so Wayland can associate
+  Driftleaf windows with the installed application icon.
+- Added dark-theme styling so manually selected Dark mode and System mode on a
+  dark OS preference render with the dark color palette.
+
 ## [0.3.1] - 2026-10-06
 
 ### Security

@@ -10,6 +10,8 @@ same page for testing.
 
 #### Add the Driftleaf apt repository
 
+> The APT repo is currently down. We will inform you as soon as it is active again. Until then please follow the manual installation.
+
 Import the signing key and add the repository:
 
 ```sh

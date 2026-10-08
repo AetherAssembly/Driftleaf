@@ -3,9 +3,91 @@
 
 export interface AppSettings {
   lastVaultPath: string | null;
-  theme: "system" | "light" | "dark";
+  theme: Theme;
   editorFontSizePx: number;
   autosaveIntervalMs: number;
+}
+
+export type Theme = "system" | "light" | "dark" | "aquatic" | "mossy" | "sunset" | "space";
+
+export type VaultTemplateId = "blank" | "general" | "productivity" | "journal" | "study";
+
+export type DatabasePropertyType =
+  | "title"
+  | "text"
+  | "number"
+  | "checkbox"
+  | "date"
+  | "select"
+  | "multi_select"
+  | "url"
+  | "email"
+  | "phone"
+  | "status"
+  | "people"
+  | "files"
+  | "formula"
+  | "relation"
+  | "rollup"
+  | "created_time"
+  | "created_by"
+  | "last_edited_time"
+  | "last_edited_by";
+
+export interface DatabaseProperty {
+  id: string;
+  name: string;
+  type: DatabasePropertyType;
+  formula?: string;
+  relationDatabaseId?: string;
+  rollupRelationPropertyId?: string;
+  rollupTargetPropertyId?: string;
+  rollupFunction?: "count" | "sum" | "average" | "min" | "max" | "show_original";
+  options?: string[];
+}
+
+export type DatabaseCellValue = string | number | boolean | string[] | null;
+
+export interface DatabaseRow {
+  id: string;
+  values: Record<string, DatabaseCellValue>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DatabaseMeta {
+  id: string;
+  title: string;
+  folderPath: string;
+  updatedAt: number;
+}
+
+export interface DatabaseData {
+  meta: DatabaseMeta;
+  properties: DatabaseProperty[];
+  rows: DatabaseRow[];
+}
+
+export interface AppDiagnostics {
+  version: string;
+  platform: string;
+  osRelease: string;
+  architecture: string;
+  electron: string;
+  chromium: string;
+  displayServer: string;
+  desktopEnvironment: string;
+}
+
+export interface VaultHealthCheck {
+  name: string;
+  status: "ok" | "warning" | "error";
+  details: string;
+}
+
+export interface VaultHealthReport {
+  checkedAt: number;
+  checks: VaultHealthCheck[];
 }
 
 export interface NoteMeta {
@@ -32,16 +114,22 @@ export interface VaultRecoveryReport {
 
 export interface ImportResult {
   imported: number;
+  importedDatabases: number;
   skipped: string[];
 }
 
 export interface DriftleafApi {
   vault: {
     pickDirectory(): Promise<string | null>;
+    pickBackupDirectory(): Promise<string | null>;
+    pickBackupDestination(): Promise<string | null>;
+    createBackup(destinationPath: string): Promise<string>;
     pickImportFiles(): Promise<string[] | null>;
-    create(rootPath: string, passphrase: string): Promise<void>;
+    create(rootPath: string, passphrase: string, template: VaultTemplateId): Promise<void>;
     unlock(rootPath: string, passphrase: string): Promise<VaultRecoveryReport>;
     hasPassphrase(rootPath: string): Promise<boolean>;
+    healthCheck(): Promise<VaultHealthReport>;
+    verifyBackup(rootPath: string, passphrase: string): Promise<VaultHealthReport>;
     lock(): Promise<void>;
   };
   notes: {
@@ -55,6 +143,15 @@ export interface DriftleafApi {
     move(id: string, targetFolder: string): Promise<NoteMeta>;
     import(filePaths: string[], targetFolder: string): Promise<ImportResult>;
   };
+  databases: {
+    list(folderPath?: string): Promise<DatabaseMeta[]>;
+    read(id: string): Promise<DatabaseData>;
+    create(title: string, folderPath: string): Promise<DatabaseMeta>;
+    update(id: string, properties: DatabaseProperty[], rows: DatabaseRow[]): Promise<void>;
+    createRow(databaseId: string): Promise<DatabaseRow>;
+    deleteRow(databaseId: string, rowId: string): Promise<void>;
+    delete(id: string): Promise<void>;
+  };
   folders: {
     create(folderPath: string): Promise<void>;
     rename(oldPath: string, newPath: string): Promise<void>;
@@ -66,6 +163,9 @@ export interface DriftleafApi {
   settings: {
     read(): Promise<AppSettings>;
     patch(update: Partial<AppSettings>): Promise<AppSettings>;
+  };
+  diagnostics: {
+    read(): Promise<AppDiagnostics>;
   };
   events: {
     // Fired by the global quick-capture hotkey (main/index.ts). Returns an unsubscribe fn.
@@ -81,10 +181,15 @@ export const RENDERER_EVENTS = {
 
 export const IPC_CHANNELS = {
   vaultPickDirectory: "vault:pickDirectory",
+  vaultPickBackupDirectory: "vault:pickBackupDirectory",
+  vaultPickBackupDestination: "vault:pickBackupDestination",
+  vaultCreateBackup: "vault:createBackup",
   vaultPickImportFiles: "vault:pickImportFiles",
   vaultCreate: "vault:create",
   vaultUnlock: "vault:unlock",
   vaultHasPassphrase: "vault:hasPassphrase",
+  vaultHealthCheck: "vault:healthCheck",
+  vaultVerifyBackup: "vault:verifyBackup",
   vaultLock: "vault:lock",
   notesList: "notes:list",
   notesListFolders: "notes:listFolders",
@@ -94,6 +199,13 @@ export const IPC_CHANNELS = {
   notesRename: "notes:rename",
   notesRemove: "notes:remove",
   notesImport: "notes:import",
+  databasesList: "databases:list",
+  databasesRead: "databases:read",
+  databasesCreate: "databases:create",
+  databasesUpdate: "databases:update",
+  databasesCreateRow: "databases:createRow",
+  databasesDeleteRow: "databases:deleteRow",
+  databasesDelete: "databases:delete",
   foldersCreate: "folders:create",
   foldersRename: "folders:rename",
   foldersDelete: "folders:delete",
@@ -101,4 +213,5 @@ export const IPC_CHANNELS = {
   searchQuery: "search:query",
   settingsRead: "settings:read",
   settingsPatch: "settings:patch",
+  diagnosticsRead: "diagnostics:read",
 } as const;

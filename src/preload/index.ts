@@ -4,12 +4,20 @@ import { IPC_CHANNELS, RENDERER_EVENTS, type DriftleafApi } from "../shared/ipc"
 const api: DriftleafApi = {
   vault: {
     pickDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.vaultPickDirectory),
+    pickBackupDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.vaultPickBackupDirectory),
+    pickBackupDestination: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.vaultPickBackupDestination),
+    createBackup: (destinationPath) =>
+      ipcRenderer.invoke(IPC_CHANNELS.vaultCreateBackup, destinationPath),
     pickImportFiles: () => ipcRenderer.invoke(IPC_CHANNELS.vaultPickImportFiles),
-    create: (rootPath, passphrase) =>
-      ipcRenderer.invoke(IPC_CHANNELS.vaultCreate, rootPath, passphrase),
+    create: (rootPath, passphrase, template) =>
+      ipcRenderer.invoke(IPC_CHANNELS.vaultCreate, rootPath, passphrase, template),
     unlock: (rootPath, passphrase) =>
       ipcRenderer.invoke(IPC_CHANNELS.vaultUnlock, rootPath, passphrase),
     hasPassphrase: (rootPath) => ipcRenderer.invoke(IPC_CHANNELS.vaultHasPassphrase, rootPath),
+    healthCheck: () => ipcRenderer.invoke(IPC_CHANNELS.vaultHealthCheck),
+    verifyBackup: (rootPath, passphrase) =>
+      ipcRenderer.invoke(IPC_CHANNELS.vaultVerifyBackup, rootPath, passphrase),
     lock: () => ipcRenderer.invoke(IPC_CHANNELS.vaultLock),
   },
   notes: {
@@ -24,6 +32,18 @@ const api: DriftleafApi = {
     import: (filePaths, targetFolder) =>
       ipcRenderer.invoke(IPC_CHANNELS.notesImport, filePaths, targetFolder),
   },
+  databases: {
+    list: (folderPath) => ipcRenderer.invoke(IPC_CHANNELS.databasesList, folderPath),
+    read: (id) => ipcRenderer.invoke(IPC_CHANNELS.databasesRead, id),
+    create: (title, folderPath) =>
+      ipcRenderer.invoke(IPC_CHANNELS.databasesCreate, title, folderPath),
+    update: (id, properties, rows) =>
+      ipcRenderer.invoke(IPC_CHANNELS.databasesUpdate, id, properties, rows),
+    createRow: (databaseId) => ipcRenderer.invoke(IPC_CHANNELS.databasesCreateRow, databaseId),
+    deleteRow: (databaseId, rowId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.databasesDeleteRow, databaseId, rowId),
+    delete: (id) => ipcRenderer.invoke(IPC_CHANNELS.databasesDelete, id),
+  },
   folders: {
     create: (folderPath) => ipcRenderer.invoke(IPC_CHANNELS.foldersCreate, folderPath),
     rename: (oldPath, newPath) => ipcRenderer.invoke(IPC_CHANNELS.foldersRename, oldPath, newPath),
@@ -35,6 +55,9 @@ const api: DriftleafApi = {
   settings: {
     read: () => ipcRenderer.invoke(IPC_CHANNELS.settingsRead),
     patch: (update) => ipcRenderer.invoke(IPC_CHANNELS.settingsPatch, update),
+  },
+  diagnostics: {
+    read: () => ipcRenderer.invoke(IPC_CHANNELS.diagnosticsRead),
   },
   events: {
     onQuickCapture: (callback) => {

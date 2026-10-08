@@ -33,8 +33,7 @@ export function generateSalt(): Buffer {
   return randomBytes(16);
 }
 
-// Used for passphrase-less vaults: a random key with nothing to derive it from.
-// Content is still encrypted at rest, but opening the vault needs no secret.
+// Reserved for legacy vaults that were created before requiring a passphrase.
 export function generateKey(): Buffer {
   return randomBytes(KEY_LENGTH);
 }

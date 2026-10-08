@@ -96,6 +96,22 @@ function toMatchQuery(query: string): string {
   return words.map((w) => `"${w.replace(/"/g, "")}"*`).join(" ");
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function sanitizeSearchSnippet(snippet: string): string {
+  const escaped = escapeHtml(snippet);
+  return escaped
+    .replace(/&lt;mark&gt;/gi, "<mark>")
+    .replace(/&lt;\/mark&gt;/gi, "</mark>");
+}
+
 export function search(index: SearchIndex, query: string): SearchResult[] {
   const searchStart = Date.now();
   const matchQuery = toMatchQuery(query);
@@ -106,9 +122,10 @@ export function search(index: SearchIndex, query: string): SearchResult[] {
        FROM notes_fts WHERE notes_fts MATCH ? ORDER BY rank LIMIT 50`,
     )
     .all(matchQuery) as SearchResult[];
+  const safeRows = rows.map((row) => ({ ...row, snippet: sanitizeSearchSnippet(row.snippet) }));
   const searchDuration = Date.now() - searchStart;
   if (process.env.DEBUG_SEARCH) {
-    console.log(`[search] query "${query}": ${searchDuration}ms, ${rows.length} results`);
+    console.log(`[search] query "${query}": ${searchDuration}ms, ${safeRows.length} results`);
   }
-  return rows;
+  return safeRows;
 }

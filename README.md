@@ -4,7 +4,6 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/AetherAssembly/Driftleaf/ci.yml?label=CI)](https://github.com/AetherAssembly/Driftleaf/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/AetherAssembly/Driftleaf?label=stable)](https://github.com/AetherAssembly/Driftleaf/releases/latest)
-[![APT version](https://img.shields.io/endpoint?url=https%3A%2F%2Fapt.aetherassembly.org%2Fdriftleaf%2Fbadge-version.json)](https://apt.aetherassembly.org/driftleaf)
 [![OBS Build Status](https://build.opensuse.org/projects/home:aster1630/packages/Driftleaf/badge.svg?type=default)](https://build.opensuse.org/package/show/home:aster1630/Driftleaf)
 [![Copr build status](https://copr.fedorainfracloud.org/coprs/aster1630/Driftleaf/package/driftleaf/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/aster1630/Driftleaf/package/driftleaf/)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
@@ -35,20 +34,20 @@ architecture-specific downloads, verification, and platform-specific installatio
 
 ### First Time Using Driftleaf
 
-1. **Create a vault** - This is where all your notes live. Set a strong passphrase you'll remember (there's no password reset).
+1. **Create a vault** - This is where all your notes live. Choose a starting template or a blank vault, then set a strong passphrase you'll remember (there's no password reset).
 2. **Create folders** - Organize your notes however you like.
 3. **Start writing** - Create notes in markdown. Use the live preview to see formatting as you type.
 4. **Search** - Use **Ctrl+K** to quickly find notes by title or content.
 
 ### Essential Keyboard Shortcuts
 
-| Shortcut | What it does |
-| -------- | ----------- |
-| **Ctrl+K** (Cmd+K on Mac) | Open command palette and search |
+| Shortcut                              | What it does                                     |
+| ------------------------------------- | ------------------------------------------------ |
+| **Ctrl+K** (Cmd+K on Mac)             | Open command palette and search                  |
 | **Ctrl+Shift+N** (Cmd+Shift+N on Mac) | Capture a quick note (works even when minimized) |
-| **Arrow Keys** | Navigate your notes and folders |
-| **Tab** | Move between sections (sidebar, notes, editor) |
-| **Escape** | Close search, close modals, back up |
+| **Arrow Keys**                        | Navigate your notes and folders                  |
+| **Tab**                               | Move between sections (sidebar, notes, editor)   |
+| **Escape**                            | Close search, close modals, back up              |
 
 ### Accessibility
 
@@ -58,6 +57,16 @@ Driftleaf works great with screen readers and keyboard-only navigation:
 - Clear focus indicators on every interactive element
 - Full screen reader support
 - Focus automatically moves to dialogs and returns when you close them
+
+### Importing Notes and Databases
+
+Use **+ Database** to create an editable database in the current folder, or use **Import** to bring in Markdown notes (`.md`), database files (`.csv` or `.json`), or a ZIP export containing these files. CSV and JSON imports become encrypted Driftleaf databases with a table view; ZIP folder paths are preserved. Notion exports commonly include CSV database files alongside Markdown pages.
+
+Choose System, Light, Dark, Aquatic, Mossy, Sunset, or Space in Settings to change the app's appearance.
+
+Imported CSVs preserve their current cell values, but CSV exports do not contain Notion formula definitions. Add formula properties in the database table after import. Formula properties support Notion-style `prop("Property")` references, arithmetic/comparison/logical operators, and common functions such as `if`, `empty`, `contains`, `round`, `dateAdd`, and `dateBetween`; this is not full Notion formula-language parity. Relations between separately imported Notion databases are not connected automatically and need to be recreated in Driftleaf.
+
+See [docs/DATABASES.md](docs/DATABASES.md) for supported formats, editing tables, formulas, relations, and backup details.
 
 ## Protecting Your Data
 
@@ -69,13 +78,7 @@ For more details on security and recovery, see [docs/RECOVERY.md](docs/RECOVERY.
 
 ### Backing Up Your Vault
 
-Your vault is just a folder on your computer. To back it up:
-
-1. Locate your vault folder (Driftleaf shows you where it is)
-2. Copy the entire folder (including the hidden `.driftleaf/` directory)
-3. Store the copy on an external drive, another computer, or both
-
-That's it. No export/import needed. When you need to restore, just copy the folder back.
+Your vault is just a folder on your computer. From **Settings → Diagnostics & Vault Health → Create backup**, choose a destination outside the vault. Driftleaf creates a dated copy (including the hidden `.driftleaf/` directory) without overwriting existing backups. For resilience against device failure, store it on an external drive or another computer. You can verify a copied backup from the same screen; verification asks for the passphrase when needed and does not modify the backup. To restore, copy the backup folder back.
 
 ---
 

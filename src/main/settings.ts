@@ -2,13 +2,9 @@ import { app } from "electron";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
+import type { AppSettings } from "../shared/ipc";
 
-export interface AppSettings {
-  lastVaultPath: string | null;
-  theme: "system" | "light" | "dark";
-  editorFontSizePx: number;
-  autosaveIntervalMs: number;
-}
+export type { AppSettings } from "../shared/ipc";
 
 const DEFAULTS: AppSettings = {
   lastVaultPath: null,
