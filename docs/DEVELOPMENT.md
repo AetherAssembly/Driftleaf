@@ -141,7 +141,7 @@ export DEBUG_SEARCH=1
 npm run dev
 ```
 
-Open DevTools (**Ctrl+Shift+I**) and search for `[search]` in the console output. See [PERFORMANCE.md](PERFORMANCE.md) for optimization details.
+Open DevTools (**Ctrl+Shift+I**) and search for `[search]` in the console output.
 
 ---
 
@@ -163,6 +163,10 @@ npm run package:windows            # Installer + portable .exe
 npm run package:linux:beta         # Beta builds for Linux
 npm run package:linux:arm64:beta   # Beta ARM64 builds
 ```
+
+macOS builds are intentionally unsigned and do not require signing
+certificates. macOS may warn when opening the app; see
+[INSTALLATION.md](INSTALLATION.md#macos) for the quarantine workaround.
 
 ### Output Locations
 

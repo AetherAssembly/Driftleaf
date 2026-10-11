@@ -8,45 +8,11 @@ same page for testing.
 
 ### Debian, Ubuntu, and Raspberry Pi OS
 
-#### Add the Driftleaf apt repository
+#### Debian package
 
-> The APT repo is currently down. We will inform you as soon as it is active again. Until then please follow the manual installation.
-
-Import the signing key and add the repository:
-
-```sh
-curl -fsSL https://apt.aetherassembly.org/driftleaf/driftleaf.gpg.pub | \
-	sudo gpg --dearmor -o /usr/share/keyrings/driftleaf.gpg
-
-echo "deb [signed-by=/usr/share/keyrings/driftleaf.gpg] https://apt.aetherassembly.org/driftleaf stable main" | \
-	sudo tee /etc/apt/sources.list.d/driftleaf.list
-```
-
-Update the package index and confirm that apt can see Driftleaf:
-
-```sh
-sudo apt update
-apt-cache policy driftleaf
-```
-
-Install Driftleaf:
-
-```sh
-sudo apt install driftleaf
-```
-
-To update an existing installation later:
-
-```sh
-sudo apt update
-sudo apt upgrade driftleaf
-```
-
-The release workflow currently documents the update command, but does not publish the
-repository URL or signing-key setup. Use the repository setup instructions provided with
-the apt repository before running these commands.
-
-You can also download the matching `.deb` from the GitHub release and install it with:
+The Driftleaf APT repository is currently unavailable. Debian, Ubuntu, and
+Raspberry Pi OS users can install the `.deb` package from the
+[GitHub Releases page](https://github.com/AetherAssembly/Driftleaf/releases):
 
 ```sh
 sudo apt install ./driftleaf-<version>-amd64.deb
@@ -101,8 +67,7 @@ chmod +x driftleaf-<version>-x86_64.AppImage
 ./driftleaf-<version>-x86_64.AppImage
 ```
 
-The release workflow also mentions Arch Linux. No Arch package is published by the
-workflow, so use the matching AppImage there.
+The AppImage is also available for Arch Linux.
 
 ### Verify a download
 
@@ -118,17 +83,13 @@ Compare the result with the checksum shown in the release notes.
 ## macOS
 
 Download the DMG from the release page, open it, and drag Driftleaf to Applications.
-The macOS packaging command also creates a ZIP artifact, but the current release workflow
-uploads the DMG to GitHub Releases.
-
-The app is not notarized. If macOS reports that the app is damaged or refuses to open
-it after installation, remove the quarantine flag:
+The published macOS download is a DMG. The app is unsigned and not notarized,
+so macOS may block it from opening. In that case, removing its quarantine flag
+allows it to open:
 
 ```sh
 xattr -d com.apple.quarantine "/Applications/Driftleaf.app"
 ```
-
-Then open Driftleaf from Applications.
 
 ## Windows
 
@@ -142,8 +103,7 @@ download, select **More info**, then **Run anyway**.
 
 ## Beta releases
 
-Beta releases are marked as prereleases on GitHub and use separate beta package names on
-Linux. Install them only when testing a release candidate or reporting a bug. Stable
-releases remain available at the [latest release](https://github.com/AetherAssembly/Driftleaf/releases/latest).
-
-Eventually there will be a Driftleaf Beta COPR/OBS/APT Repo, just as there is for Before It's Gone
+Beta releases are marked as prereleases on GitHub and use separate beta package
+names on Linux. They contain in-progress changes and are intended for
+evaluation before a stable release. Stable releases remain available at the
+[latest release](https://github.com/AetherAssembly/Driftleaf/releases/latest).

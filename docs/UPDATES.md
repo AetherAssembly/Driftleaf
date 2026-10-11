@@ -1,33 +1,31 @@
 # Software Updates
 
-Update status and the installed version are visible in **Settings → Updates**
-and **Settings → About**. A new release also appears as a banner, including on
-the vault unlock screen. Automatic checks can be disabled in Settings; **Check
-for updates** remains available on demand.
+The installed version and update status appear in **Settings → Updates** and
+**Settings → About**. A new release can also appear as a banner, including on
+the vault unlock screen. Update checks can be disabled in Settings, and
+**Check for updates** remains available on demand.
 
-## Platform behavior
+## Installing an update
 
-- **Windows NSIS installer:** `electron-updater` checks the GitHub release
-  channel and downloads an available update only after the user chooses
-  **Download update**. The user confirms installation by choosing **Restart
-  to install**. The portable Windows build instead offers the NSIS installer
-  for manual download.
-- **Linux:** checks public GitHub release metadata and flags a newer version.
-  The user opens the release asset and installs it using their preferred
-  package/AppImage process. Driftleaf does not replace Linux package-manager
-  updates.
-- **macOS:** checks releases and offers the DMG for manual installation in
-  unsigned builds. The release workflow can produce the signed-app updater
-  configuration once signing secrets are available. Set repository variable
-  `DRIFTLEAF_MAC_AUTO_UPDATE=true` only after code signing and notarization
-  have been configured and verified; until then keep it unset.
+- **Windows installer:** Driftleaf can download an available update after
+  **Download update** is selected. Installation begins after confirmation with
+  **Restart to install**. The portable Windows version links to the installer
+  for manual updating.
+- **Linux:** Driftleaf reports when a newer release is available and links to
+  it. Installation follows the package or AppImage process used for the
+  current version.
+- **macOS:** unsigned builds report releases and link to the DMG for manual
+  installation.
 
-Automatic update feeds require published GitHub releases with the generated
-`latest*.yml` metadata and blockmaps. macOS additionally needs the zip artifact
-alongside the DMG. The release workflow uploads these files. Beta builds follow
-the beta release channel; stable builds ignore prereleases.
+Stable builds check stable releases. Beta builds use the beta release channel;
+stable builds do not offer beta releases as updates.
 
-Only release metadata is requested from GitHub. Driftleaf does not send vault
-contents, note titles, the passphrase, or an account identifier in update
-checks. Update downloads happen only after the user chooses to download (or
-opens the manual release link).
+## Network and privacy
+
+Update checks request public release information from GitHub. They do not send
+vault contents, note titles, passphrases, or account identifiers. Update
+downloads begin only after the user chooses to download or opens the release
+link.
+
+Automatic update checks can be turned off in Settings. Manual checks remain
+available.

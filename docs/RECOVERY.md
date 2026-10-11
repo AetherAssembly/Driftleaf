@@ -1,6 +1,8 @@
 # Vault Recovery
 
-What each vault file is for, and what to do when something goes wrong. See also [ARCHITECTURE.md](ARCHITECTURE.md#vault-resilience) for how the app avoids getting into a bad state in the first place.
+An overview of vault files, backups, and recovery limits. Driftleaf handles
+some interrupted changes automatically; the [vault integrity overview](DATA_LOSS_TESTING.md)
+describes how those safeguards work.
 
 ## Vault File Structure
 
@@ -44,13 +46,21 @@ Driftleaf writes are structured to avoid this class of problem:
 - Every file write (note content, manifest) goes to a temp file and lands via an atomic rename, so a crash mid-write can't leave a half-written file.
 - Every unlock runs a reconciliation pass that cross-checks the manifest against what's actually on disk and repairs mismatches automatically: orphaned files (on disk, not in the manifest) get re-added using their filename as the title, and stale manifest entries (pointing at a file that no longer exists — e.g. from a crash mid-rename or mid-move) get dropped. You'll see a toast summarizing what, if anything, it fixed.
 
-You shouldn't need to do anything manually for this case. If a crash happens in the narrow window during a rename or move, the note may resurface with a new internal id after the next unlock (its old manifest entry was dropped as stale, and the file was picked back up as "recovered") — its title and content are unaffected, since the filename already reflects the title. Check [ARCHITECTURE.md](ARCHITECTURE.md#vault-resilience) for exactly what the reconciliation pass checks.
+Most interrupted saves are handled automatically when the vault is next
+unlocked. A note affected during a rename or move may reappear as a recovered
+note; its contents remain intact, though its original title or folder may not
+be available. The [vault integrity overview](DATA_LOSS_TESTING.md) explains
+which situations can be recovered automatically.
 
 ## Passphrase Recovery
 
-None, by design — the passphrase (or the derived key) is never stored anywhere, including by Driftleaf's developers. If you lose it, the vault's encrypted contents and metadata aren't recoverable.
+Driftleaf does not store the passphrase or a recoverable copy of the key. A
+forgotten passphrase cannot be reset, and the encrypted vault cannot be opened
+without it.
 
-**Recommendation:** write your passphrase down somewhere durable (a password manager, a physical note in a safe place) at vault creation, and keep a backup of the vault folder somewhere separate from this device.
+Because Driftleaf cannot reset a forgotten passphrase, keeping it in a
+password manager or another secure place helps preserve access to the vault.
+A separate backup protects against device failure.
 
 ## Backing Up Your Vault
 

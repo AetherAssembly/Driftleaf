@@ -145,7 +145,7 @@ export DEBUG_SEARCH=1
 npm run dev
 ```
 
-Open DevTools (Ctrl+Shift+I or Cmd+Opt+I) and search for `[search]` in the console. See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for details.
+Open DevTools (Ctrl+Shift+I or Cmd+Opt+I) and search for `[search]` in the console. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#debugging-search-performance) for details.
 
 **Packaging for distribution:**
 
@@ -166,7 +166,7 @@ Each platform has a `:beta` variant for pre-release testing. See the build confi
 - **Search**: SQLite FTS5 index, rebuilt on unlock
 - **Safety**: Atomic writes + consistency checks on every unlock
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full technical architecture.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for an overview of vault storage, encryption, and privacy.
 
 ## License
 

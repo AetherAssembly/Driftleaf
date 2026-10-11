@@ -59,4 +59,4 @@ These tests verify:
 6. **Passphrase verification** - wrong passphrases fail immediately
 7. **Persistence** - encrypted manifest changes survive unlocks
 
-See [docs/DATA_LOSS_TESTING.md](../docs/DATA_LOSS_TESTING.md) for full technical details on each safeguard.
+See [docs/DATA_LOSS_TESTING.md](../docs/DATA_LOSS_TESTING.md) for a user-facing overview of vault integrity and recovery limits.

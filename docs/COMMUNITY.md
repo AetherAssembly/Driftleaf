@@ -1,39 +1,35 @@
-# Community extensions and templates
+# Community Gallery
 
-The in-app **Extensions → Community gallery** reads public, stable GitHub
-releases from:
+The in-app **Extensions → Community gallery** displays public releases from
+the [Driftleaf Extensions](https://github.com/AetherAssembly/Driftleaf-Extensions)
+and [Driftleaf Templates](https://github.com/AetherAssembly/Driftleaf-Templates)
+repositories. It lists stable releases and their descriptions and downloadable
+assets. The gallery contacts GitHub when opened or refreshed; Driftleaf
+remains usable offline.
 
-- [AetherAssembly/Driftleaf-Extensions](https://github.com/AetherAssembly/Driftleaf-Extensions)
-- [AetherAssembly/Driftleaf-Templates](https://github.com/AetherAssembly/Driftleaf-Templates)
+## Extensions
 
-The gallery shows non-draft, non-prerelease releases and reads their release
-description and assets. Release requests are made only when the gallery is
-opened or refreshed. The app remains usable offline.
+The gallery previews an extension's JavaScript before installation. Installed
+extensions are stored in the encrypted vault and begin with all permissions
+disabled. Their permissions can be reviewed and granted separately in
+**Extensions**. Extensions are executable code, so their safety depends on
+trust in the source. A granted extension can read information covered by its
+permissions while it is running.
 
-## Extension releases
+## Templates
 
-Attach standalone `.js` files to a GitHub Release in `Driftleaf-Extensions`.
-The asset filename becomes the extension name; the release title/tag and body
-become its version and release notes. Assets must be no larger than 512 KB.
-The in-app gallery previews the downloaded source. Installation stores the
-extension in the encrypted vault with no permissions enabled.
-
-## Template releases
-
-Attach a `.zip` asset to a GitHub Release in `Driftleaf-Templates`. The ZIP may
-contain Markdown notes and optional CSV or Driftleaf JSON databases in folders.
-The gallery imports supported files under
-`Community templates/<asset filename>` in the currently open vault. ZIP paths
-are validated and supported files are imported into the vault's encrypted
-storage. Keep archives under 25 MB; individual imported files are subject to
-the same size limits as regular ZIP imports.
-
-Release notes are displayed as plain text. Do not put private information in
-release descriptions or assets.
+Templates are ZIP archives containing Markdown notes and, optionally, CSV or
+Driftleaf JSON databases. Imported files are added to the currently open
+vault under **Community templates** and are encrypted as part of that vault.
+Archives and individual files are subject to the same import limits as other
+ZIP imports; see [Databases](DATABASES.md).
 
 ## Network and privacy
 
-The gallery uses GitHub's public Releases API and public release assets. GitHub
-receives normal request metadata, such as the user's IP address; Driftleaf does
-not include vault contents or account identifiers in those requests. See the
-[privacy policy](../.github/PRIVACY.md) for details.
+Gallery requests use GitHub's public Releases API and public release assets.
+GitHub receives ordinary request metadata, such as an IP address. Driftleaf
+does not include vault contents or account identifiers in those requests.
+Release descriptions and assets are public, so they are not a place for
+private information.
+
+For permissions and extension behavior, see [Extensions](EXTENSIONS.md).

@@ -72,26 +72,9 @@ first be removed from those dependent calculations.
 
 ## Formulas
 
-Create a **Formula (calculated)** property from the property form, or choose
-**Edit formula** in its column header. Reference a property by name with
-`prop("Property name")`. For example:
-
-```text
-if(prop("Done"), "Complete", "Open")
-```
-
-The safe formula evaluator supports arithmetic and comparison operators,
-`&&`, `||`, `!`, property references, and common functions including
-`if`, `ifs`, `and`, `or`, `not`, `empty`, `length`, `contains`, `startsWith`,
-`endsWith`, `replace`, `replaceAll`, `lower`, `upper`, `trim`, `abs`, `ceil`,
-`floor`, `round`, `min`, `max`, `sum`, `average`, `mod`, `pow`, `sqrt`, `sign`,
-`join`, `slice`, `concat`, `toNumber`, `toString`, `format`, `now`, `today`,
-`dateAdd`, `dateSubtract`, `dateBetween`, `dateStart`, `dateEnd`, and
-`formatDate`.
-
-Formula results are calculated in the table and are not written back into row
-cells. Errors appear in the affected formula cell. This is a common-functions
-subset, not full Notion formula-language compatibility.
+Formula properties calculate a read-only value for each row using that row's
+other properties. See [Database Formulas](formula.md) for a short introduction
+and examples.
 
 ## Relations and rollups
 
