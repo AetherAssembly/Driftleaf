@@ -18,8 +18,8 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
           your passphrase. Even we can&rsquo;t read them without it.
         </li>
         <li>
-          <strong>Local-first.</strong> Your notes live on this device only — no cloud
-          sync, no servers, no tracking.
+          <strong>Local-first.</strong> Your vault stays on this device. Optional update
+          checks contact GitHub for public release metadata only; no note or vault data is sent.
         </li>
         <li>
           <strong>Yours alone.</strong> Your passphrase can&rsquo;t be reset. Write it

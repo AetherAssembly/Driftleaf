@@ -17,7 +17,8 @@ my-vault/
 ```
 
 Notes, database contents, and metadata (titles, folder paths, IDs, and timestamps)
-are encrypted. Note ciphertext uses opaque ID filenames under `.driftleaf/notes/`;
+are encrypted. Database payloads include property definitions, formulas, rows,
+and saved views. Note ciphertext uses opaque ID filenames under `.driftleaf/notes/`;
 folders are private vault organization and are not represented by named disk
 directories. Existing vaults migrate their plaintext manifest and legacy note
 files on successful unlock. Empty legacy folders are removed; directories
@@ -55,7 +56,7 @@ None, by design — the passphrase (or the derived key) is never stored anywhere
 
 Create a copy from **Settings → Diagnostics & Vault Health → Create backup**. Choose a destination outside the vault; Driftleaf creates a uniquely named, dated folder there and does not overwrite existing backups. The copy includes the hidden `.driftleaf/` directory. Keep the destination on a different drive or device for protection against device failure.
 
-After copying, verify the backup from **Settings → Diagnostics & Vault Health → Choose backup folder**. Driftleaf checks the backup's key-check file, manifest, encrypted note files, and encrypted databases. Enter the passphrase if the backup uses one. Verification is read-only: it does not unlock the backup as the active vault, reconcile its files, or change it.
+After copying, verify the backup from **Settings → Diagnostics & Vault Health → Choose backup folder**. Driftleaf checks the backup's key-check file, manifest, encrypted note files, and encrypted databases. Enter the passphrase if the backup uses one. Verification is read-only: it does not unlock the backup as the active vault, reconcile its files, or change it. For a full restore, copy the verified backup folder back to its intended location and open that folder in Driftleaf.
 
 The same Settings screen can run a health check on the currently open vault. It checks vault metadata, manifest consistency, encrypted note and database integrity, recoverable unindexed files, leftover temporary writes, and search-index coverage. It reports issues without attempting repairs; unlock-time reconciliation repairs supported note manifest/file mismatches. Database files missing from the manifest are reported as unindexed but are not automatically recovered.
 

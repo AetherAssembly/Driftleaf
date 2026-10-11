@@ -29,7 +29,13 @@ they do not include notes, vault contents, the passphrase, or an account
 identifier. GitHub receives the ordinary network request metadata (such as
 your IP address). Update downloads are user-initiated. Disable automatic checks
 in **Settings → Updates** to skip startup checks. Extensions run with network
-access disabled by the app.
+access disabled by the app. When you open or refresh **Extensions → Community
+gallery**, Driftleaf requests public release metadata from GitHub for the
+`AetherAssembly/Driftleaf-Extensions` and `AetherAssembly/Driftleaf-Templates`
+repositories. Previewing or installing an item downloads its public release
+asset from GitHub. These requests do not include vault data or an account
+identifier; GitHub receives ordinary network request metadata such as your IP
+address. Community items are optional, and the app remains usable offline.
 
 ## Data We Do Not Intentionally Collect
 
@@ -37,11 +43,11 @@ Driftleaf does not include user accounts, built-in analytics or tracking, advert
 
 ## Network Requests
 
-Apart from the GitHub release checks and user-initiated update downloads
-described above, Driftleaf does not sync, phone home, or transmit vault data.
-Extensions run in isolated windows with network access disabled by the app.
-The application remains usable offline; update checks simply fail until a
-network connection is available.
+Apart from the GitHub release checks, community catalog requests, and
+user-initiated downloads described above, Driftleaf does not sync, phone home,
+or transmit vault data. Extensions run in isolated windows with network access
+disabled by the app. The application remains usable offline; release catalog
+requests simply fail until a network connection is available.
 
 If other networked features — such as optional device sync — are added in a
 future release, they will be off by default, and this policy will be updated

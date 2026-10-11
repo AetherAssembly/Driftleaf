@@ -17,6 +17,7 @@ import { backlinksFor, unlinkedMentionsFor } from "../shared/note-links";
 import type {
   AppSettings,
   CanvasItem,
+  CommunityReleaseItem,
   DatabaseMeta,
   ExtensionPermission,
   ExtensionSample,
@@ -87,6 +88,9 @@ export default function App() {
   const [extensionsOpen, setExtensionsOpen] = useState(false);
   const [extensions, setExtensions] = useState<ExtensionSummary[]>([]);
   const [extensionSamples, setExtensionSamples] = useState<ExtensionSample[]>([]);
+  const [communityItems, setCommunityItems] = useState<CommunityReleaseItem[]>([]);
+  const [communityLoading, setCommunityLoading] = useState(false);
+  const [communityError, setCommunityError] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
     state: "idle",
     currentVersion: "…",
@@ -529,8 +533,48 @@ export default function App() {
       setExtensions(installed);
       setExtensionSamples(samples);
       setExtensionsOpen(true);
+      void refreshCommunityCatalog();
     } catch (error) {
       showToast(`Couldn't load extensions: ${String(error)}`);
+    }
+  }
+
+  async function refreshCommunityCatalog() {
+    setCommunityLoading(true);
+    setCommunityError(null);
+    try {
+      const catalog = await window.driftleaf.extensions.community();
+      setCommunityItems(catalog.items);
+      setCommunityError(catalog.errors.length > 0 ? catalog.errors.join("\n") : null);
+    } catch (error) {
+      setCommunityError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCommunityLoading(false);
+    }
+  }
+
+  async function installCommunityExtension(assetId: number) {
+    try {
+      const extension = await window.driftleaf.extensions.installCommunityExtension(assetId);
+      setExtensions((current) => [...current, extension]);
+      showToast(`Installed ${extension.name}. Review its permissions before running it.`);
+    } catch (error) {
+      showToast(`Couldn't install community extension: ${String(error)}`);
+    }
+  }
+
+  async function installCommunityTemplate(assetId: number) {
+    try {
+      const result = await window.driftleaf.extensions.installCommunityTemplate(assetId);
+      await refreshVaultState();
+      await refreshNoteGraph();
+      showToast(
+        `Template imported: ${result.imported} notes, ${result.importedDatabases} databases${
+          result.skipped.length ? `; ${result.skipped.length} items skipped` : ""
+        }.`,
+      );
+    } catch (error) {
+      showToast(`Couldn't install community template: ${String(error)}`);
     }
   }
 
@@ -812,6 +856,9 @@ export default function App() {
           <DatabaseView
             key={selectedDatabaseId}
             databaseId={selectedDatabaseId}
+            onRenamed={(meta) =>
+              setDatabases((current) => current.map((database) => database.id === meta.id ? meta : database))
+            }
             onDeleted={() => {
               setSelectedDatabaseId(null);
               void refreshVaultState();
@@ -860,10 +907,16 @@ export default function App() {
         open={extensionsOpen}
         extensions={extensions}
         samples={extensionSamples}
+        communityItems={communityItems}
+        communityLoading={communityLoading}
+        communityError={communityError}
         databases={databases}
         onClose={() => setExtensionsOpen(false)}
         onInstall={() => void installExtension()}
         onInstallSample={(sampleId) => void installExtensionSample(sampleId)}
+        onRefreshCommunity={() => void refreshCommunityCatalog()}
+        onInstallCommunityExtension={(assetId) => void installCommunityExtension(assetId)}
+        onInstallCommunityTemplate={(assetId) => void installCommunityTemplate(assetId)}
         onRun={(id) => void runExtension(id)}
         onRemove={(id) => void removeExtension(id)}
         onPermissionsChange={(id, permissions, databaseIds) =>

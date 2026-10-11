@@ -47,6 +47,8 @@ export function CanvasView({
 
   const draggedItem = (event: React.DragEvent<HTMLDivElement>) =>
     event.dataTransfer.getData("application/driftleaf-canvas-item");
+  const stageWidth = Math.max(1400, ...items.map((item) => item.x + 350));
+  const stageHeight = Math.max(900, ...items.map((item) => item.y + 300));
 
   return (
     <section className="canvas-view" aria-label="Workspace canvas">
@@ -125,7 +127,7 @@ export function CanvasView({
           if (id) moveItem(id, event);
         }}
       >
-        <div className="canvas-view__stage">
+        <div className="canvas-view__stage" style={{ width: stageWidth, minHeight: stageHeight }}>
           {items.map((item) => {
             const note = item.kind === "note" ? notes.find((entry) => entry.id === item.targetId) : null;
             const database =

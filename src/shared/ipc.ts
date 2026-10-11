@@ -90,6 +90,8 @@ export interface DatabaseData {
   activeViewId?: string;
 }
 
+export type DatabaseExportFormat = "csv" | "json";
+
 export interface AppDiagnostics {
   version: string;
   platform: string;
@@ -168,6 +170,21 @@ export interface ExtensionSample {
   description: string;
 }
 
+export interface CommunityReleaseItem {
+  assetId: number;
+  kind: "extension" | "template";
+  name: string;
+  version: string;
+  description: string;
+  repository: "Driftleaf-Extensions" | "Driftleaf-Templates";
+  size: number;
+}
+
+export interface CommunityCatalog {
+  items: CommunityReleaseItem[];
+  errors: string[];
+}
+
 export type CanvasItemKind = "note" | "database";
 
 export interface CanvasItem {
@@ -222,6 +239,7 @@ export interface DriftleafApi {
     list(folderPath?: string): Promise<DatabaseMeta[]>;
     read(id: string): Promise<DatabaseData>;
     create(title: string, folderPath: string): Promise<DatabaseMeta>;
+    rename(id: string, title: string): Promise<DatabaseMeta>;
     update(
       id: string,
       properties: DatabaseProperty[],
@@ -231,6 +249,7 @@ export interface DriftleafApi {
     ): Promise<void>;
     createRow(databaseId: string): Promise<DatabaseRow>;
     deleteRow(databaseId: string, rowId: string): Promise<void>;
+    export(id: string, format: DatabaseExportFormat): Promise<boolean>;
     delete(id: string): Promise<void>;
   };
   folders: {
@@ -246,6 +265,10 @@ export interface DriftleafApi {
     install(): Promise<ExtensionSummary | null>;
     samples(): Promise<ExtensionSample[]>;
     installSample(sampleId: string): Promise<ExtensionSummary>;
+    community(): Promise<CommunityCatalog>;
+    previewCommunityExtension(assetId: number): Promise<string>;
+    installCommunityExtension(assetId: number): Promise<ExtensionSummary>;
+    installCommunityTemplate(assetId: number): Promise<ImportResult>;
     setPermissions(
       id: string,
       permissions: ExtensionPermission[],
@@ -310,9 +333,11 @@ export const IPC_CHANNELS = {
   databasesList: "databases:list",
   databasesRead: "databases:read",
   databasesCreate: "databases:create",
+  databasesRename: "databases:rename",
   databasesUpdate: "databases:update",
   databasesCreateRow: "databases:createRow",
   databasesDeleteRow: "databases:deleteRow",
+  databasesExport: "databases:export",
   databasesDelete: "databases:delete",
   foldersCreate: "folders:create",
   foldersRename: "folders:rename",
@@ -337,6 +362,10 @@ export const IPC_CHANNELS = {
   extensionGraph: "extension:graph",
   extensionsSamples: "extensions:samples",
   extensionsInstallSample: "extensions:installSample",
+  extensionsCommunity: "extensions:community",
+  extensionsCommunityPreview: "extensions:communityPreview",
+  extensionsCommunityInstall: "extensions:communityInstall",
+  templatesCommunityInstall: "templates:communityInstall",
   extensionDatabasesList: "extension:databases:list",
   extensionDatabaseRead: "extension:databases:read",
   canvasRead: "canvas:read",

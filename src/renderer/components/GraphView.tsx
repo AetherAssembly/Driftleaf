@@ -9,18 +9,33 @@ interface GraphViewProps {
 
 export function GraphView({ graph, focusedNoteId, onOpenNote }: GraphViewProps) {
   const [localOnly, setLocalOnly] = useState(false);
+  const [search, setSearch] = useState("");
   const visibleGraph = (() => {
-    if (!localOnly || !focusedNoteId) return graph;
-    const linkedIds = new Set(
-      graph.edges
-        .filter((edge) => edge.sourceId === focusedNoteId || edge.targetId === focusedNoteId)
-        .flatMap((edge) => [edge.sourceId, edge.targetId]),
-    );
-    linkedIds.add(focusedNoteId);
+    let nodeIds = new Set(graph.nodes.map((node) => node.id));
+    if (localOnly && focusedNoteId) {
+      nodeIds = new Set(
+        graph.edges
+          .filter((edge) => edge.sourceId === focusedNoteId || edge.targetId === focusedNoteId)
+          .flatMap((edge) => [edge.sourceId, edge.targetId]),
+      );
+      nodeIds.add(focusedNoteId);
+    }
+    const term = search.trim().toLocaleLowerCase();
+    if (term) {
+      nodeIds = new Set(
+        graph.nodes
+          .filter(
+            (node) =>
+              nodeIds.has(node.id) &&
+              `${node.title} ${node.folderPath}`.toLocaleLowerCase().includes(term),
+          )
+          .map((node) => node.id),
+      );
+    }
     return {
-      nodes: graph.nodes.filter((node) => linkedIds.has(node.id)),
+      nodes: graph.nodes.filter((node) => nodeIds.has(node.id)),
       edges: graph.edges.filter(
-        (edge) => linkedIds.has(edge.sourceId) && linkedIds.has(edge.targetId),
+        (edge) => nodeIds.has(edge.sourceId) && nodeIds.has(edge.targetId),
       ),
       unlinkedMentions: [],
     };
@@ -65,9 +80,19 @@ export function GraphView({ graph, focusedNoteId, onOpenNote }: GraphViewProps) 
             Current note
           </button>
         </div>
+        <input
+          aria-label="Filter graph notes"
+          placeholder="Filter notes…"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
       </header>
       {visibleGraph.nodes.length === 0 ? (
-        <p className="graph-view__empty">Create a note and link it with [[Note title]].</p>
+        <p className="graph-view__empty">
+          {search.trim()
+            ? "No notes match this filter."
+            : "Create a note and link it with [[Note title]]."}
+        </p>
       ) : (
         <svg
           className="graph-view__canvas"

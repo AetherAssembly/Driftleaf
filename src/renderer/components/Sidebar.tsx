@@ -68,6 +68,9 @@ export function Sidebar({
   onRenameFolder,
   onDeleteFolder,
 }: SidebarProps) {
+  const [collapsed, setCollapsed] = useState(
+    () => window.localStorage.getItem("driftleaf:sidebar-collapsed") === "true",
+  );
   const [newFolderName, setNewFolderName] = useState("");
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
@@ -83,6 +86,14 @@ export function Sidebar({
   const [newDatabaseName, setNewDatabaseName] = useState("");
   const [keyboardFocusedNoteIndex, setKeyboardFocusedNoteIndex] = useState<number | null>(null);
   const isSearching = searchQuery.trim().length > 0;
+
+  function toggleCollapsed() {
+    setCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem("driftleaf:sidebar-collapsed", String(next));
+      return next;
+    });
+  }
 
   const visibleNotes = isSearching
     ? (searchResults.map((r) => notes.find((n) => n.id === r.id)).filter(Boolean) as NoteMeta[])
@@ -183,7 +194,20 @@ export function Sidebar({
     : [];
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${collapsed ? " sidebar--collapsed" : ""}`}>
+      <div className="sidebar__collapse-row">
+        {!collapsed && <strong>Driftleaf</strong>}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? "›" : "‹"}
+        </Button>
+      </div>
+      {!collapsed && <div className="sidebar__content">
       <div className="sidebar__search">
         <Input
           placeholder="Search notes…"
@@ -401,16 +425,17 @@ export function Sidebar({
           )}
         </>
       )}
+      </div>}
 
-      <div className="sidebar__footer">
-        <Button variant="ghost" size="sm" onClick={onOpenExtensions} aria-label="Open extensions">
-          Extensions
+      <div className="sidebar__footer" aria-label="Sidebar actions">
+        <Button variant="ghost" size="sm" onClick={onOpenExtensions} aria-label="Open extensions" title="Extensions">
+          {collapsed ? "Ex" : "Extensions"}
         </Button>
-        <Button variant="ghost" size="sm" onClick={onOpenSettings} aria-label="Open settings">
-          Settings
+        <Button variant="ghost" size="sm" onClick={onOpenSettings} aria-label="Open settings" title="Settings">
+          {collapsed ? "⚙" : "Settings"}
         </Button>
-        <Button variant="ghost" size="sm" onClick={onLock} aria-label="Lock vault">
-          Lock vault
+        <Button variant="ghost" size="sm" onClick={onLock} aria-label="Lock vault" title="Lock vault">
+          {collapsed ? "⌑" : "Lock vault"}
         </Button>
       </div>
 

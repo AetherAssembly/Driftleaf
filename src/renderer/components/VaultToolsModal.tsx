@@ -10,23 +10,32 @@ interface VaultToolsModalProps {
 }
 
 function formatDiagnostics(diagnostics: AppDiagnostics, theme: AppSettings["theme"]): string {
+  return diagnosticEntries(diagnostics, theme)
+    .map(([label, value]) => `${label}: ${value}`)
+    .join("\n");
+}
+
+function diagnosticEntries(
+  diagnostics: AppDiagnostics,
+  theme: AppSettings["theme"],
+): Array<[string, string]> {
   const activeTheme =
     theme === "system" ? `${document.documentElement.dataset.theme ?? "light"} (System)` : theme;
   return [
-    `Driftleaf: ${diagnostics.version}`,
-    `OS: ${diagnostics.platform} ${diagnostics.osRelease}`,
-    `Architecture: ${diagnostics.architecture}`,
-    `Display server: ${diagnostics.displayServer}`,
-    `Desktop/compositor: ${diagnostics.desktopEnvironment}`,
-    `Electron: ${diagnostics.electron}`,
-    `Chromium: ${diagnostics.chromium}`,
-    `Driftleaf theme: ${activeTheme}`,
-  ].join("\n");
+    ["Driftleaf", diagnostics.version],
+    ["Operating system", `${diagnostics.platform} ${diagnostics.osRelease}`],
+    ["Architecture", diagnostics.architecture],
+    ["Display server", diagnostics.displayServer],
+    ["Desktop / compositor", diagnostics.desktopEnvironment],
+    ["Electron", diagnostics.electron],
+    ["Chromium", diagnostics.chromium],
+    ["Driftleaf theme", activeTheme],
+  ];
 }
 
 function HealthChecks({ report }: { report: VaultHealthReport }) {
   return (
-    <div>
+    <div className="tools-modal__health">
       <p className="settings__about">Checked {new Date(report.checkedAt).toLocaleString()}</p>
       {report.checks.map((check) => (
         <div className={`tools-modal__check tools-modal__check--${check.status}`} key={check.name}>
@@ -134,8 +143,9 @@ export function VaultToolsModal({ open, onClose, theme, noteCount }: VaultToolsM
   return (
     <Modal open={open} onClose={onClose} title="Diagnostics & Vault Health">
       <div className="tools-modal">
-        <section className="tools-modal__section">
-          <strong>Create a backup</strong>
+        <section className="settings__panel tools-modal__section">
+          <span className="settings__eyebrow">RECOVERY</span>
+          <h2>Create a backup</h2>
           <p className="settings__about">
             Copy the open vault, including its hidden encrypted database files, into a new dated
             folder. Existing backups are never overwritten. Choose a destination outside the vault.
@@ -156,30 +166,43 @@ export function VaultToolsModal({ open, onClose, theme, noteCount }: VaultToolsM
           )}
         </section>
 
-        <section className="tools-modal__section">
-          <strong>Diagnostics</strong>
+        <section className="settings__panel tools-modal__section">
+          <span className="settings__eyebrow">APP DETAILS</span>
+          <h2>Diagnostics</h2>
           <p className="settings__about">
             Copy safe environment details to include in a bug report. Note contents, vault paths,
             and passphrases are not included.
           </p>
           {diagnostics ? (
-            <pre className="tools-modal__diagnostics">{formatDiagnostics(diagnostics, theme)}</pre>
+            <dl className="tools-modal__diagnostics">
+              {diagnosticEntries(diagnostics, theme).map(([label, value]) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
           ) : (
-            <p className="settings__about">Loading diagnostics…</p>
+            <div className="settings__field">
+              <p className="settings__about">Loading diagnostics…</p>
+            </div>
           )}
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={!diagnostics}
-            onClick={() => void copyDiagnostics()}
-          >
-            Copy Diagnostics
-          </Button>
+          <div className="settings__actions">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!diagnostics}
+              onClick={() => void copyDiagnostics()}
+            >
+              Copy diagnostics
+            </Button>
+          </div>
           {copyStatus && <p className="settings__about">{copyStatus}</p>}
         </section>
 
-        <section className="tools-modal__section">
-          <strong>Vault health</strong>
+        <section className="settings__panel tools-modal__section">
+          <span className="settings__eyebrow">INTEGRITY</span>
+          <h2>Vault health</h2>
           <p className="settings__about">
             Checks vault metadata, encrypted note contents, recoverable files, and the search index.
             This may take a while for large vaults.
@@ -196,8 +219,9 @@ export function VaultToolsModal({ open, onClose, theme, noteCount }: VaultToolsM
           {healthReport && <HealthChecks report={healthReport} />}
         </section>
 
-        <section className="tools-modal__section">
-          <strong>Verify a backup</strong>
+        <section className="settings__panel tools-modal__section">
+          <span className="settings__eyebrow">RECOVERY</span>
+          <h2>Verify a backup</h2>
           <p className="settings__about">
             Select a copied vault folder to verify its key check, manifest, and encrypted notes.
             Verification does not change the selected folder.
@@ -211,7 +235,7 @@ export function VaultToolsModal({ open, onClose, theme, noteCount }: VaultToolsM
           >
             Choose backup folder…
           </Button>
-          {backupPath && <p className="unlock-screen__path">{backupPath}</p>}
+          {backupPath && <p className="tools-modal__path">{backupPath}</p>}
           {backupNeedsPassphrase && (
             <>
               <Input

@@ -115,17 +115,43 @@ function validateDatabaseProperties(properties: DatabaseProperty[]): void {
     ) {
       throw new Error("Database has an invalid property definition");
     }
-    if (ids.has(property.id) || names.has(property.name)) {
+    const normalizedName = property.name.trim().toLocaleLowerCase();
+    if (ids.has(property.id) || names.has(normalizedName)) {
       throw new Error("Database property IDs and names must be unique");
     }
     ids.add(property.id);
-    names.add(property.name);
+    names.add(normalizedName);
     if (property.type === "formula" && typeof property.formula !== "string") {
       throw new Error(`Formula property "${property.name}" needs a formula`);
     }
+    if (
+      property.options !== undefined &&
+      (!Array.isArray(property.options) ||
+        property.options.some((option) => typeof option !== "string") ||
+        new Set(property.options).size !== property.options.length)
+    ) {
+      throw new Error(`Database property "${property.name}" has invalid options`);
+    }
+    if (
+      property.type === "relation" &&
+      (typeof property.relationDatabaseId !== "string" ||
+        !/^[0-9a-f-]{36}$/i.test(property.relationDatabaseId))
+    ) {
+      throw new Error(`Relation property "${property.name}" needs a valid database`);
+    }
+    if (
+      property.type === "rollup" &&
+      (typeof property.rollupRelationPropertyId !== "string" ||
+        typeof property.rollupTargetPropertyId !== "string" ||
+        !["count", "sum", "average", "min", "max", "show_original"].includes(
+          property.rollupFunction ?? "",
+        ))
+    ) {
+      throw new Error(`Rollup property "${property.name}" has an invalid configuration`);
+    }
   }
-  if (!properties.some((property) => property.type === "title")) {
-    throw new Error("A database needs a title property");
+  if (properties.filter((property) => property.type === "title").length !== 1) {
+    throw new Error("A database needs exactly one title property");
   }
 }
 
@@ -301,10 +327,35 @@ export async function createDatabase(
   folderPath: string,
   properties: DatabaseProperty[],
   rows: DatabaseRow[],
+  views?: DatabaseViewDefinition[],
+  activeViewId?: string,
 ): Promise<DatabaseMeta> {
   validateFolderPath(folderPath);
   validateDatabaseProperties(properties);
   validateDatabaseRows(properties, rows);
+  const existingDatabaseIds = new Set(databasesFor(vault).map((database) => database.id));
+  for (const property of properties) {
+    if (property.type === "relation" && !existingDatabaseIds.has(property.relationDatabaseId!)) {
+      throw new Error(`Relation property "${property.name}" references an unknown database`);
+    }
+    if (property.type === "rollup") {
+      const relation = properties.find(
+        (candidate) =>
+          candidate.id === property.rollupRelationPropertyId && candidate.type === "relation",
+      );
+      if (
+        !relation ||
+        !property.rollupTargetPropertyId ||
+        !property.rollupFunction
+      ) {
+        throw new Error(`Rollup property "${property.name}" needs a valid relation and target`);
+      }
+      const targetDatabase = await readDatabase(vault, relation.relationDatabaseId!);
+      if (!targetDatabase.properties.some((target) => target.id === property.rollupTargetPropertyId)) {
+        throw new Error(`Rollup property "${property.name}" references an unknown target property`);
+      }
+    }
+  }
   await ensureFolderChain(vault, folderPath);
   const meta: DatabaseMeta = {
     id: randomUUID(),
@@ -312,13 +363,19 @@ export async function createDatabase(
     folderPath,
     updatedAt: Date.now(),
   };
+  const databaseViews = views ?? [{ id: "table", name: "Table", type: "table" as const }];
+  const selectedActiveViewId = activeViewId ?? databaseViews[0]?.id;
   const data: DatabaseData = {
     meta,
     properties,
     rows,
-    views: [{ id: "table", name: "Table", type: "table" }],
-    activeViewId: "table",
+    views: databaseViews,
+    activeViewId: selectedActiveViewId,
   };
+  validateDatabaseViews(databaseViews, properties);
+  if (!selectedActiveViewId || !databaseViews.some((view) => view.id === selectedActiveViewId)) {
+    throw new Error("Active database view does not exist");
+  }
   await writeDatabaseData(vault, data);
   const prevDatabases = [...databasesFor(vault)];
   databasesFor(vault).push(meta);
@@ -330,6 +387,25 @@ export async function createDatabase(
     throw error;
   }
   return meta;
+}
+
+export async function renameDatabase(vault: Vault, id: string, title: string): Promise<DatabaseMeta> {
+  const meta = databasesFor(vault).find((database) => database.id === id);
+  if (!meta) throw new Error("Database not found");
+  const nextTitle = title.trim();
+  if (!nextTitle) throw new Error("Database name cannot be empty");
+  const previousTitle = meta.title;
+  const previousUpdatedAt = meta.updatedAt;
+  meta.title = nextTitle;
+  meta.updatedAt = Date.now();
+  try {
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
+  } catch (error) {
+    meta.title = previousTitle;
+    meta.updatedAt = previousUpdatedAt;
+    throw error;
+  }
+  return { ...meta };
 }
 
 export async function updateDatabase(
@@ -344,7 +420,57 @@ export async function updateDatabase(
   validateDatabaseRows(properties, rows);
   const meta = databasesFor(vault).find((database) => database.id === id);
   if (!meta) throw new Error("Database not found");
+  const existingDatabaseIds = new Set(databasesFor(vault).map((database) => database.id));
+  for (const property of properties) {
+    if (
+      property.type === "relation" &&
+      (!existingDatabaseIds.has(property.relationDatabaseId!) || property.relationDatabaseId === id)
+    ) {
+      throw new Error(`Relation property "${property.name}" references an unknown database`);
+    }
+  }
   const current = await readDatabase(vault, id);
+  const propertySchemaChanged =
+    JSON.stringify(current.properties) !== JSON.stringify(properties);
+  if (propertySchemaChanged) {
+    for (const property of properties.filter((candidate) => candidate.type === "rollup")) {
+      const relation = properties.find(
+        (candidate) =>
+          candidate.id === property.rollupRelationPropertyId && candidate.type === "relation",
+      );
+      if (!relation || !property.rollupTargetPropertyId) {
+        throw new Error(`Rollup property "${property.name}" needs a valid relation and target`);
+      }
+      const targetDatabase = await readDatabase(vault, relation.relationDatabaseId!);
+      if (!targetDatabase.properties.some((target) => target.id === property.rollupTargetPropertyId)) {
+        throw new Error(`Rollup property "${property.name}" references an unknown target property`);
+      }
+    }
+    const removedPropertyIds = new Set(
+      current.properties
+        .filter((property) => !properties.some((next) => next.id === property.id))
+        .map((property) => property.id),
+    );
+    if (removedPropertyIds.size > 0) {
+      for (const database of databasesFor(vault)) {
+        if (database.id === id) continue;
+        const referencingData = await readDatabase(vault, database.id);
+        for (const rollup of referencingData.properties.filter((property) => property.type === "rollup")) {
+          const relation = referencingData.properties.find(
+            (property) => property.id === rollup.rollupRelationPropertyId && property.type === "relation",
+          );
+          if (
+            relation?.relationDatabaseId === id &&
+            removedPropertyIds.has(rollup.rollupTargetPropertyId ?? "")
+          ) {
+            throw new Error(
+              `Property is used by the "${rollup.name}" rollup in "${database.title}" and cannot be deleted`,
+            );
+          }
+        }
+      }
+    }
+  }
   const nextViews = views ?? current.views!;
   const nextActiveViewId = activeViewId ?? current.activeViewId;
   validateDatabaseViews(nextViews, properties);
@@ -463,14 +589,14 @@ const EXTENSION_SAMPLES: Array<ExtensionSample & { source: string }> = [
     name: "Note count",
     description: "Shows how many notes are in the current vault.",
     source:
-      'const notes = await window.driftleafExtension.listNotes(); document.body.innerHTML = `<main style="font:16px system-ui;padding:32px"><h1>Vault overview</h1><p>${notes.length} notes</p></main>`;',
+      '(async () => { const notes = await window.driftleafExtension.listNotes(); const main = document.createElement("main"); main.style.cssText = "font:16px system-ui;padding:32px"; const heading = document.createElement("h1"); heading.textContent = "Vault overview"; const summary = document.createElement("p"); summary.textContent = `${notes.length} notes`; main.append(heading, summary); document.body.replaceChildren(main); })();',
   },
   {
     id: "database-summary",
     name: "Database summary",
     description: "Lists only the databases you explicitly grant access to.",
     source:
-      'const databases = await window.driftleafExtension.listDatabases(); const main = document.createElement("main"); main.style.cssText = "font:16px system-ui;padding:32px"; const heading = document.createElement("h1"); heading.textContent = "Shared databases"; main.append(heading); const list = document.createElement("ul"); for (const database of databases) { const item = document.createElement("li"); item.textContent = database.title; list.append(item); } if (!databases.length) { const item = document.createElement("li"); item.textContent = "No database access granted"; list.append(item); } main.append(list); document.body.replaceChildren(main);',
+      '(async () => { const databases = await window.driftleafExtension.listDatabases(); const main = document.createElement("main"); main.style.cssText = "font:16px system-ui;padding:32px"; const heading = document.createElement("h1"); heading.textContent = "Shared databases"; main.append(heading); const list = document.createElement("ul"); for (const database of databases) { const item = document.createElement("li"); item.textContent = database.title; list.append(item); } if (!databases.length) { const item = document.createElement("li"); item.textContent = "No database access granted"; list.append(item); } main.append(list); document.body.replaceChildren(main); })();',
   },
 ];
 
@@ -1759,6 +1885,8 @@ export async function importFiles(
           targetFolder,
           parsed.properties,
           parsed.rows,
+          parsed.views,
+          parsed.activeViewId,
         );
         importedDatabases.push(meta);
       } else {
@@ -1786,30 +1914,64 @@ async function importZipArchive(
   zipPath: string,
   targetFolder: string,
 ): Promise<ImportResult> {
-  const imported: NoteMeta[] = [];
-  const importedDatabases: DatabaseMeta[] = [];
-  const skipped: string[] = [];
-
   let entries;
   try {
     entries = new AdmZip(zipPath).getEntries();
   } catch (err) {
     return {
-      imported,
-      importedDatabases,
+      imported: [],
+      importedDatabases: [],
       skipped: [
         `${path.basename(zipPath)} (${err instanceof Error ? err.message : "couldn't read archive"})`,
       ],
     };
   }
 
+  return importZipEntries(vault, entries, path.basename(zipPath), targetFolder);
+}
+
+export async function importTemplateArchive(
+  vault: Vault,
+  archive: Uint8Array,
+  templateName: string,
+): Promise<ImportResult> {
+  if (archive.byteLength > 25 * 1024 * 1024) {
+    throw new Error("Templates must be smaller than 25 MB");
+  }
+  let entries;
+  try {
+    entries = new AdmZip(Buffer.from(archive)).getEntries();
+  } catch (err) {
+    throw new Error(
+      `Could not read template archive: ${err instanceof Error ? err.message : "invalid ZIP file"}`,
+      { cause: err },
+    );
+  }
+  const safeName = templateName.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-").trim();
+  if (!safeName) throw new Error("Template name is invalid");
+  return importZipEntries(
+    vault,
+    entries,
+    `${safeName}.zip`,
+    `Community templates/${safeName}`,
+  );
+}
+
+async function importZipEntries(
+  vault: Vault,
+  entries: ReturnType<AdmZip["getEntries"]>,
+  archiveName: string,
+  targetFolder: string,
+): Promise<ImportResult> {
+  const imported: NoteMeta[] = [];
+  const importedDatabases: DatabaseMeta[] = [];
+  const skipped: string[] = [];
+
   if (entries.length > MAX_IMPORT_ENTRIES) {
     return {
       imported,
       importedDatabases,
-      skipped: [
-        `${path.basename(zipPath)} (archive has too many entries — over ${MAX_IMPORT_ENTRIES})`,
-      ],
+      skipped: [`${archiveName} (archive has too many entries — over ${MAX_IMPORT_ENTRIES})`],
     };
   }
 
@@ -1856,6 +2018,8 @@ async function importZipArchive(
           folderPath,
           parsed.properties,
           parsed.rows,
+          parsed.views,
+          parsed.activeViewId,
         );
         importedDatabases.push(meta);
       }

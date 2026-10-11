@@ -132,7 +132,7 @@ npm run dev
 | `npm run build` | Typecheck + build production bundles (no packaging) |
 | `npm run lint` | Run ESLint checks |
 | `npm run typecheck` | Run TypeScript compiler without emitting |
-| `npm test` | Run test suite |
+| `node scripts/tests/data-loss.js` | Run vault, database, and recovery integration tests |
 
 ### Debugging Search Performance
 

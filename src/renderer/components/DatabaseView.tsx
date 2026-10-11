@@ -3,6 +3,7 @@ import { Button, Input } from "@aetherAssembly/ui";
 import type {
   DatabaseCellValue,
   DatabaseData,
+  DatabaseExportFormat,
   DatabaseMeta,
   DatabaseProperty,
   DatabasePropertyType,
@@ -10,7 +11,7 @@ import type {
   DatabaseViewDefinition,
   DatabaseViewType,
 } from "../../shared/ipc";
-import { evaluateFormula, type FormulaValue } from "../lib/formula";
+import { evaluateFormula, type FormulaValue } from "../../shared/formula";
 
 const EDITABLE_TYPES: DatabasePropertyType[] = [
   "title",
@@ -70,14 +71,23 @@ function comparableValue(value: DatabaseCellValue | FormulaValue): string | numb
 interface DatabaseViewProps {
   databaseId: string;
   onDeleted: () => void;
+  onRenamed: (meta: DatabaseMeta) => void;
 }
 
-export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
+export function DatabaseView({ databaseId, onDeleted, onRenamed }: DatabaseViewProps) {
   const [data, setData] = useState<DatabaseData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [renamingDatabase, setRenamingDatabase] = useState(false);
+  const [databaseTitleDraft, setDatabaseTitleDraft] = useState("");
+  const [renamingPropertyId, setRenamingPropertyId] = useState<string | null>(null);
+  const [propertyNameDraft, setPropertyNameDraft] = useState("");
+  const [propertyEditorOpen, setPropertyEditorOpen] = useState(false);
   const [newPropertyName, setNewPropertyName] = useState("");
   const [newPropertyType, setNewPropertyType] = useState<DatabasePropertyType>("text");
+  const [newFormula, setNewFormula] = useState("");
+  const [editingFormulaId, setEditingFormulaId] = useState<string | null>(null);
+  const [formulaDraft, setFormulaDraft] = useState("");
   const [databaseOptions, setDatabaseOptions] = useState<DatabaseMeta[]>([]);
   const [relationDatabaseId, setRelationDatabaseId] = useState("");
   const [rollupRelationPropertyId, setRollupRelationPropertyId] = useState("");
@@ -96,6 +106,8 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
   useEffect(() => {
     setData(null);
     setError(null);
+    setRenamingDatabase(false);
+    setRenamingPropertyId(null);
     void Promise.all([
       window.driftleaf.databases.read(databaseId),
       window.driftleaf.databases.list(),
@@ -274,11 +286,55 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
     }
   }
 
+  async function renameDatabase(titleDraft: string) {
+    if (!data || busy) return;
+    const title = titleDraft.trim();
+    if (!title) {
+      setError("Database name cannot be empty.");
+      return;
+    }
+    if (title === data.meta.title) {
+      setRenamingDatabase(false);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const meta = await window.driftleaf.databases.rename(databaseId, title);
+      setData((current) => (current ? { ...current, meta } : current));
+      setRenamingDatabase(false);
+      onRenamed(meta);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not rename database");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function exportDatabase(format: DatabaseExportFormat) {
+    if (!window.confirm(
+      `Export this database as an unencrypted ${format.toUpperCase()} file? The exported file can be read by anyone with access to its location.`,
+    )) {
+      return;
+    }
+    setError(null);
+    try {
+      await window.driftleaf.databases.export(databaseId, format);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not export database");
+    }
+  }
+
   async function addProperty() {
     const name = newPropertyName.trim();
     if (!data || !name) return;
-    if (data.properties.some((property) => property.name === name)) {
+    if (busy) return;
+    if (data.properties.some((property) => property.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
       setError("A property with that name already exists.");
+      return;
+    }
+    if (newPropertyType === "formula" && !newFormula.trim()) {
+      setError("Enter a formula for this calculated property.");
       return;
     }
     const selectedRelationDatabase = databaseOptions.find(
@@ -316,7 +372,7 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
       id: crypto.randomUUID(),
       name,
       type: newPropertyType,
-      ...(newPropertyType === "formula" ? { formula: "" } : {}),
+      ...(newPropertyType === "formula" ? { formula: newFormula.trim() } : {}),
       ...(options ? { options } : {}),
       ...(newPropertyType === "relation" && selectedRelationDatabase
         ? { relationDatabaseId: selectedRelationDatabase.id }
@@ -339,13 +395,23 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
     }));
     setData({ ...data, properties, rows });
     setNewPropertyName("");
+    setNewFormula("");
     setError(null);
+    setBusy(true);
     try {
-      await window.driftleaf.databases.update(databaseId, properties, rows);
+      await window.driftleaf.databases.update(
+        databaseId,
+        properties,
+        rows,
+        data.views,
+        data.activeViewId,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add database property");
       const refreshed = await window.driftleaf.databases.read(databaseId).catch(() => null);
       if (refreshed) setData(refreshed);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -353,20 +419,142 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
     if (!data) return;
     const property = data.properties.find((item) => item.id === propertyId);
     if (!property) return;
-    const formula = window.prompt(
-      'Enter a formula, for example: if(prop("Done"), "Complete", "Open")',
-      property.formula ?? "",
-    );
-    if (formula === null) return;
+    setEditingFormulaId(propertyId);
+    setFormulaDraft(property.formula ?? "");
+  }
+
+  async function saveFormula() {
+    if (!data || !editingFormulaId || busy) return;
+    const formula = formulaDraft.trim();
+    if (!formula) {
+      setError("Enter a formula before saving.");
+      return;
+    }
     const properties = data.properties.map((item) =>
-      item.id === propertyId ? { ...item, formula } : item,
+      item.id === editingFormulaId ? { ...item, formula } : item,
     );
-    setData({ ...data, properties });
-    void window.driftleaf.databases
-      .update(databaseId, properties, data.rows)
-      .catch((err: unknown) =>
-        setError(err instanceof Error ? err.message : "Could not save formula"),
+    const nextData = { ...data, properties };
+    setData(nextData);
+    setError(null);
+    setBusy(true);
+    try {
+      await window.driftleaf.databases.update(
+        databaseId,
+        properties,
+        data.rows,
+        data.views,
+        data.activeViewId,
       );
+      setEditingFormulaId(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save formula");
+      const refreshed = await window.driftleaf.databases.read(databaseId).catch(() => null);
+      if (refreshed) setData(refreshed);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function persistDatabase(
+    nextData: DatabaseData,
+    failureMessage: string,
+  ): Promise<boolean> {
+    setData(nextData);
+    setError(null);
+    setBusy(true);
+    try {
+      await window.driftleaf.databases.update(
+        databaseId,
+        nextData.properties,
+        nextData.rows,
+        nextData.views,
+        nextData.activeViewId,
+      );
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : failureMessage);
+      const refreshed = await window.driftleaf.databases.read(databaseId).catch(() => null);
+      if (refreshed) setData(refreshed);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function renameProperty(propertyId: string, nameDraft: string) {
+    if (!data || busy) return;
+    const property = data.properties.find((item) => item.id === propertyId);
+    if (!property) return;
+    const name = nameDraft.trim();
+    if (!name) {
+      setError("Property name cannot be empty.");
+      return;
+    }
+    if (name === property.name) {
+      setRenamingPropertyId(null);
+      return;
+    }
+    if (data.properties.some((item) => item.id !== propertyId && item.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      setError("A property with that name already exists.");
+      return;
+    }
+    const escapedName = property.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const reference = new RegExp(`(prop\\(\\s*")${escapedName}("\\s*\\))`, "g");
+    const properties = data.properties.map((item) => ({
+      ...item,
+      name: item.id === propertyId ? name : item.name,
+      ...(item.type === "formula"
+        ? { formula: (item.formula ?? "").replace(reference, (_match, before: string, after: string) => `${before}${name}${after}`) }
+        : {}),
+    }));
+    if (await persistDatabase({ ...data, properties }, "Could not rename database property")) {
+      setRenamingPropertyId(null);
+    }
+  }
+
+  async function removeProperty(propertyId: string) {
+    if (!data || busy) return;
+    const property = data.properties.find((item) => item.id === propertyId);
+    if (!property || property.type === "title") return;
+    const dependentFormula = data.properties.find(
+      (item) =>
+        item.type === "formula" &&
+        item.id !== propertyId &&
+        new RegExp(`prop\\(\\s*"${property.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"\\s*\\)`).test(
+          item.formula ?? "",
+        ),
+    );
+    if (dependentFormula) {
+      setError(`Remove or update the "${dependentFormula.name}" formula before deleting this property.`);
+      return;
+    }
+    const dependentRollup = data.properties.find(
+      (item) => item.type === "rollup" && item.rollupRelationPropertyId === propertyId,
+    );
+    if (dependentRollup) {
+      setError(`Remove the "${dependentRollup.name}" rollup before deleting this relation.`);
+      return;
+    }
+    if (!window.confirm(`Delete the "${property.name}" property and its values from every row?`)) {
+      return;
+    }
+    const properties = data.properties.filter((item) => item.id !== propertyId);
+    const rows = data.rows.map((row) => {
+      const values = { ...row.values };
+      delete values[propertyId];
+      return { ...row, values };
+    });
+    const views = (data.views ?? []).map((view) => ({
+      ...view,
+      sortPropertyId: view.sortPropertyId === propertyId ? undefined : view.sortPropertyId,
+      groupPropertyId: view.groupPropertyId === propertyId ? undefined : view.groupPropertyId,
+      datePropertyId: view.datePropertyId === propertyId ? undefined : view.datePropertyId,
+      filters: (view.filters ?? []).filter((filter) => filter.propertyId !== propertyId),
+    }));
+    await persistDatabase(
+      { ...data, properties, rows, views },
+      "Could not delete database property",
+    );
   }
 
   function rollupValue(row: DatabaseRow, property: DatabaseProperty): FormulaValue {
@@ -389,7 +577,14 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
     if (!target) return null;
     const values = linked.rows
       .filter((linkedRow) => linkedIds.includes(linkedRow.id))
-      .map((linkedRow) => linkedRow.values[target.id] ?? null)
+      .map((linkedRow) => {
+        if (target.type !== "formula") return linkedRow.values[target.id] ?? null;
+        try {
+          return formulaValue(linked, linkedRow, target);
+        } catch (formulaError) {
+          return `#ERROR: ${formulaError instanceof Error ? formulaError.message : "Invalid formula"}`;
+        }
+      })
       .filter((value) => value !== null);
     switch (property.rollupFunction) {
       case "count":
@@ -499,9 +694,6 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
       return (
         <div className="database__formula-cell" title={property.formula ?? "No formula set"}>
           {cellText(value)}
-          <Button variant="ghost" size="sm" onClick={() => updateFormula(property.id)}>
-            Formula
-          </Button>
         </div>
       );
     }
@@ -522,25 +714,30 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
           : [];
       const titleProperty = linked?.properties.find((candidate) => candidate.type === "title");
       return (
-        <select
-          aria-label={property.name}
-          multiple
-          value={selectedIds}
-          onChange={(event) => {
-            const next = updateCell(
-              row.id,
-              property.id,
-              Array.from(event.target.selectedOptions, (option) => option.value),
+        <fieldset className="database__multi-value" aria-label={property.name}>
+          {linked?.rows.map((linkedRow) => {
+            const selected = selectedIds.includes(linkedRow.id);
+            return (
+              <label key={linkedRow.id}>
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  onChange={() => {
+                    const nextIds = selected
+                      ? selectedIds.filter((id) => id !== linkedRow.id)
+                      : [...selectedIds, linkedRow.id];
+                    const next = updateCell(row.id, property.id, nextIds);
+                    if (next) void save(next);
+                  }}
+                />
+                {titleProperty
+                  ? cellText(linkedRow.values[titleProperty.id] ?? null)
+                  : linkedRow.id}
+              </label>
             );
-            if (next) void save(next);
-          }}
-        >
-          {linked?.rows.map((linkedRow) => (
-            <option key={linkedRow.id} value={linkedRow.id}>
-              {titleProperty ? cellText(linkedRow.values[titleProperty.id] ?? null) : linkedRow.id}
-            </option>
-          ))}
-        </select>
+          })}
+          {linked?.rows.length === 0 && <small>No rows in linked database.</small>}
+        </fieldset>
       );
     }
     if (property.type === "multi_select" && property.options?.length) {
@@ -554,25 +751,27 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
               .filter(Boolean)
           : [];
       return (
-        <select
-          aria-label={property.name}
-          multiple
-          value={selectedValues}
-          onChange={(event) => {
-            const next = updateCell(
-              row.id,
-              property.id,
-              Array.from(event.target.selectedOptions, (option) => option.value),
+        <fieldset className="database__multi-value" aria-label={property.name}>
+          {property.options.map((option) => {
+            const checked = selectedValues.includes(option);
+            return (
+              <label key={option}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => {
+                    const nextValues = checked
+                      ? selectedValues.filter((value) => value !== option)
+                      : [...selectedValues, option];
+                    const next = updateCell(row.id, property.id, nextValues);
+                    if (next) void save(next);
+                  }}
+                />
+                {option}
+              </label>
             );
-            if (next) void save(next);
-          }}
-        >
-          {property.options.map((option) => (
-            <option value={option} key={option}>
-              {option}
-            </option>
-          ))}
-        </select>
+          })}
+        </fieldset>
       );
     }
     if (["created_time", "last_edited_time"].includes(property.type)) {
@@ -672,14 +871,65 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
     <section className="database">
       <header className="database__header">
         <div>
-          <h1>{data.meta.title}</h1>
+          {renamingDatabase ? (
+            <form
+              className="database__rename-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void renameDatabase(databaseTitleDraft);
+              }}
+            >
+              <Input
+                aria-label="Database name"
+                autoFocus
+                value={databaseTitleDraft}
+                onChange={(event) => setDatabaseTitleDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setRenamingDatabase(false);
+                }}
+              />
+              <Button type="submit" variant="primary" size="sm" disabled={busy}>
+                Save
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => setRenamingDatabase(false)}
+              >
+                Cancel
+              </Button>
+            </form>
+          ) : (
+            <h1>{data.meta.title}</h1>
+          )}
           <p>
             {filteredRows.length} of {data.rows.length} rows · {activeView?.name ?? "Table"}
             {busy ? " · Saving…" : ""}
           </p>
         </div>
+        {!renamingDatabase && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              setDatabaseTitleDraft(data.meta.title);
+              setRenamingDatabase(true);
+            }}
+          >
+            Rename database
+          </Button>
+        )}
         <Button variant="primary" size="sm" loading={busy} onClick={() => void addRow()}>
           + Row
+        </Button>
+        <Button variant="secondary" size="sm" onClick={() => void exportDatabase("csv")}>
+          Export CSV
+        </Button>
+        <Button variant="secondary" size="sm" onClick={() => void exportDatabase("json")}>
+          Export JSON
         </Button>
         <Button variant="ghost" size="sm" onClick={() => void deleteDatabase()}>
           Delete database
@@ -834,12 +1084,69 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
             <tr>
               {data.properties.map((property) => (
                 <th key={property.id}>
-                  {property.name}
-                  <small>{property.type}</small>
+                  {renamingPropertyId === property.id ? (
+                    <form
+                      className="database__rename-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void renameProperty(property.id, propertyNameDraft);
+                      }}
+                    >
+                      <Input
+                        aria-label={`Name for ${property.name}`}
+                        autoFocus
+                        value={propertyNameDraft}
+                        onChange={(event) => setPropertyNameDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") setRenamingPropertyId(null);
+                        }}
+                      />
+                      <Button type="submit" variant="primary" size="sm" disabled={busy}>
+                        Save
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => setRenamingPropertyId(null)}
+                      >
+                        Cancel
+                      </Button>
+                    </form>
+                  ) : (
+                    property.name
+                  )}
+                  <small>{property.type === "formula" ? "calculated · read-only" : property.type.replaceAll("_", " ")}</small>
                   {property.type === "formula" && (
                     <Button variant="ghost" size="sm" onClick={() => updateFormula(property.id)}>
                       Edit formula
                     </Button>
+                  )}
+                  {renamingPropertyId !== property.id && (
+                    <div className="database__property-actions">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => {
+                          setPropertyNameDraft(property.name);
+                          setRenamingPropertyId(property.id);
+                        }}
+                      >
+                        Rename
+                      </Button>
+                      {property.type !== "title" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => void removeProperty(property.id)}
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </th>
               ))}
@@ -953,11 +1260,13 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
       )}
       <form
         className="database__add-property"
+        hidden={!propertyEditorOpen}
         onSubmit={(event) => {
           event.preventDefault();
           void addProperty();
         }}
       >
+        <strong>Add property</strong>
         <Input
           aria-label="New property name"
           placeholder="Property name"
@@ -974,10 +1283,45 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
         >
           {EDITABLE_TYPES.map((type) => (
             <option value={type} key={type}>
-              {type}
+              {type === "formula" ? "Formula (calculated)" : type.replaceAll("_", " ")}
             </option>
           ))}
         </select>
+        {newPropertyType === "formula" && (
+          <label className="database__formula-editor">
+            Formula expression
+            <textarea
+              aria-label="New formula expression"
+              value={newFormula}
+              onChange={(event) => setNewFormula(event.target.value)}
+              placeholder={'if(prop("Done"), "Complete", "Open")'}
+              rows={3}
+            />
+            <small>
+              Calculated for every row; use <code>prop("Property name")</code> to refer to a
+              property. Formula results are read-only.
+            </small>
+            {newFormula.trim() && data.rows[0] && (
+              <small>
+                Preview:{" "}
+                {(() => {
+                  try {
+                    const sampleRow = data.rows[0];
+                    return cellText(
+                      evaluateFormula(newFormula, (name) => {
+                        const referenced = data.properties.find((item) => item.name === name);
+                        if (!referenced) throw new Error(`Unknown property: ${name}`);
+                        return propertyValue(sampleRow, referenced);
+                      }),
+                    );
+                  } catch (previewError) {
+                    return `Formula needs attention: ${previewError instanceof Error ? previewError.message : "invalid expression"}`;
+                  }
+                })()}
+              </small>
+            )}
+          </label>
+        )}
         {newPropertyType === "relation" && (
           <select
             aria-label="Related database"
@@ -1040,10 +1384,67 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
             </select>
           </>
         )}
-        <Button variant="secondary" size="sm" type="submit">
-          + Property
+        <Button variant="secondary" size="sm" type="submit" disabled={busy}>
+          {newPropertyType === "formula" ? "+ Add calculated property" : "+ Add property"}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            setPropertyEditorOpen(false);
+            setNewPropertyName("");
+            setNewFormula("");
+            setError(null);
+          }}
+        >
+          Cancel
         </Button>
       </form>
+      {!propertyEditorOpen && (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setPropertyEditorOpen(true)}
+          aria-label="Add a property"
+        >
+          + Add property
+        </Button>
+      )}
+      {editingFormulaId && (
+        <section className="database__formula-editor" aria-label="Edit formula">
+          <label>
+            Formula for{" "}
+            <strong>
+              {data.properties.find((property) => property.id === editingFormulaId)?.name}
+            </strong>
+            <textarea
+              aria-label="Formula expression"
+              value={formulaDraft}
+              onChange={(event) => setFormulaDraft(event.target.value)}
+              rows={4}
+            />
+          </label>
+          <p>
+            Formula columns calculate a result for each row. They do not store editable cell
+            values.
+          </p>
+          <div>
+            <Button variant="primary" size="sm" loading={busy} onClick={() => void saveFormula()}>
+              Save formula
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setEditingFormulaId(null)}
+              disabled={busy}
+            >
+              Cancel
+            </Button>
+          </div>
+        </section>
+      )}
       {error && <p className="database__error">{error}</p>}
     </section>
   );

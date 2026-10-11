@@ -144,16 +144,9 @@ export function UnlockScreen({ onUnlocked, version }: UnlockScreenProps) {
                   <option value="study">Study / School</option>
                 </select>
                 <span className="unlock-screen__template-hint">
-                  Templates create ordinary folders and Markdown notes in your vault.
+                  You can browse and install community templates from the Extensions gallery after
+                  opening your vault.
                 </span>
-                <a
-                  className="unlock-screen__template-link"
-                  href="https://github.com/AetherAssembly/Driftleaf-Templates"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Browse more vault templates
-                </a>
               </label>
             )}
             <Input

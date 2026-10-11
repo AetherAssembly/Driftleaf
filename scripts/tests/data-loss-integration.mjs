@@ -5,11 +5,18 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import AdmZip from 'adm-zip';
 import * as vaultModule from '../../src/main/vault.ts';
+import { exportDatabase } from '../../src/main/database-export.ts';
+import { parseCsvDatabase, parseJsonDatabase } from '../../src/main/database-import.ts';
+import { evaluateFormula } from '../../src/shared/formula.ts';
 import { decrypt, unpackPayload } from '../../src/main/crypto.ts';
 
 const testVaultPath = path.join(os.tmpdir(), `driftleaf-test-${Date.now()}`);
 const legacyVaultPath = `${testVaultPath}-legacy`;
+const recoverySourcePath = `${testVaultPath}-recovery-source`;
+const recoveryBackupParent = `${testVaultPath}-backups`;
+const recoveryRestorePath = `${testVaultPath}-restored`;
 
 console.log('🧪 Data Loss Bug Bash - Vault Integration Test\n');
 console.log(`Test vault path: ${testVaultPath}\n`);
@@ -41,6 +48,9 @@ async function cleanup() {
   try {
     await fs.rm(testVaultPath, { recursive: true, force: true });
     await fs.rm(legacyVaultPath, { recursive: true, force: true });
+    await fs.rm(recoverySourcePath, { recursive: true, force: true });
+    await fs.rm(recoveryBackupParent, { recursive: true, force: true });
+    await fs.rm(recoveryRestorePath, { recursive: true, force: true });
   } catch {}
 }
 
@@ -240,7 +250,134 @@ await test('Canvas items persist and are pruned when targets are deleted', async
   );
 });
 
-// Test 14: Migrate a legacy plaintext manifest and named note path
+// Test 14: Multiple properties and calculated columns persist and export cleanly
+await test('Database supports multiple properties and formula-preserving JSON roundtrip', async () => {
+  const vault = await vaultModule.unlockVault(testVaultPath, 'test-passphrase').then(r => r.vault);
+  const titleId = randomUUID();
+  const doneId = randomUUID();
+  const totalId = randomUUID();
+  const formulaId = randomUUID();
+  const rowId = randomUUID();
+  const properties = [
+    { id: titleId, name: 'Task', type: 'title' },
+    { id: doneId, name: 'Done', type: 'checkbox' },
+    { id: totalId, name: 'Estimate', type: 'number' },
+    {
+      id: formulaId,
+      name: 'Summary',
+      type: 'formula',
+      formula: 'if(prop("Done"), "Complete", "Open")',
+    },
+  ];
+  const rows = [{
+    id: rowId,
+    values: { [titleId]: 'Ship, "database" improvements', [doneId]: true, [totalId]: 3 },
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }];
+  const view = {
+    id: randomUUID(),
+    name: 'Open tasks',
+    type: 'table',
+    sortPropertyId: totalId,
+    sortDirection: 'descending',
+    filters: [{ propertyId: doneId, operator: 'equals', value: 'true' }],
+  };
+  const database = await vaultModule.createDatabase(
+    vault,
+    'Interoperability',
+    '',
+    properties,
+    rows,
+    [view],
+    view.id,
+  );
+  const renamed = await vaultModule.renameDatabase(vault, database.id, 'Renamed interoperability');
+  const reopened = await vaultModule.readDatabase(vault, database.id);
+  const formula = reopened.properties.find(property => property.id === formulaId);
+  const formulaResult = evaluateFormula(formula.formula, name => {
+    const property = reopened.properties.find(candidate => candidate.name === name);
+    return property ? reopened.rows[0].values[property.id] ?? null : null;
+  });
+  const exportedJson = await exportDatabase(vault, database.id, 'json');
+  const parsed = parseJsonDatabase(exportedJson.content, 'fallback');
+  const imported = await vaultModule.createDatabase(
+    vault,
+    parsed.title,
+    '',
+    parsed.properties,
+    parsed.rows,
+    parsed.views,
+    parsed.activeViewId,
+  );
+  const importedData = await vaultModule.readDatabase(vault, imported.id);
+  const csv = await exportDatabase(vault, database.id, 'csv');
+  const csvParsed = parseCsvDatabase(csv.content, 'CSV roundtrip');
+  const manifestBytes = await fs.readFile(path.join(testVaultPath, '.driftleaf', 'manifest.enc'));
+  const databaseBytes = await fs.readFile(path.join(testVaultPath, '.driftleaf', `${database.id}.db.enc`));
+  return (
+    reopened.properties.length === 4 &&
+    renamed.title === 'Renamed interoperability' &&
+    reopened.meta.title === 'Renamed interoperability' &&
+    reopened.rows[0].values[doneId] === true &&
+    reopened.rows[0].values[totalId] === 3 &&
+    formulaResult === 'Complete' &&
+    importedData.properties.find(property => property.id === formulaId)?.formula === formula.formula &&
+    importedData.rows[0].values[totalId] === 3 &&
+    importedData.views[0].name === 'Open tasks' &&
+    importedData.activeViewId === view.id &&
+    csv.content.includes('"Ship, ""database"" improvements",true,3,Complete') &&
+    csvParsed.rows[0].values[csvParsed.properties.find(property => property.name === 'Task').id] === 'Ship, "database" improvements' &&
+    csvParsed.rows[0].values[csvParsed.properties.find(property => property.name === 'Summary').id] === 'Complete' &&
+    !manifestBytes.toString('utf-8').includes('Interoperability') &&
+    !databaseBytes.toString('utf-8').includes('Ship database improvements')
+  );
+});
+
+// Test 15: A copied backup validates and can be restored as an independent vault
+await test('Community template ZIP imports into its designated encrypted folder', async () => {
+  const vault = await vaultModule.unlockVault(testVaultPath, 'test-passphrase').then(r => r.vault);
+  const archive = new AdmZip();
+  archive.addFile('Getting started.md', Buffer.from('# Getting started\n\nTemplate contents.'));
+  const result = await vaultModule.importTemplateArchive(vault, archive.toBuffer(), 'Test pack');
+  if (result.imported.length !== 1 || result.skipped.length !== 0) return false;
+  const note = result.imported[0];
+  return (
+    note.folderPath === 'Community templates/Test pack' &&
+    (await vaultModule.readNote(vault, note.id)) === '# Getting started\n\nTemplate contents.'
+  );
+});
+
+// Test 16: A copied backup validates and can be restored as an independent vault
+await test('Vault backup verifies and restores database contents', async () => {
+  await fs.mkdir(recoveryBackupParent, { recursive: true });
+  const vault = await vaultModule.createVault(recoverySourcePath, 'recovery-passphrase');
+  const titleId = randomUUID();
+  const row = {
+    id: randomUUID(),
+    values: { [titleId]: 'Backup row' },
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  const database = await vaultModule.createDatabase(
+    vault,
+    'Backup database',
+    '',
+    [{ id: titleId, name: 'Title', type: 'title' }],
+    [row],
+  );
+  const backupPath = await vaultModule.createVaultBackup(vault, recoveryBackupParent);
+  const report = await vaultModule.verifyVaultBackup(backupPath, 'recovery-passphrase');
+  await fs.cp(backupPath, recoveryRestorePath, { recursive: true });
+  const restored = await vaultModule.unlockVault(recoveryRestorePath, 'recovery-passphrase');
+  const restoredDatabase = await vaultModule.readDatabase(restored.vault, database.id);
+  return (
+    report.checks.every(check => check.status === 'ok') &&
+    restoredDatabase.rows[0].values[titleId] === 'Backup row'
+  );
+});
+
+// Test 17: Migrate a legacy plaintext manifest and named note path
 await test('Legacy vault metadata migrates to encrypted opaque paths', async () => {
   await cleanup();
   let vault = await vaultModule.createVault(legacyVaultPath, 'legacy-passphrase');

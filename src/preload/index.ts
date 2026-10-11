@@ -43,6 +43,7 @@ const api: DriftleafApi = {
     read: (id) => ipcRenderer.invoke(IPC_CHANNELS.databasesRead, id),
     create: (title, folderPath) =>
       ipcRenderer.invoke(IPC_CHANNELS.databasesCreate, title, folderPath),
+    rename: (id, title) => ipcRenderer.invoke(IPC_CHANNELS.databasesRename, id, title),
     update: (id, properties, rows, views, activeViewId) =>
       ipcRenderer.invoke(
         IPC_CHANNELS.databasesUpdate,
@@ -55,6 +56,7 @@ const api: DriftleafApi = {
     createRow: (databaseId) => ipcRenderer.invoke(IPC_CHANNELS.databasesCreateRow, databaseId),
     deleteRow: (databaseId, rowId) =>
       ipcRenderer.invoke(IPC_CHANNELS.databasesDeleteRow, databaseId, rowId),
+    export: (id, format) => ipcRenderer.invoke(IPC_CHANNELS.databasesExport, id, format),
     delete: (id) => ipcRenderer.invoke(IPC_CHANNELS.databasesDelete, id),
   },
   folders: {
@@ -71,6 +73,13 @@ const api: DriftleafApi = {
     samples: () => ipcRenderer.invoke(IPC_CHANNELS.extensionsSamples),
     installSample: (sampleId) =>
       ipcRenderer.invoke(IPC_CHANNELS.extensionsInstallSample, sampleId),
+    community: () => ipcRenderer.invoke(IPC_CHANNELS.extensionsCommunity),
+    previewCommunityExtension: (assetId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.extensionsCommunityPreview, assetId),
+    installCommunityExtension: (assetId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.extensionsCommunityInstall, assetId),
+    installCommunityTemplate: (assetId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.templatesCommunityInstall, assetId),
     setPermissions: (id, permissions, databaseIds) =>
       ipcRenderer.invoke(
         IPC_CHANNELS.extensionsSetPermissions,

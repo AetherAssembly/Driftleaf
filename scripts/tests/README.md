@@ -7,7 +7,10 @@ Test suite for verifying Driftleaf's data loss safeguards across vault operation
 ### `data-loss-integration.mjs`
 
 Integration tests using the actual vault module. Verifies end-to-end crash
-safety, encrypted metadata, legacy migration, and extension persistence.
+safety, encrypted metadata, legacy migration, extension persistence, database
+property/formula behavior, database import/export, and backup restoration.
+It also checks community template ZIP imports into their dedicated encrypted
+vault folder.
 
 **Tests:**
 
@@ -23,6 +26,11 @@ safety, encrypted metadata, legacy migration, and extension persistence.
 - Corrupted notes are detected
 - Legacy plaintext manifests and named note paths migrate to encrypted metadata and opaque note IDs
 - Extension source and permissions remain encrypted
+- Multiple database properties and calculated formula results persist
+- Driftleaf JSON export/import preserves formulas, rows, and saved views
+- CSV exports correctly quote values and import calculated results
+- Vault backups verify and restore encrypted database contents
+- Community template archives import Markdown into their vault subfolder
 
 **Run:**
 

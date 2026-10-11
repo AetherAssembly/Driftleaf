@@ -8,7 +8,7 @@
 [![Copr build status](https://copr.fedorainfracloud.org/coprs/aster1630/Driftleaf/package/driftleaf/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/aster1630/Driftleaf/package/driftleaf/)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
-A private, simple notes app for your desktop. Your notes stay on your computer - encrypted, organized, and completely yours. No accounts, no cloud, no third-party tracking. Just you and your thoughts.
+A private, local-first notes app for your desktop. Your vault stays on your computer, encrypted, organized, and yours. No accounts or cloud sync; optional update checks contact GitHub for public release metadata only. Just you and your thoughts.
 
 ## Why Driftleaf?
 
@@ -84,8 +84,9 @@ are encrypted with the vault metadata.
 Driftleaf can also run local JavaScript extensions from the **Extensions**
 button. Extensions run in isolated windows with network access disabled; note
 graph, and selected-database access are separate permissions, off by default.
-The starter gallery includes small examples, and extension code and grants are
-stored inside the encrypted vault. See
+The gallery includes small examples and browses stable community extension and
+template releases inside the app. Extension code and grants are stored inside
+the encrypted vault. See
 [docs/EXTENSIONS.md](docs/EXTENSIONS.md) before installing third-party code.
 
 Choose System, Light, Dark, Aquatic, Mossy, Sunset, or Space in Settings to change the app's appearance.

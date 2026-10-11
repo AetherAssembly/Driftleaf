@@ -11,9 +11,9 @@
 %global __os_install_post %{nil}
 
 Name:           driftleaf
-Version:        0.5.0
+Version:        0.6.0
 Release:        1%{?dist}
-Summary:        A local-first encrypted notes and database app
+Summary:        A local-first encrypted notes, graph, and database app
 License:        AGPL-3.0-or-later
 URL:            https://github.com/AetherAssembly/Driftleaf
 
@@ -26,9 +26,13 @@ Source0:        https://github.com/AetherAssembly/Driftleaf/releases/download/v%
 Source1:        https://github.com/AetherAssembly/Driftleaf/releases/download/v%{version}/driftleaf-%{version}-aarch64.rpm
 
 %description
-Driftleaf is a private desktop notes application. Markdown notes and imported
-CSV/JSON databases remain on the local computer in an encrypted vault, with
-fast local search and editable database tables.
+Driftleaf is a local-first desktop workspace for encrypted Markdown notes,
+linked-note graphs, a spatial canvas, JavaScript extensions, and editable
+databases. Vault metadata, notes, database contents, canvas layouts, and
+extension permissions are encrypted at rest. Database table, board, and
+calendar views support formulas, while CSV and JSON import/export help move
+data between tools. Driftleaf works offline; update and community catalogs
+use optional public GitHub release requests.
 
 %prep
 %setup -c -T
@@ -66,6 +70,11 @@ ln -s /opt/Driftleaf/driftleaf %{buildroot}%{_bindir}/driftleaf
 %{_datadir}/icons/hicolor/1024x1024/apps/driftleaf.png
 
 %changelog
+* Sun Oct 11 2026 AetherAssembly <support@aetherassembly.org> - 0.6.0-1
+- Updated package version and description for the 0.6.0 feature set, including
+  encrypted vault metadata, linked-note graphs, canvas workspaces, isolated
+  extensions, richer database views and formulas, and community catalogs.
+
 * Thu Oct 08 2026 AetherAssembly <support@aetherassembly.org> - 0.5.0-1
 - Added direct creation of encrypted editable databases, with a default title
   property, alongside fixes for note selection, external links, and Wayland

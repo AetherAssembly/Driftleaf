@@ -1,7 +1,9 @@
 # Extensions
 
-Extensions add local features using JavaScript files. They are stored inside
-the encrypted vault manifest and never downloaded by Driftleaf.
+Extensions add local features using JavaScript files. Installed extensions are
+stored inside the encrypted vault manifest. Driftleaf can browse and download
+public release assets from the community extension and template repositories
+when you open or refresh the in-app gallery.
 
 ## Installing and Running
 
@@ -41,11 +43,20 @@ and a separate per-database grant. Calls without the required grant fail with
 an error. The API is read-only: extensions cannot write notes or databases,
 access settings, file paths, or arbitrary IPC.
 
-## Starter Gallery and SDK
+## Starter and Community Galleries
 
 The in-app starter gallery contains small, source-reviewed examples (a vault
 note count and a selected-database summary). They are installed into the
 encrypted manifest like other extensions and start with no permissions.
+
+The community gallery lists stable releases from
+[Driftleaf-Extensions](https://github.com/AetherAssembly/Driftleaf-Extensions)
+and [Driftleaf-Templates](https://github.com/AetherAssembly/Driftleaf-Templates).
+It previews extension JavaScript before installation. Community extensions
+start with no permissions; grant only the capabilities needed before running
+them. Installing a template downloads a ZIP of Markdown notes and optional CSV
+or Driftleaf JSON databases into a `Community templates/<name>` folder in the
+current vault. The imported data is encrypted by the vault.
 
 Use `window.driftleafExtension` as the extension SDK. Its API is promise-based,
 read-only, and scoped to the grants shown in **Extensions**. API calls should
@@ -67,3 +78,6 @@ extensions from sources you do not trust. A malicious extension with note
 access can read and process the data covered by that permission while it is
 running. The extension host is not a defense against vulnerabilities in
 Electron or the operating system.
+
+See [COMMUNITY.md](COMMUNITY.md) for the release asset format used by the
+in-app galleries.

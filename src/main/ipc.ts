@@ -1,15 +1,21 @@
 import { app, BrowserWindow, ipcMain, dialog, type IpcMainInvokeEvent } from "electron";
 import { randomUUID } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { IPC_CHANNELS, type ExtensionPermission } from "../shared/ipc";
+import {
+  IPC_CHANNELS,
+  type DatabaseExportFormat,
+  type ExtensionPermission,
+} from "../shared/ipc";
 import * as vaultModule from "./vault";
 import type { Vault } from "./vault";
 import * as searchModule from "./search";
 import type { SearchIndex } from "./search";
 import * as settingsModule from "./settings";
 import * as updatesModule from "./updates";
+import { exportDatabase } from "./database-export";
+import { downloadCommunityAsset, listCommunityReleases } from "./community-catalog";
 
 interface Session {
   vault: Vault | null;
@@ -356,6 +362,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     );
   });
 
+  handle(IPC_CHANNELS.databasesRename, async (_e, id: string, title: string) => {
+    const vault = requireVault();
+    return serialized(() => vaultModule.renameDatabase(vault, id, title));
+  });
+
   handle(
     IPC_CHANNELS.databasesUpdate,
     async (
@@ -382,6 +393,40 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const vault = requireVault();
     await serialized(() => vaultModule.deleteDatabaseRow(vault, id, rowId));
   });
+
+  handle(
+    IPC_CHANNELS.databasesExport,
+    async (_event, id: string, format: DatabaseExportFormat) => {
+      if (format !== "csv" && format !== "json") {
+        throw new Error("Unsupported database export format");
+      }
+      if (!currentWindow || currentWindow.isDestroyed()) {
+        throw new Error("No Driftleaf window is available");
+      }
+      const { title, content } = await exportDatabase(requireVault(), id, format);
+      const safeTitle = title.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-").slice(0, 100);
+      const result = await dialog.showSaveDialog(currentWindow, {
+        title: `Export ${title}`,
+        defaultPath: path.join(os.homedir(), `${safeTitle || "database"}.${format}`),
+        filters: [
+          {
+            name: format === "csv" ? "CSV spreadsheet" : "Driftleaf database JSON",
+            extensions: [format],
+          },
+        ],
+      });
+      if (result.canceled || !result.filePath) return false;
+      const temporaryPath = `${result.filePath}.tmp-${randomUUID()}`;
+      try {
+        await writeFile(temporaryPath, content, { encoding: "utf8", flag: "wx" });
+        await rename(temporaryPath, result.filePath);
+      } catch (error) {
+        await rm(temporaryPath, { force: true }).catch(() => {});
+        throw error;
+      }
+      return true;
+    },
+  );
 
   handle(IPC_CHANNELS.databasesDelete, async (_e, id: string) => {
     const vault = requireVault();
@@ -470,6 +515,44 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   );
 
   ipcMain.handle(IPC_CHANNELS.extensionsSamples, () => vaultModule.listExtensionSamples());
+  handle(IPC_CHANNELS.extensionsCommunity, () => listCommunityReleases());
+  handle(IPC_CHANNELS.extensionsCommunityPreview, async (_event, assetId: number) => {
+    const { bytes } = await downloadCommunityAsset(assetId, "extension");
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      throw new Error("The extension release asset is not valid UTF-8 JavaScript");
+    }
+  });
+  handle(IPC_CHANNELS.extensionsCommunityInstall, async (_event, assetId: number) => {
+    const vault = requireVault();
+    const { item, bytes } = await downloadCommunityAsset(assetId, "extension");
+    let source: string;
+    try {
+      source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      throw new Error("The extension release asset is not valid UTF-8 JavaScript");
+    }
+    return serialized(() => vaultModule.installExtension(vault, item.name, source));
+  });
+  handle(IPC_CHANNELS.templatesCommunityInstall, async (_event, assetId: number) => {
+    const vault = requireVault();
+    const { item, bytes } = await downloadCommunityAsset(assetId, "template");
+    const result = await serialized(() =>
+      vaultModule.importTemplateArchive(vault, bytes, item.name),
+    );
+    if (session.index) {
+      for (const meta of result.imported) {
+        const content = await vaultModule.readNote(vault, meta.id);
+        searchModule.reindexNote(session.index, meta, content);
+      }
+    }
+    return {
+      imported: result.imported.length,
+      importedDatabases: result.importedDatabases.length,
+      skipped: result.skipped,
+    };
+  });
   handle(IPC_CHANNELS.extensionsInstallSample, async (_event, sampleId: string) => {
     const vault = requireVault();
     return serialized(() => vaultModule.installExtensionSample(vault, sampleId));

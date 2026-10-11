@@ -35,6 +35,21 @@ databases.
 If an item cannot be imported, Driftleaf reports it as skipped while continuing
 with other selected files or archive entries.
 
+## Properties
+
+Choose **+ Add property** below the current view to add any number of columns.
+Select a name and type; options can be supplied for select/status and
+multi-select fields. Formula is a calculated property type rather than an
+editable cell: select **Formula (calculated)**, give it a name, and enter its
+expression in the formula editor before adding it. A preview is shown when rows
+exist. Formula cells are read-only; edit the expression from its column header.
+
+Every column header offers **Rename** and **Delete** actions. Renaming updates
+formula references that use `prop("Property name")`. The title property cannot
+be deleted. Deleting a property also removes its row values, saved filters, and
+sort/group/date selections. Properties referenced by formulas or rollups must
+first be removed from those dependent calculations.
+
 ## Edit a table
 
 - Use **+ Row** to add a row. Edit the cells directly in the table; changes are
@@ -47,7 +62,7 @@ with other selected files or archive entries.
   can be navigated month by month.
 - Board and calendar cards show the title and a few other properties; edit
   supported cells in place or switch to Table for the full row.
-- Use **+ Property** to add a property. Supported property types include text,
+- Use **+ Add property** to add another property at any time. Supported property types include text,
   title, number, checkbox, date, select, multi-select, URL, email, phone,
   people, files, formula, relation, and rollup.
 - Use **Delete** on a row to remove it. References to that row in relation
@@ -57,8 +72,8 @@ with other selected files or archive entries.
 
 ## Formulas
 
-Create a **formula** property, then choose **Formula** in its cell or **Edit
-formula** in the column header. Reference a property by name with
+Create a **Formula (calculated)** property from the property form, or choose
+**Edit formula** in its column header. Reference a property by name with
 `prop("Property name")`. For example:
 
 ```text
@@ -91,11 +106,25 @@ definition. Separately imported Notion databases are not connected
 automatically: recreate their relation properties in Driftleaf. Relations are
 not required for importing and browsing the source CSV or JSON data.
 
+## Export
+
+Use **Export CSV** for a spreadsheet-friendly snapshot of current cell values.
+Formula columns export their calculated results, not the formula definitions;
+relations, multi-selects, people, and files are flattened to comma-separated
+text in CSV. CSV cannot preserve Driftleaf property types or saved views.
+
+Use **Export JSON** for a lossless Driftleaf database backup. It includes
+property definitions, formula expressions, row values, and saved views. Import
+that JSON file into Driftleaf to restore those structures as a new database.
+Both formats are written as plaintext files outside the encrypted vault, so
+Driftleaf asks you to confirm before exporting.
+
 ## Privacy and backups
 
-The manifest stores database titles, IDs, folder paths, and timestamps in
-plaintext so Driftleaf can list databases. Property definitions and row values
-are encrypted together in `.driftleaf/<database-id>.db.enc` with the vault key.
+The manifest stores database titles, IDs, folder paths, and timestamps
+encrypted in `manifest.enc`. Property definitions, saved views, formulas, and
+row values are encrypted together in `.driftleaf/<database-id>.db.enc` with
+the vault key.
 Create backups from **Settings → Diagnostics & Vault Health → Create backup**;
 this includes the hidden `.driftleaf/` directory. Health checks and backup
 verification also validate encrypted database files.

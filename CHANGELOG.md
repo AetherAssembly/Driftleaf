@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
-## [0.6.0] - Unreleased
+## [0.6.0] - 2026-10-11
 
 ### Added
 
@@ -25,6 +25,20 @@ The format is based on Keep a Changelog and this project uses semantic versionin
   Linux and unsigned macOS builds.
 - Reworked Settings into themed Appearance, Editor, Updates, Vault, and About
   sections.
+- Improved database property management with repeatable column creation,
+  calculated formula fields with inline editing and previews, and safe
+  property/database renaming and deletion.
+- Added CSV value exports and lossless Driftleaf JSON database exports that
+  preserve property definitions, formula expressions, rows, and saved views.
+- Strengthened recovery and interoperability checks for encrypted databases,
+  backup restoration, formula evaluation, and import/export round trips.
+- Added searchable note-graph filtering and canvas sizing that keeps moved
+  cards reachable when the workspace grows.
+- Added a community gallery to browse stable extension and template releases
+  inside Driftleaf, preview extension source, and install templates directly
+  into the encrypted vault.
+- Added a portable `community/Driftleaf-Extensions` folder with five starter
+  extensions intended to move into its own repository.
 
 ## [0.5.0] - 2026-10-08
 
