@@ -2,8 +2,10 @@
 
 Driftleaf databases can be created directly or imported from CSV and JSON.
 Databases appear in the vault's folder in the sidebar and can be explored as
-table, board, or calendar views. Rows, properties, and view definitions are
-stored encrypted in the vault; they are not converted into Markdown notes.
+table, board, calendar, gallery, or list views. Rows, properties, and view
+definitions are stored encrypted in the vault; they are not converted into
+Markdown notes. See the [Database Roadmap](DATABASE_ROADMAP.md) for planned
+database improvements.
 
 ## Create a database
 
@@ -38,8 +40,10 @@ with other selected files or archive entries.
 ## Properties
 
 Choose **+ Add property** below the current view to add any number of columns.
-Select a name and type; options can be supplied for select/status and
-multi-select fields. Formula is a calculated property type rather than an
+Select a name and type; define select, status, and multi-select choices in the
+editor by separating options with commas or new lines. Use **Manage
+properties** below the current view to delete properties from any view.
+Formula is a calculated property type rather than an
 editable cell: select **Formula (calculated)**, give it a name, and enter its
 expression in the formula editor before adding it. A preview is shown when rows
 exist. Formula cells are read-only; edit the expression from its column header.
@@ -54,12 +58,18 @@ first be removed from those dependent calculations.
 
 - Use **+ Row** to add a row. Edit the cells directly in the table; changes are
   saved to the encrypted database.
-- Use the view tabs to switch between named views. Add a Table, Board, or
-  Calendar view to the database. View settings are encrypted with the database.
+- Use the view tabs to switch between named views. Use **Add view** to add a
+  Table, Board, Calendar, Gallery, List, or Timeline view. View settings are
+  encrypted with the database.
 - Sort rows by a property and choose a direction. Search across row values, or
   add property-specific contains filters. Table and Board views can group by a
   select, status, or checkbox property. Calendar views use a date property and
-  can be navigated month by month.
+  can be displayed by week or month; navigation follows the selected mode.
+  Use **Today** to return to the current week/month, edit event details in
+  place, and add a row directly on a day.
+  Timeline views use a required start-date
+  property and can optionally use an end-date property; navigate month by
+  month to inspect dates.
 - Board and calendar cards show the title and a few other properties; edit
   supported cells in place or switch to Table for the full row.
 - Use **+ Add property** to add another property at any time. Supported property types include text,

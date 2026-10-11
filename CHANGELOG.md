@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
+## [0.6.1] - 2026-10-11
+
+### Added
+
+- Added saved Gallery and List database views.
+- Added a saved Timeline view with month navigation and configurable start and
+  end date properties.
+- Improved Calendar view with a Today shortcut, editable event details, and
+  per-day row creation that pre-fills the selected date.
+- Added Week and Month modes to Calendar view, with mode-aware navigation.
+- Added configurable options directly in the property editor for Select,
+  Status, and Multi-select properties.
+- Added a view-independent property manager so properties can be deleted from
+  any database view.
+
+### Changed
+
+- Replaced separate database view-creation buttons with an Add view dropdown.
+- Moved sidebar actions below Search and separated them from the Folders heading.
+- Added accessible icons to sidebar actions and saved database views.
+- Made row title/name fields editable in Gallery and List views.
+
 ## [0.6.0] - 2026-10-11
 
 ### Added

@@ -4,6 +4,53 @@ import DOMPurify from "dompurify";
 import type { DatabaseMeta, NoteMeta, SearchResult } from "../../shared/ipc";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 
+function SidebarActionIcon({
+  name,
+}: {
+  name: "graph" | "canvas" | "import" | "folder";
+}) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 20 20"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {name === "graph" && (
+        <>
+          <path d="m5 5 10 3M5 15l10-3" />
+          <circle cx="4" cy="4.5" r="2" />
+          <circle cx="16" cy="10" r="2" />
+          <circle cx="4" cy="15.5" r="2" />
+        </>
+      )}
+      {name === "canvas" && (
+        <>
+          <rect x="2.5" y="3" width="7" height="6" rx="1" />
+          <rect x="11.5" y="3" width="6" height="10" rx="1" />
+          <rect x="2.5" y="11" width="7" height="6" rx="1" />
+        </>
+      )}
+      {name === "import" && (
+        <>
+          <path d="M10 2.5v10M6.5 9l3.5 3.5L13.5 9M3 13v3.5A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5V13" />
+        </>
+      )}
+      {name === "folder" && (
+        <>
+          <path d="M2.5 5.5A1.5 1.5 0 0 1 4 4h4l2 2h6A1.5 1.5 0 0 1 17.5 7.5v7A1.5 1.5 0 0 1 16 16H4a1.5 1.5 0 0 1-1.5-1.5z" />
+          <path d="M10 8.5v5M7.5 11h5" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 interface SidebarProps {
   folders: string[];
   notes: NoteMeta[];
@@ -218,6 +265,47 @@ export function Sidebar({
         />
       </div>
 
+      <div className="sidebar__quick-actions" role="group" aria-label="Sidebar actions">
+        <Button
+          variant={graphOpen ? "secondary" : "ghost"}
+          size="sm"
+          onClick={onOpenGraph}
+          aria-label="Open note graph"
+          aria-pressed={graphOpen}
+          title="Graph"
+        >
+          <SidebarActionIcon name="graph" />
+        </Button>
+        <Button
+          variant={canvasOpen ? "secondary" : "ghost"}
+          size="sm"
+          onClick={onOpenCanvas}
+          aria-label="Open workspace canvas"
+          aria-pressed={canvasOpen}
+          title="Canvas"
+        >
+          <SidebarActionIcon name="canvas" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onImport}
+          title="Import Markdown notes and CSV/JSON databases, including from ZIP files"
+          aria-label="Import files"
+        >
+          <SidebarActionIcon name="import" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowNewFolder(true)}
+          aria-label="Create new folder"
+          title="New folder"
+        >
+          <SidebarActionIcon name="folder" />
+        </Button>
+      </div>
+
       {isSearching ? (
         <ul className="sidebar__list">
           {searchResults.map((result, index) => (
@@ -249,43 +337,6 @@ export function Sidebar({
         <>
           <div className="sidebar__folders-header">
             <span className="sidebar__section-label">Folders</span>
-            <div className="sidebar__folders-header-actions">
-              <Button
-                variant={graphOpen ? "secondary" : "ghost"}
-                size="sm"
-                onClick={onOpenGraph}
-                aria-label="Open note graph"
-                aria-pressed={graphOpen}
-              >
-                Graph
-              </Button>
-              <Button
-                variant={canvasOpen ? "secondary" : "ghost"}
-                size="sm"
-                onClick={onOpenCanvas}
-                aria-label="Open workspace canvas"
-                aria-pressed={canvasOpen}
-              >
-                Canvas
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onImport}
-                title="Import Markdown notes and CSV/JSON databases, including from ZIP files"
-                aria-label="Import files"
-              >
-                Import
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowNewFolder(true)}
-                aria-label="Create new folder"
-              >
-                + Folder
-              </Button>
-            </div>
           </div>
 
           <div className="sidebar__folders">
@@ -354,7 +405,7 @@ export function Sidebar({
 
           <div className="sidebar__notes-header">
             <span>{folderLabel(selectedFolder)}</span>
-            <div className="sidebar__folders-header-actions">
+            <div className="sidebar__notes-header-actions">
               <Button
                 size="sm"
                 variant="secondary"

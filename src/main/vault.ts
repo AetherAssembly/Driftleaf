@@ -205,7 +205,7 @@ function validateDatabaseViews(
       ids.has(view.id) ||
       typeof view.name !== "string" ||
       !view.name.trim() ||
-      !["table", "board", "calendar"].includes(view.type)
+      !["table", "board", "calendar", "gallery", "list", "timeline"].includes(view.type)
     ) {
       throw new Error("Database has an invalid view definition");
     }
@@ -216,6 +216,10 @@ function validateDatabaseViews(
       (view.datePropertyId &&
         !properties.some(
           (property) => property.id === view.datePropertyId && property.type === "date",
+        )) ||
+      (view.endDatePropertyId &&
+        !properties.some(
+          (property) => property.id === view.endDatePropertyId && property.type === "date",
         ))
     ) {
       throw new Error("Database view references an unknown or incompatible property");

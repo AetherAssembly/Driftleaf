@@ -56,7 +56,13 @@ export interface DatabaseRow {
   updatedAt: number;
 }
 
-export type DatabaseViewType = "table" | "board" | "calendar";
+export type DatabaseViewType =
+  | "table"
+  | "board"
+  | "calendar"
+  | "gallery"
+  | "list"
+  | "timeline";
 
 export interface DatabaseFilter {
   propertyId: string;
@@ -72,6 +78,7 @@ export interface DatabaseViewDefinition {
   sortDirection?: "ascending" | "descending";
   groupPropertyId?: string;
   datePropertyId?: string;
+  endDatePropertyId?: string;
   filters?: DatabaseFilter[];
 }
 

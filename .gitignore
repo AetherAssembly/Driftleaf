@@ -12,3 +12,6 @@ release/
 *.driftleaf-vault/
 index.html
 
+
+#development files
+DATABASE_ROADMAP.md

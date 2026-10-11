@@ -257,6 +257,10 @@ await test('Database supports multiple properties and formula-preserving JSON ro
   const doneId = randomUUID();
   const totalId = randomUUID();
   const formulaId = randomUUID();
+  const startDateId = randomUUID();
+  const endDateId = randomUUID();
+  const statusId = randomUUID();
+  const tagsId = randomUUID();
   const rowId = randomUUID();
   const properties = [
     { id: titleId, name: 'Task', type: 'title' },
@@ -268,10 +272,22 @@ await test('Database supports multiple properties and formula-preserving JSON ro
       type: 'formula',
       formula: 'if(prop("Done"), "Complete", "Open")',
     },
+    { id: startDateId, name: 'Start date', type: 'date' },
+    { id: endDateId, name: 'End date', type: 'date' },
+    { id: statusId, name: 'Status', type: 'select', options: ['To do', 'In progress', 'Done'] },
+    { id: tagsId, name: 'Tags', type: 'multi_select', options: ['Planning', 'Review'] },
   ];
   const rows = [{
     id: rowId,
-    values: { [titleId]: 'Ship, "database" improvements', [doneId]: true, [totalId]: 3 },
+    values: {
+      [titleId]: 'Ship, "database" improvements',
+      [doneId]: true,
+      [totalId]: 3,
+      [startDateId]: '2026-10-12',
+      [endDateId]: '2026-10-16',
+      [statusId]: 'In progress',
+      [tagsId]: ['Planning', 'Review'],
+    },
     createdAt: Date.now(),
     updatedAt: Date.now(),
   }];
@@ -283,14 +299,23 @@ await test('Database supports multiple properties and formula-preserving JSON ro
     sortDirection: 'descending',
     filters: [{ propertyId: doneId, operator: 'equals', value: 'true' }],
   };
+  const galleryView = { id: randomUUID(), name: 'Cards', type: 'gallery' };
+  const listView = { id: randomUUID(), name: 'Compact list', type: 'list' };
+  const timelineView = {
+    id: randomUUID(),
+    name: 'Project timeline',
+    type: 'timeline',
+    datePropertyId: startDateId,
+    endDatePropertyId: endDateId,
+  };
   const database = await vaultModule.createDatabase(
     vault,
     'Interoperability',
     '',
     properties,
     rows,
-    [view],
-    view.id,
+    [view, galleryView, listView, timelineView],
+    galleryView.id,
   );
   const renamed = await vaultModule.renameDatabase(vault, database.id, 'Renamed interoperability');
   const reopened = await vaultModule.readDatabase(vault, database.id);
@@ -315,8 +340,23 @@ await test('Database supports multiple properties and formula-preserving JSON ro
   const csvParsed = parseCsvDatabase(csv.content, 'CSV roundtrip');
   const manifestBytes = await fs.readFile(path.join(testVaultPath, '.driftleaf', 'manifest.enc'));
   const databaseBytes = await fs.readFile(path.join(testVaultPath, '.driftleaf', `${database.id}.db.enc`));
+  const propertiesWithoutTags = reopened.properties.filter(property => property.id !== tagsId);
+  const rowsWithoutTags = reopened.rows.map(row => {
+    const values = { ...row.values };
+    delete values[tagsId];
+    return { ...row, values };
+  });
+  await vaultModule.updateDatabase(
+    vault,
+    database.id,
+    propertiesWithoutTags,
+    rowsWithoutTags,
+    reopened.views,
+    reopened.activeViewId,
+  );
+  const afterPropertyDelete = await vaultModule.readDatabase(vault, database.id);
   return (
-    reopened.properties.length === 4 &&
+    reopened.properties.length === 8 &&
     renamed.title === 'Renamed interoperability' &&
     reopened.meta.title === 'Renamed interoperability' &&
     reopened.rows[0].values[doneId] === true &&
@@ -325,7 +365,21 @@ await test('Database supports multiple properties and formula-preserving JSON ro
     importedData.properties.find(property => property.id === formulaId)?.formula === formula.formula &&
     importedData.rows[0].values[totalId] === 3 &&
     importedData.views[0].name === 'Open tasks' &&
-    importedData.activeViewId === view.id &&
+    importedData.views.some(savedView => savedView.id === galleryView.id && savedView.type === 'gallery') &&
+    importedData.views.some(savedView => savedView.id === listView.id && savedView.type === 'list') &&
+    importedData.views.some(savedView =>
+      savedView.id === timelineView.id &&
+      savedView.type === 'timeline' &&
+      savedView.datePropertyId === startDateId &&
+      savedView.endDatePropertyId === endDateId
+    ) &&
+    importedData.properties.find(property => property.id === statusId)?.options?.join(',') === 'To do,In progress,Done' &&
+    importedData.properties.find(property => property.id === tagsId)?.options?.join(',') === 'Planning,Review' &&
+    importedData.rows[0].values[statusId] === 'In progress' &&
+    importedData.rows[0].values[tagsId]?.join(',') === 'Planning,Review' &&
+    !afterPropertyDelete.properties.some(property => property.id === tagsId) &&
+    !Object.hasOwn(afterPropertyDelete.rows[0].values, tagsId) &&
+    importedData.activeViewId === galleryView.id &&
     csv.content.includes('"Ship, ""database"" improvements",true,3,Complete') &&
     csvParsed.rows[0].values[csvParsed.properties.find(property => property.name === 'Task').id] === 'Ship, "database" improvements' &&
     csvParsed.rows[0].values[csvParsed.properties.find(property => property.name === 'Summary').id] === 'Complete' &&
