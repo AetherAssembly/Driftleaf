@@ -11,7 +11,7 @@
 %global __os_install_post %{nil}
 
 Name:           driftleaf
-Version:        0.6.0
+Version:        0.6.2
 Release:        1%{?dist}
 Summary:        A local-first encrypted notes, graph, and database app
 License:        AGPL-3.0-or-later
@@ -70,6 +70,16 @@ ln -s /opt/Driftleaf/driftleaf %{buildroot}%{_bindir}/driftleaf
 %{_datadir}/icons/hicolor/1024x1024/apps/driftleaf.png
 
 %changelog
+* Sun Oct 11 2026 AetherAssembly <support@aetherassembly.org> - 0.6.2-1
+- Added Cherry, Arctic, and Amber color themes.
+- Fixed Windows update checks by including channel-specific updater metadata
+  in release assets.
+
+* Sun Oct 11 2026 AetherAssembly <support@aetherassembly.org> - 0.6.1-1
+- Added saved Gallery, List, and Timeline database views, improved Calendar
+  with week and month modes, and added view-independent property management.
+- Improved database view creation, property option editing, and sidebar actions.
+
 * Sun Oct 11 2026 AetherAssembly <support@aetherassembly.org> - 0.6.0-1
 - Updated package version and description for the 0.6.0 feature set, including
   encrypted vault metadata, linked-note graphs, canvas workspaces, isolated
