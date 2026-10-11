@@ -1,13 +1,15 @@
-import { app, ipcMain, dialog, type BrowserWindow } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, type IpcMainInvokeEvent } from "electron";
 import { randomUUID } from "node:crypto";
+import { readFile, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { IPC_CHANNELS } from "../shared/ipc";
+import { IPC_CHANNELS, type ExtensionPermission } from "../shared/ipc";
 import * as vaultModule from "./vault";
 import type { Vault } from "./vault";
 import * as searchModule from "./search";
 import type { SearchIndex } from "./search";
 import * as settingsModule from "./settings";
+import * as updatesModule from "./updates";
 
 interface Session {
   vault: Vault | null;
@@ -98,6 +100,32 @@ async function openSession(vault: Vault): Promise<void> {
 
 let currentWindow: BrowserWindow | null = null;
 let handlersRegistered = false;
+const extensionContexts = new Map<number, { extensionId: string; vault: Vault }>();
+const extensionWindows = new Map<number, BrowserWindow>();
+
+function closeExtensionWindows(): void {
+  for (const win of extensionWindows.values()) {
+    if (!win.isDestroyed()) win.close();
+  }
+  extensionContexts.clear();
+  extensionWindows.clear();
+}
+
+function requireExtensionContext(
+  event: IpcMainInvokeEvent,
+  permission: ExtensionPermission,
+): { extensionId: string; vault: Vault } {
+  const context = extensionContexts.get(event.sender.id);
+  if (!context || context.vault !== session.vault) {
+    throw new Error("This window is not an active Driftleaf extension");
+  }
+  const extension = vaultModule.getExtension(context.vault, context.extensionId);
+  if (!extension) throw new Error("This extension was removed");
+  if (!extension.permissions.includes(permission)) {
+    throw new Error(`This extension has not been granted ${permission.replace("_", " ")} access`);
+  }
+  return context;
+}
 
 // Safe to call every time a window is (re)created — e.g. on macOS, clicking the dock icon
 // after closing the only window calls this again. ipcMain.handle() throws synchronously on
@@ -225,6 +253,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.vaultLock, async () => {
+    closeExtensionWindows();
     // Zero the raw AES key before dropping the reference — GC timing isn't a scrub
     // guarantee, and this app's entire pitch is "lock this vault."
     session.vault?.key.fill(0);
@@ -334,9 +363,13 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       id: string,
       properties: Parameters<typeof vaultModule.updateDatabase>[2],
       rows: Parameters<typeof vaultModule.updateDatabase>[3],
+      views: Parameters<typeof vaultModule.updateDatabase>[4],
+      activeViewId: Parameters<typeof vaultModule.updateDatabase>[5],
     ) => {
       const vault = requireVault();
-      await serialized(() => vaultModule.updateDatabase(vault, id, properties, rows));
+      await serialized(() =>
+        vaultModule.updateDatabase(vault, id, properties, rows, views, activeViewId),
+      );
     },
   );
 
@@ -385,6 +418,193 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return searchModule.search(session.index, text);
   });
 
+  handle(IPC_CHANNELS.notesGraph, () => {
+    if (!session.index) throw new Error("No vault is unlocked");
+    return searchModule.buildNoteGraph(session.index);
+  });
+
+  handle(IPC_CHANNELS.extensionsList, () => vaultModule.listExtensions(requireVault()));
+
+  handle(IPC_CHANNELS.extensionsInstall, async () => {
+    const vault = requireVault();
+    if (!currentWindow) throw new Error("No Driftleaf window is available");
+    const result = await dialog.showOpenDialog(currentWindow, {
+      properties: ["openFile"],
+      title: "Choose a JavaScript extension",
+      filters: [{ name: "JavaScript extension", extensions: ["js"] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const filePath = result.filePaths[0];
+    if (path.extname(filePath).toLowerCase() !== ".js") {
+      throw new Error("Choose a JavaScript (.js) extension file");
+    }
+    const fileInfo = await stat(filePath);
+    if (fileInfo.size > 512 * 1024) throw new Error("Extension files must be smaller than 512 KB");
+    const sourceBytes = await readFile(filePath);
+    if (sourceBytes.length > 512 * 1024) {
+      throw new Error("Extension files must be smaller than 512 KB");
+    }
+    let source: string;
+    try {
+      source = new TextDecoder("utf-8", { fatal: true }).decode(sourceBytes);
+    } catch {
+      throw new Error("Extension files must contain valid UTF-8 JavaScript");
+    }
+    const name = path.basename(filePath, path.extname(filePath));
+    return serialized(() => vaultModule.installExtension(vault, name, source));
+  });
+
+  handle(
+    IPC_CHANNELS.extensionsSetPermissions,
+    async (
+      _event,
+      id: string,
+      permissions: ExtensionPermission[],
+      databaseIds: string[] = [],
+    ) => {
+      const vault = requireVault();
+      await serialized(() =>
+        vaultModule.setExtensionPermissions(vault, id, permissions, databaseIds),
+      );
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.extensionsSamples, () => vaultModule.listExtensionSamples());
+  handle(IPC_CHANNELS.extensionsInstallSample, async (_event, sampleId: string) => {
+    const vault = requireVault();
+    return serialized(() => vaultModule.installExtensionSample(vault, sampleId));
+  });
+
+  handle(IPC_CHANNELS.extensionsRemove, async (_event, id: string) => {
+    const vault = requireVault();
+    await serialized(() => vaultModule.removeExtension(vault, id));
+    for (const [webContentsId, context] of extensionContexts) {
+      if (context.extensionId === id) extensionWindows.get(webContentsId)?.close();
+    }
+  });
+
+  handle(IPC_CHANNELS.extensionsRun, async (_event, id: string) => {
+    const vault = requireVault();
+    const extension = await serialized(() => Promise.resolve(vaultModule.getExtension(vault, id)));
+    if (!extension) throw new Error("Extension not found");
+    if (!currentWindow || currentWindow.isDestroyed()) {
+      throw new Error("No Driftleaf window is available");
+    }
+    const win = new BrowserWindow({
+      parent: currentWindow,
+      width: 800,
+      height: 600,
+      title: `${extension.name} — Driftleaf extension`,
+      webPreferences: {
+        preload: path.join(__dirname, "../preload/index.js"),
+        additionalArguments: ["--driftleaf-extension-window"],
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        webviewTag: false,
+        partition: `driftleaf-extension-${randomUUID()}`,
+      },
+    });
+    const webContentsId = win.webContents.id;
+    extensionWindows.set(webContentsId, win);
+    extensionContexts.set(webContentsId, { extensionId: id, vault });
+    win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    win.webContents.on("will-navigate", (event) => event.preventDefault());
+    win.on("closed", () => {
+      extensionWindows.delete(webContentsId);
+      extensionContexts.delete(webContentsId);
+    });
+    const safeSource = extension.source.replace(/<\/script/gi, "<\\/script");
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${extension.name.replace(/[&<>"']/g, "")}</title></head><body><script>${safeSource}</script></body></html>`;
+    try {
+      await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    } catch (error) {
+      win.close();
+      throw error;
+    }
+  });
+
+  handle(IPC_CHANNELS.extensionNotesList, (event) => {
+    const { vault } = requireExtensionContext(event, "read_notes");
+    return vaultModule.listNotes(vault).map(({ id, title, folderPath, updatedAt }) => ({
+      id,
+      title,
+      folderPath,
+      updatedAt,
+    }));
+  });
+
+  handle(IPC_CHANNELS.extensionNotesRead, (event, id: string) => {
+    const { vault } = requireExtensionContext(event, "read_notes");
+    return vaultModule.readNote(vault, id);
+  });
+
+  handle(IPC_CHANNELS.extensionGraph, (event) => {
+    const { vault } = requireExtensionContext(event, "read_graph");
+    if (vault !== session.vault || !session.index) throw new Error("No vault is unlocked");
+    return searchModule.buildNoteGraph(session.index);
+  });
+
+  handle(IPC_CHANNELS.extensionDatabasesList, async (event) => {
+    const { vault, extensionId } = requireExtensionContext(event, "read_databases");
+    const extension = vaultModule.getExtension(vault, extensionId);
+    if (!extension) throw new Error("This extension was removed");
+    return (await vaultModule
+      .listDatabases(vault))
+      .filter((database) => extension.databaseIds.includes(database.id));
+  });
+
+  handle(IPC_CHANNELS.extensionDatabaseRead, async (event, id: string) => {
+    const { vault, extensionId } = requireExtensionContext(event, "read_databases");
+    const extension = vaultModule.getExtension(vault, extensionId);
+    if (!extension?.databaseIds.includes(id)) {
+      throw new Error("This extension has not been granted access to that database");
+    }
+    const data = await vaultModule.readDatabase(vault, id);
+    const relationSafePropertyIds = new Set(
+      data.properties
+        .filter(
+          (property) =>
+            property.type !== "relation" ||
+            !property.relationDatabaseId ||
+            extension.databaseIds.includes(property.relationDatabaseId),
+        )
+        .map((property) => property.id),
+    );
+    const permittedPropertyIds = new Set(
+      data.properties
+        .filter((property) => {
+          if (
+            property.type === "rollup" &&
+            property.rollupRelationPropertyId &&
+            !relationSafePropertyIds.has(property.rollupRelationPropertyId)
+          ) {
+            return false;
+          }
+          return relationSafePropertyIds.has(property.id);
+        })
+        .map((property) => property.id),
+    );
+    return {
+      ...data,
+      properties: data.properties.filter((property) => permittedPropertyIds.has(property.id)),
+      rows: data.rows.map((row) => ({
+        ...row,
+        values: Object.fromEntries(
+          Object.entries(row.values).filter(([propertyId]) =>
+            permittedPropertyIds.has(propertyId),
+          ),
+        ),
+      })),
+    };
+  });
+
+  handle(IPC_CHANNELS.canvasRead, () => vaultModule.readCanvas(requireVault()));
+  handle(IPC_CHANNELS.canvasUpdate, async (_event, items: Parameters<typeof vaultModule.updateCanvas>[1]) => {
+    const vault = requireVault();
+    await serialized(() => vaultModule.updateCanvas(vault, items));
+  });
+
   ipcMain.handle(IPC_CHANNELS.settingsRead, () => {
     return settingsModule.readSettings();
   });
@@ -412,4 +632,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         process.env.XDG_CURRENT_DESKTOP ?? process.env.XDG_SESSION_DESKTOP ?? "Not detected",
     };
   });
+
+  ipcMain.handle(IPC_CHANNELS.updatesStatus, () => updatesModule.getUpdateStatus());
+  handle(IPC_CHANNELS.updatesCheck, () => updatesModule.checkForUpdates());
+  handle(IPC_CHANNELS.updatesDownload, () => updatesModule.downloadUpdate());
+  handle(IPC_CHANNELS.updatesInstall, () => updatesModule.installUpdate());
+  handle(IPC_CHANNELS.updatesOpenDownload, () => updatesModule.openUpdateDownload());
 }

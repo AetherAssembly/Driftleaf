@@ -8,6 +8,11 @@ import renderer from "vite-plugin-electron-renderer";
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  define: {
+    __DRIFTLEAF_MAC_AUTO_UPDATE__: JSON.stringify(
+      process.env.DRIFTLEAF_MAC_AUTO_UPDATE === "true",
+    ),
+  },
   plugins: [
     react(),
     electron({

@@ -49,6 +49,17 @@ architecture-specific downloads, verification, and platform-specific installatio
 | **Tab**                               | Move between sections (sidebar, notes, editor)   |
 | **Escape**                            | Close search, close modals, back up              |
 
+### Link Your Notes
+
+Type `[[Note title]]` in a note to link to another note. Add an alias with
+`[[Note title|display text]]`, or use a folder-qualified target such as
+`[[Projects/Driftleaf]]` when titles aren't unique. Links work in the preview;
+open **Graph** in the sidebar to explore connections, and linked notes show
+their backlinks above the editor. Link data is derived from decrypted note
+content in memory while the vault is unlocked; graph data is not persisted.
+The graph can show the whole vault or focus on the selected note, and the editor
+also surfaces unlinked mentions that may be worth turning into links.
+
 ### Accessibility
 
 Driftleaf works great with screen readers and keyboard-only navigation:
@@ -62,7 +73,26 @@ Driftleaf works great with screen readers and keyboard-only navigation:
 
 Use **+ Database** to create an editable database in the current folder, or use **Import** to bring in Markdown notes (`.md`), database files (`.csv` or `.json`), or a ZIP export containing these files. CSV and JSON imports become encrypted Driftleaf databases with a table view; ZIP folder paths are preserved. Notion exports commonly include CSV database files alongside Markdown pages.
 
+Databases can have saved Table, Board, and Calendar views, with sorting,
+grouping, text filters, and a selected date property. View settings are stored
+encrypted with the database.
+
+Open **Canvas** in the sidebar to arrange note cards and database-view
+shortcuts into one spatial workspace per vault. Card positions and references
+are encrypted with the vault metadata.
+
+Driftleaf can also run local JavaScript extensions from the **Extensions**
+button. Extensions run in isolated windows with network access disabled; note
+graph, and selected-database access are separate permissions, off by default.
+The starter gallery includes small examples, and extension code and grants are
+stored inside the encrypted vault. See
+[docs/EXTENSIONS.md](docs/EXTENSIONS.md) before installing third-party code.
+
 Choose System, Light, Dark, Aquatic, Mossy, Sunset, or Space in Settings to change the app's appearance.
+The Settings screen also shows the app version and update status. Windows
+installer builds can download and install updates in-app; Linux and unsigned
+macOS builds detect new releases and link to manual downloads. See
+[docs/UPDATES.md](docs/UPDATES.md).
 
 Imported CSVs preserve their current cell values, but CSV exports do not contain Notion formula definitions. Add formula properties in the database table after import. Formula properties support Notion-style `prop("Property")` references, arithmetic/comparison/logical operators, and common functions such as `if`, `empty`, `contains`, `round`, `dateAdd`, and `dateBetween`; this is not full Notion formula-language parity. Relations between separately imported Notion databases are not connected automatically and need to be recreated in Driftleaf.
 

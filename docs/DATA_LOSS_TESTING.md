@@ -1,8 +1,11 @@
-# Data Loss Bug Bash — Completion Report
+# Vault Integrity and Recovery Checks
 
 ## Summary
 
-Data-loss bug bash for Driftleaf v0.2.0 completed. All critical data loss vulnerabilities have been identified and mitigated. No known bugs can silently lose or corrupt a user's notes.
+The integration suite exercises encrypted storage, crash-safe writes, migration,
+corruption detection, and vault recovery. Recovery is intentionally explicit
+about its limits: if the encrypted manifest is lost, opaque note filenames do
+not reveal the original titles or folders.
 
 ## Verified Safeguards
 
@@ -29,15 +32,16 @@ Data-loss bug bash for Driftleaf v0.2.0 completed. All critical data loss vulner
 
 **Pattern:** disk changes before manifest updates.
 
-| Operation | File write order | Why it's safe |
+| Operation | File write order | Crash outcome |
 | --- | --- | --- |
-| Create note | Write `.enc` file → update manifest | Crash leaves orphaned file (recoverable) |
-| Write note | Update `.enc` file → update `updatedAt` in manifest | Crash leaves stale timestamp (reconcilable) |
-| Rename note | Rename `.enc` file → update manifest | Crash leaves file with new name, old manifest entry becomes orphan (recoverable) |
-| Delete note | Remove from manifest → delete `.enc` file | Crash leaves orphaned `.enc` (harmless, cleaned up by reconcile) |
-| Delete folder | Update manifest → delete directory | Crash leaves orphaned files in directory (recoverable) |
+| Create note | Write opaque-ID `.enc` file → update encrypted manifest | A crash between writes leaves an orphan recovered as `Recovered note`; its title/folder metadata is unavailable |
+| Write note | Atomically replace `.enc` file → update `updatedAt` in manifest | Content remains complete; the timestamp may be stale |
+| Rename or move | Update encrypted manifest (note file path is unchanged) | A crash leaves either the previous or updated metadata |
+| Delete note | Remove manifest entry → delete `.enc` file | A crash between steps may recover the orphaned content with placeholder metadata |
+| Delete folder | Update manifest → delete note files | A crash may recover removed note files with placeholder metadata |
 
-**Result:** a crash can only produce orphaned files or stale metadata — never lost content or dangling references.
+Atomic manifest and content writes avoid partial files. Orphan recovery can
+preserve ciphertext, but cannot recreate metadata removed from the manifest.
 
 ### 3. Vault Reconciliation on Every Unlock
 
@@ -53,10 +57,10 @@ Data-loss bug bash for Driftleaf v0.2.0 completed. All critical data loss vulner
 | Issue | Detection | Recovery |
 | --- | --- | --- |
 | **Dangling manifest entry** | Manifest entry has no `.enc` file on disk | Entry removed from manifest |
-| **Orphaned file** | `.enc` file has no manifest entry | New entry created with title recovered from filename |
-| **Legacy filename** | Note using old `{uuid}.enc` format | Atomically renamed to readable `{title}.md.enc` |
+| **Opaque-ID orphan** | `.driftleaf/notes/<note-id>.enc` has no manifest entry | Recovered as an untitled `Recovered note`; original title/folder cannot be derived from its opaque ID |
+| **Legacy note file** | Manifest entry points to its old named path | Moved to `.driftleaf/notes/<note-id>.enc`; empty legacy folders are pruned |
 
-**Report:** `VaultRecoveryReport` tracks what was healed (if anything) and logs to console when `DEBUG_SEARCH=1`.
+**Report:** `VaultRecoveryReport` tracks what was healed and is surfaced after unlock.
 
 ### 4. AES-GCM Authentication Tag
 
@@ -70,27 +74,21 @@ Data-loss bug bash for Driftleaf v0.2.0 completed. All critical data loss vulner
 
 **Result:** any bit-flip, truncation, or tampering is caught at read time. Corrupted notes are reported as corrupted rather than silently failing.
 
-### 5. Manifest Sidecar (Plaintext Index)
+### 5. Encrypted Manifest
 
-**Location:** `src/main/vault.ts` — `manifest.json`
+**Location:** `src/main/vault.ts` — `.driftleaf/manifest.enc`
 
-**Structure:**
+The manifest (note titles, folder paths, timestamps, database titles, and
+extension source/permissions) is encrypted with the vault key and written
+atomically. Note ciphertext is stored under `.driftleaf/notes/<note-id>.enc`;
+titles are not present in note filenames. The legacy plaintext `manifest.json`
+is accepted only during migration and removed after a successful unlock writes
+the encrypted manifest.
 
-```json
-{
-  "notes": [
-    { "id": "uuid", "title": "...", "folderPath": "...", "fileName": "..." }
-  ],
-  "folders": ["..."]
-}
-```
-
-**Why it's safe:**
-
-- Only metadata (titles, folder paths) is plaintext
-- Note *content* is always encrypted
-- Titles allow the sidebar to render without a full vault decrypt
-- If manifest is corrupted, orphan recovery rebuilds it from disk
+If the encrypted manifest is missing or corrupt, do not delete it or create a
+new vault over it. Restore the `.driftleaf/` directory from a backup; opaque
+note files do not contain enough information to reconstruct their original
+titles or folders.
 
 ### 6. Canary File Integrity Check
 
@@ -112,27 +110,43 @@ Data-loss bug bash for Driftleaf v0.2.0 completed. All critical data loss vulner
 - Folder paths use virtual `/`-separated format, resolved via `path.join()`
 - Windows path separators (`\`) normalized by Node's path module
 - `validateFolderPath()` prevents path traversal (`..` or absolute paths)
-- Recursion safety: file scans skip `.driftleaf` config directory
+- Folder paths are virtual metadata; note files are stored separately under
+  `.driftleaf/notes/`
+- Reconciliation scans legacy named files and opaque-ID note files without
+  deleting nonempty legacy folders or unrelated files
+
+## Running the Integration Checks
+
+Run the vault integration suite (including encrypted metadata, opaque paths,
+legacy migration, and encrypted extension persistence) with:
+
+```bash
+node scripts/tests/data-loss.js
+```
+
+This invokes the TypeScript-backed integration suite using the repository's
+loader and Node's type-stripping support.
 
 ## Test Scenarios Verified
 
-### Scenario 1: Crash during note write
+### Scenario 1: Crash during note creation or write
 
-- Temp file left on disk
-- Manifest not updated
-- **Recovery:** next unlock finds `.enc` file unclaimed, orphan recovery adds it back
+- Atomic replacement prevents partial ciphertext.
+- A newly created note whose manifest write did not finish is recovered as
+  `Recovered note`; its original title and folder are not derivable from its ID.
+- An existing note keeps its encrypted content; only its update timestamp might
+  be stale.
 
-### Scenario 2: Crash during note rename
+### Scenario 2: Crash during note rename or move
 
-- File already renamed on disk
-- Manifest still has old entry
-- **Recovery:** next unlock finds orphaned file with new name, creates correct manifest entry from filename
+- Note content stays at its opaque-ID path.
+- The atomic encrypted manifest contains either the old or new title/folder.
 
 ### Scenario 3: Crash during folder delete
 
-- Manifest updated (folder removed)
-- Directory still on disk
-- **Recovery:** next unlock finds stale files with no manifest entries — orphan recovery adds them back
+- The manifest is updated before note ciphertext is deleted.
+- Files left by an interrupted delete can be recovered as `Recovered note`
+  entries, without their previous title/folder metadata.
 
 ### Scenario 4: Corrupt `.enc` file
 
@@ -145,25 +159,26 @@ Data-loss bug bash for Driftleaf v0.2.0 completed. All critical data loss vulner
 - Canary decrypt fails
 - **UX:** user sees "Incorrect passphrase" immediately
 
-## Known Limitations (Acceptable for v0.2)
+## Known Limitations
 
 1. **No transaction log** — relies on atomic writes + reconciliation rather than a journal
-   - Acceptable because `reconcileVault()` catches all cases that atomic writes miss
-2. **No backup before delete** — folder/note deletion is immediate
-   - Acceptable because orphan recovery prevents data loss; user-facing delete confirmation exists
-3. **Unsigned builds** — binaries not code-signed for macOS/Windows
+2. **Orphan recovery cannot restore metadata** — opaque filenames preserve note content, not title or folder placement
+3. **No backup before delete** — delete is immediate; maintain backups for recovery
+4. **Unsigned builds** — binaries not code-signed for macOS/Windows
    - Addressed in Milestone 14 (post-v0.2)
-4. **Passphrase reset impossible** — no "forgot password" feature
+5. **Passphrase reset impossible** — no "forgot password" feature
    - By design: documented in README and in-app
 
 ## Conclusion
 
-Driftleaf's data loss safeguards are multi-layered:
+Driftleaf's integrity safeguards are multi-layered:
 
 1. **Atomic writes** prevent half-written files
 2. **Safe operation ordering** ensures only orphans or stale metadata survive crashes
-3. **Reconciliation on unlock** auto-heals issues
+3. **Reconciliation on unlock** recovers orphaned ciphertext where possible
 4. **AES-GCM authentication** detects corruption
 5. **Passphrase verification** prevents wrong-key decryption
 
-A user's notes cannot be silently lost. All failure modes are explicit and recoverable.
+Corruption is surfaced, and recoverable orphan ciphertext is not discarded
+silently. Restore a complete backup if encrypted metadata is missing or
+corrupt; note names and locations cannot be reconstructed from opaque files.

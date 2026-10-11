@@ -1,9 +1,9 @@
 # Databases
 
 Driftleaf databases can be created directly or imported from CSV and JSON.
-Databases appear in the vault's folder in the sidebar and open in a table view.
-Their rows and property definitions are stored encrypted in the vault; they are
-not converted into Markdown notes.
+Databases appear in the vault's folder in the sidebar and can be explored as
+table, board, or calendar views. Rows, properties, and view definitions are
+stored encrypted in the vault; they are not converted into Markdown notes.
 
 ## Create a database
 
@@ -39,6 +39,14 @@ with other selected files or archive entries.
 
 - Use **+ Row** to add a row. Edit the cells directly in the table; changes are
   saved to the encrypted database.
+- Use the view tabs to switch between named views. Add a Table, Board, or
+  Calendar view to the database. View settings are encrypted with the database.
+- Sort rows by a property and choose a direction. Search across row values, or
+  add property-specific contains filters. Table and Board views can group by a
+  select, status, or checkbox property. Calendar views use a date property and
+  can be navigated month by month.
+- Board and calendar cards show the title and a few other properties; edit
+  supported cells in place or switch to Table for the full row.
 - Use **+ Property** to add a property. Supported property types include text,
   title, number, checkbox, date, select, multi-select, URL, email, phone,
   people, files, formula, relation, and rollup.
@@ -92,7 +100,8 @@ Create backups from **Settings → Diagnostics & Vault Health → Create backup*
 this includes the hidden `.driftleaf/` directory. Health checks and backup
 verification also validate encrypted database files.
 
-The database index metadata is stored in `manifest.json`. Unlike Markdown notes,
-database files cannot currently be re-indexed automatically if that manifest is
-lost. Restore the manifest or `.driftleaf/` directory from a backup; see
+The database index metadata is stored encrypted in `manifest.enc`. Unlike
+Markdown notes, database files cannot currently be re-indexed automatically if
+that manifest is lost. Restore `manifest.enc` or the `.driftleaf/` directory
+from a backup; see
 [Vault Recovery](RECOVERY.md).

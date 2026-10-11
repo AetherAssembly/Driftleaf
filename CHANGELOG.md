@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
+## [0.6.0] - Unreleased
+
+### Added
+
+- Added named table, board, and calendar views for databases, with saved
+  sorting, grouping, text filters, and date-property selection.
+- Added `[[note]]` links, aliases, backlinks, unlinked mentions, and an
+  interactive graph that can focus on a selected note.
+- Encrypted vault metadata and moved notes to opaque-ID filenames; existing
+  vaults migrate automatically the next time they are unlocked.
+- Added local JavaScript extensions in isolated windows, with encrypted
+  extension storage, disabled network access, and per-extension read permissions.
+- Added scoped read-only database access for extensions, a starter gallery, and
+  an extension API guide.
+- Added a spatial canvas for arranging note and database-view cards, stored in
+  encrypted vault metadata.
+- Added update status and version information to Settings, with opt-out
+  automatic checks, Windows installer updates, and manual release detection on
+  Linux and unsigned macOS builds.
+- Reworked Settings into themed Appearance, Editor, Updates, Vault, and About
+  sections.
+
 ## [0.5.0] - 2026-10-08
 
 ### Added

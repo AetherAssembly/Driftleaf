@@ -2,6 +2,7 @@ import { app, BrowserWindow, globalShortcut, shell } from "electron";
 import path from "node:path";
 import { registerIpcHandlers } from "./ipc";
 import { RENDERER_EVENTS } from "../shared/ipc";
+import { initializeUpdates } from "./updates";
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 
@@ -59,6 +60,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  initializeUpdates();
   createWindow();
 
   // Quick-capture: works even when Driftleaf isn't focused, since it's the whole point —

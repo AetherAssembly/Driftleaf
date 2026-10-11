@@ -37,4 +37,12 @@ body:
     id: additional
     attributes:
       label: Additional Context
-      description: Screenshots, sketches, or related issues/discussions
+      description: Screenshots, canvas sketches, extension/API examples, or related issues/discussions
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy and scope
+      options:
+        - label: This idea may affect encryption, update network requests, or extension permissions
+          required: false

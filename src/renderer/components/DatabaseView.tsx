@@ -7,6 +7,8 @@ import type {
   DatabaseProperty,
   DatabasePropertyType,
   DatabaseRow,
+  DatabaseViewDefinition,
+  DatabaseViewType,
 } from "../../shared/ipc";
 import { evaluateFormula, type FormulaValue } from "../lib/formula";
 
@@ -52,6 +54,19 @@ function cellText(value: DatabaseCellValue | FormulaValue): string {
   return String(value);
 }
 
+function localDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function comparableValue(value: DatabaseCellValue | FormulaValue): string | number {
+  if (typeof value === "number") return value;
+  if (typeof value === "boolean") return value ? 1 : 0;
+  return cellText(value).toLocaleLowerCase();
+}
+
 interface DatabaseViewProps {
   databaseId: string;
   onDeleted: () => void;
@@ -70,6 +85,13 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
   const [rollupFunction, setRollupFunction] =
     useState<NonNullable<DatabaseProperty["rollupFunction"]>>("show_original");
   const [relatedData, setRelatedData] = useState<Record<string, DatabaseData>>({});
+  const [quickFilter, setQuickFilter] = useState("");
+  const [filterPropertyId, setFilterPropertyId] = useState("");
+  const [filterValue, setFilterValue] = useState("");
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
 
   useEffect(() => {
     setData(null);
@@ -88,6 +110,10 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
   }, [databaseId]);
 
   const rowsById = useMemo(() => new Map(data?.rows.map((row) => [row.id, row]) ?? []), [data]);
+  const views = data?.views ?? [{ id: "table", name: "Table", type: "table" as const }];
+  const activeView =
+    views.find((view) => view.id === data?.activeViewId) ?? views[0];
+  const activeViewId = activeView?.id ?? "table";
   const relationDatabaseIds = (data?.properties ?? [])
     .filter((property) => property.type === "relation" && property.relationDatabaseId)
     .map((property) => property.relationDatabaseId!);
@@ -131,7 +157,13 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
     setBusy(true);
     setError(null);
     try {
-      await window.driftleaf.databases.update(databaseId, nextData.properties, nextData.rows);
+      await window.driftleaf.databases.update(
+        databaseId,
+        nextData.properties,
+        nextData.rows,
+        nextData.views,
+        nextData.activeViewId,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save database");
       const refreshed = await window.driftleaf.databases.read(databaseId).catch(() => null);
@@ -139,6 +171,70 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function persistViews(nextViews: DatabaseViewDefinition[], nextActiveViewId: string) {
+    if (!data) return;
+    const nextData = { ...data, views: nextViews, activeViewId: nextActiveViewId };
+    setData(nextData);
+    setError(null);
+    try {
+      await window.driftleaf.databases.update(
+        databaseId,
+        nextData.properties,
+        nextData.rows,
+        nextViews,
+        nextActiveViewId,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save database view");
+      const refreshed = await window.driftleaf.databases.read(databaseId).catch(() => null);
+      if (refreshed) setData(refreshed);
+    }
+  }
+
+  function updateActiveView(update: Partial<DatabaseViewDefinition>) {
+    if (!data || !activeView) return;
+    const nextViews = views.map((view) =>
+      view.id === activeView.id ? { ...view, ...update } : view,
+    );
+    void persistViews(nextViews, activeViewId);
+  }
+
+  function addDatabaseView(type: DatabaseViewType) {
+    if (!data) return;
+    const name = window.prompt(`Name this ${type} view`, type[0].toUpperCase() + type.slice(1));
+    if (!name?.trim()) return;
+    const view: DatabaseViewDefinition = {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      type,
+      sortDirection: "ascending",
+      filters: [],
+      ...(type === "board"
+        ? { groupPropertyId: data.properties.find((property) => property.type === "status" || property.type === "select")?.id }
+        : {}),
+      ...(type === "calendar"
+        ? { datePropertyId: data.properties.find((property) => property.type === "date")?.id }
+        : {}),
+    };
+    void persistViews([...views, view], view.id);
+  }
+
+  function applyFilter() {
+    if (!filterPropertyId) return;
+    updateActiveView({
+      filters: [
+        ...(activeView?.filters ?? []).filter((filter) => filter.propertyId !== filterPropertyId),
+        { propertyId: filterPropertyId, operator: "contains", value: filterValue },
+      ],
+    });
+  }
+
+  function removeFilter(propertyId: string) {
+    updateActiveView({
+      filters: (activeView?.filters ?? []).filter((filter) => filter.propertyId !== propertyId),
+    });
   }
 
   async function addRow() {
@@ -318,6 +414,77 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
         return values.map((value) => (Array.isArray(value) ? value.join(", ") : String(value)));
     }
   }
+
+  function propertyValue(row: DatabaseRow, property: DatabaseProperty): FormulaValue {
+    if (property.type === "formula") {
+      try {
+        return formulaValue(data!, row, property);
+      } catch (err) {
+        return `#ERROR: ${err instanceof Error ? err.message : "Invalid formula"}`;
+      }
+    }
+    if (property.type === "rollup") return rollupValue(row, property);
+    return row.values[property.id] ?? null;
+  }
+
+  const normalizedQuickFilter = quickFilter.trim().toLocaleLowerCase();
+  const filteredRows = (data?.rows ?? []).filter((row) => {
+    if (
+      normalizedQuickFilter &&
+      !data!.properties.some((property) =>
+        cellText(propertyValue(row, property)).toLocaleLowerCase().includes(normalizedQuickFilter),
+      )
+    ) {
+      return false;
+    }
+    return (activeView?.filters ?? []).every((filter) => {
+      const property = data!.properties.find((item) => item.id === filter.propertyId);
+      if (!property) return true;
+      const value = cellText(propertyValue(row, property)).trim();
+      if (filter.operator === "is_empty") return !value;
+      if (filter.operator === "is_not_empty") return !!value;
+      if (filter.operator === "equals") {
+        return value.toLocaleLowerCase() === filter.value.toLocaleLowerCase();
+      }
+      return value.toLocaleLowerCase().includes(filter.value.toLocaleLowerCase());
+    });
+  });
+  const sortProperty = activeView?.sortPropertyId
+    ? data?.properties.find((property) => property.id === activeView.sortPropertyId)
+    : undefined;
+  const sortedRows = [...filteredRows].sort((left, right) => {
+    if (!sortProperty) return 0;
+    const a = comparableValue(propertyValue(left, sortProperty));
+    const b = comparableValue(propertyValue(right, sortProperty));
+    const result =
+      typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b));
+    return activeView?.sortDirection === "descending" ? -result : result;
+  });
+  const groupProperty = activeView?.groupPropertyId
+    ? data?.properties.find((property) => property.id === activeView.groupPropertyId)
+    : undefined;
+  const groupLabel = (row: DatabaseRow) => {
+    const value = groupProperty ? cellText(propertyValue(row, groupProperty)) : "";
+    return value || "No value";
+  };
+  const boardGroups = groupProperty
+    ? [
+        ...new Set([
+          ...(groupProperty.options ?? []),
+          ...sortedRows.map(groupLabel),
+        ]),
+      ]
+    : [];
+  const dateProperty = activeView?.datePropertyId
+    ? data?.properties.find((property) => property.id === activeView.datePropertyId)
+    : undefined;
+  const calendarStart = new Date(calendarMonth);
+  calendarStart.setDate(1 - calendarStart.getDay());
+  const calendarDays = Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(calendarStart);
+    date.setDate(calendarStart.getDate() + index);
+    return date;
+  });
 
   function renderCell(rowId: string, property: DatabaseProperty) {
     const row = rowsById.get(rowId);
@@ -499,13 +666,17 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
   const rollupTargetDatabase = rollupRelation?.relationDatabaseId
     ? relatedData[rollupRelation.relationDatabaseId]
     : undefined;
+  const titleProperty = data.properties.find((property) => property.type === "title");
 
   return (
     <section className="database">
       <header className="database__header">
         <div>
           <h1>{data.meta.title}</h1>
-          <p>{data.rows.length} rows · Table view</p>
+          <p>
+            {filteredRows.length} of {data.rows.length} rows · {activeView?.name ?? "Table"}
+            {busy ? " · Saving…" : ""}
+          </p>
         </div>
         <Button variant="primary" size="sm" loading={busy} onClick={() => void addRow()}>
           + Row
@@ -514,6 +685,149 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
           Delete database
         </Button>
       </header>
+      <div className="database__view-tabs" role="tablist" aria-label="Database views">
+        {views.map((view) => (
+          <Button
+            key={view.id}
+            variant={view.id === activeViewId ? "primary" : "ghost"}
+            size="sm"
+            role="tab"
+            aria-selected={view.id === activeViewId}
+            onClick={() => void persistViews(views, view.id)}
+          >
+            {view.name}
+          </Button>
+        ))}
+        {(["table", "board", "calendar"] as const).map((type) => (
+          <Button
+            key={type}
+            variant="ghost"
+            size="sm"
+            onClick={() => addDatabaseView(type)}
+            aria-label={`Add ${type} view`}
+          >
+            + {type}
+          </Button>
+        ))}
+      </div>
+      <div className="database__view-controls">
+        <Input
+          aria-label="Search database rows"
+          placeholder="Search rows…"
+          value={quickFilter}
+          onChange={(event) => setQuickFilter(event.target.value)}
+        />
+        <label>
+          Sort
+          <select
+            aria-label="Sort database rows"
+            value={activeView?.sortPropertyId ?? ""}
+            onChange={(event) =>
+              updateActiveView({
+                sortPropertyId: event.target.value || undefined,
+                sortDirection: activeView?.sortDirection ?? "ascending",
+              })
+            }
+          >
+            <option value="">Default order</option>
+            {data.properties.map((property) => (
+              <option key={property.id} value={property.id}>
+                {property.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={`Sort ${activeView?.sortDirection === "descending" ? "ascending" : "descending"}`}
+          onClick={() =>
+            updateActiveView({
+              sortDirection: activeView?.sortDirection === "descending" ? "ascending" : "descending",
+            })
+          }
+        >
+          {activeView?.sortDirection === "descending" ? "Descending" : "Ascending"}
+        </Button>
+        {activeView?.type === "table" || activeView?.type === "board" ? (
+          <label>
+            Group
+            <select
+              aria-label="Group database rows"
+              value={activeView.groupPropertyId ?? ""}
+              onChange={(event) => updateActiveView({ groupPropertyId: event.target.value || undefined })}
+            >
+              <option value="">No grouping</option>
+              {data.properties
+                .filter((property) => property.type === "select" || property.type === "status" || property.type === "checkbox")
+                .map((property) => (
+                  <option key={property.id} value={property.id}>
+                    {property.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        ) : null}
+        {activeView?.type === "calendar" ? (
+          <label>
+            Date
+            <select
+              aria-label="Calendar date property"
+              value={activeView.datePropertyId ?? ""}
+              onChange={(event) => updateActiveView({ datePropertyId: event.target.value || undefined })}
+            >
+              <option value="">Choose date property</option>
+              {data.properties
+                .filter((property) => property.type === "date")
+                .map((property) => (
+                  <option key={property.id} value={property.id}>
+                    {property.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        ) : null}
+        <label>
+          Filter
+          <select
+            aria-label="Filter property"
+            value={filterPropertyId}
+            onChange={(event) => setFilterPropertyId(event.target.value)}
+          >
+            <option value="">Choose property…</option>
+            {data.properties.map((property) => (
+              <option key={property.id} value={property.id}>
+                {property.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Input
+          aria-label="Filter value"
+          placeholder="Contains…"
+          value={filterValue}
+          onChange={(event) => setFilterValue(event.target.value)}
+        />
+        <Button variant="secondary" size="sm" onClick={applyFilter} disabled={!filterPropertyId}>
+          Add filter
+        </Button>
+      </div>
+      {(activeView?.filters ?? []).length > 0 && (
+        <div className="database__active-filters" aria-label="Active filters">
+          {(activeView?.filters ?? []).map((filter) => (
+            <Button
+              key={filter.propertyId}
+              variant="ghost"
+              size="sm"
+              onClick={() => removeFilter(filter.propertyId)}
+            >
+              {data.properties.find((property) => property.id === filter.propertyId)?.name} contains
+              “{filter.value}” ×
+            </Button>
+          ))}
+        </div>
+      )}
+      {activeView?.type === "table" ? (
       <div className="database__table-wrap">
         <table className="database__table">
           <thead>
@@ -533,21 +847,110 @@ export function DatabaseView({ databaseId, onDeleted }: DatabaseViewProps) {
             </tr>
           </thead>
           <tbody>
-            {data.rows.map((row) => (
-              <tr key={row.id}>
-                {data.properties.map((property) => (
-                  <td key={property.id}>{renderCell(row.id, property)}</td>
+            {groupProperty
+              ? [...new Set(sortedRows.map(groupLabel))].flatMap((group) => [
+                  <tr className="database__group-heading" key={`group-${group}`}>
+                    <th colSpan={data.properties.length + 1}>{group}</th>
+                  </tr>,
+                  ...sortedRows
+                    .filter((row) => groupLabel(row) === group)
+                    .map((row) => (
+                      <tr key={row.id}>
+                        {data.properties.map((property) => (
+                          <td key={property.id}>{renderCell(row.id, property)}</td>
+                        ))}
+                        <td>
+                          <Button variant="ghost" size="sm" onClick={() => void deleteRow(row.id)}>
+                            Delete
+                          </Button>
+                        </td>
+                      </tr>
+                    )),
+                ])
+              : sortedRows.map((row) => (
+                  <tr key={row.id}>
+                    {data.properties.map((property) => (
+                      <td key={property.id}>{renderCell(row.id, property)}</td>
+                    ))}
+                    <td>
+                      <Button variant="ghost" size="sm" onClick={() => void deleteRow(row.id)}>
+                        Delete
+                      </Button>
+                    </td>
+                  </tr>
                 ))}
-                <td>
-                  <Button variant="ghost" size="sm" onClick={() => void deleteRow(row.id)}>
-                    Delete
-                  </Button>
-                </td>
-              </tr>
-            ))}
           </tbody>
         </table>
       </div>
+      ) : activeView.type === "board" ? (
+        <div className="database__board">
+          {groupProperty
+            ? boardGroups.map((group) => (
+                <section className="database__board-column" key={group}>
+                  <h2>{group}</h2>
+                  {sortedRows
+                    .filter((row) => groupLabel(row) === group)
+                    .map((row) => (
+                      <article className="database__board-card" key={row.id}>
+                        <strong>{titleProperty ? cellText(propertyValue(row, titleProperty)) : "Untitled"}</strong>
+                        {data.properties
+                          .filter((property) => property.id !== titleProperty?.id && property.id !== groupProperty.id)
+                          .slice(0, 3)
+                          .map((property) => (
+                            <div key={property.id}>
+                              <small>{property.name}</small>
+                              {renderCell(row.id, property)}
+                            </div>
+                          ))}
+                        <Button variant="ghost" size="sm" onClick={() => void deleteRow(row.id)}>
+                          Delete row
+                        </Button>
+                      </article>
+                    ))}
+                </section>
+              ))
+            : <p>Choose a select, status, or checkbox property to group this board.</p>}
+        </div>
+      ) : (
+        <section className="database__calendar">
+          <header>
+            <Button variant="ghost" size="sm" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}>
+              Previous month
+            </Button>
+            <h2>{calendarMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</h2>
+            <Button variant="ghost" size="sm" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}>
+              Next month
+            </Button>
+          </header>
+          {dateProperty ? (
+            <div className="database__calendar-grid">
+              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                <strong className="database__calendar-weekday" key={day}>{day}</strong>
+              ))}
+              {calendarDays.map((date) => {
+                const day = localDateKey(date);
+                const rows = sortedRows.filter(
+                  (row) => cellText(propertyValue(row, dateProperty)).slice(0, 10) === day,
+                );
+                return (
+                  <div
+                    className={`database__calendar-day${date.getMonth() === calendarMonth.getMonth() ? "" : " database__calendar-day--outside"}`}
+                    key={day}
+                  >
+                    <strong>{date.getDate()}</strong>
+                    {rows.map((row) => (
+                      <article className="database__calendar-event" key={row.id}>
+                        {titleProperty ? cellText(propertyValue(row, titleProperty)) : "Untitled"}
+                        {renderCell(row.id, dateProperty)}
+                      </article>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          ) : <p>Choose a date property to show rows on this calendar.</p>}
+        </section>
+      )}
       <form
         className="database__add-property"
         onSubmit={(event) => {

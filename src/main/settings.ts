@@ -11,6 +11,7 @@ const DEFAULTS: AppSettings = {
   theme: "system",
   editorFontSizePx: 15,
   autosaveIntervalMs: 500,
+  checkUpdatesAutomatically: true,
 };
 
 // Mirrors the bounds SettingsModal.tsx's number inputs enforce in the UI — a direct
@@ -55,6 +56,9 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   const next = { ...current, ...patch };
   next.editorFontSizePx = clamp(next.editorFontSizePx, FONT_SIZE_RANGE, DEFAULTS.editorFontSizePx);
   next.autosaveIntervalMs = clamp(next.autosaveIntervalMs, AUTOSAVE_RANGE, DEFAULTS.autosaveIntervalMs);
+  if (typeof next.checkUpdatesAutomatically !== "boolean") {
+    next.checkUpdatesAutomatically = DEFAULTS.checkUpdatesAutomatically;
+  }
 
   const filePath = settingsFilePath();
   await mkdir(path.dirname(filePath), { recursive: true });

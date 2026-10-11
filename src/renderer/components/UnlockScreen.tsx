@@ -4,9 +4,10 @@ import type { VaultRecoveryReport, VaultTemplateId } from "../../shared/ipc";
 
 interface UnlockScreenProps {
   onUnlocked: (recovery?: VaultRecoveryReport) => void;
+  version: string;
 }
 
-export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
+export function UnlockScreen({ onUnlocked, version }: UnlockScreenProps) {
   const [rootPath, setRootPath] = useState<string | null>(null);
   const [passphrase, setPassphrase] = useState("");
   const [mode, setMode] = useState<"create" | "unlock" | null>(null);
@@ -194,6 +195,7 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
           </form>
         )}
       </Card>
+      <p className="unlock-screen__version">Version {version}</p>
 
       <Modal
         open={confirmingNoRecovery}

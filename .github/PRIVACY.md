@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: 2026-08-31_
+_Last updated: 2026-10-11_
 
 > The canonical, always-current version of this document is hosted at
 > [legal.aetherassembly.org/driftleaf/privacy.html](https://legal.aetherassembly.org/driftleaf/privacy.html).
@@ -19,10 +19,17 @@ Driftleaf is developed and maintained by [AetherAssembly](https://aetherassembly
 Driftleaf stores the following information locally on your device, inside the vault folder you choose:
 
 - Your note content, encrypted with AES-256-GCM using a key derived from your passphrase
-- A manifest file (`manifest.json`) recording note titles, folder placement, and timestamps in plain text — this is not encrypted, so that the app can display your sidebar and search without decrypting your whole vault on every render
+- An encrypted manifest (`.driftleaf/manifest.enc`) recording note titles, folders, timestamps, and installed extension code and permissions. Note files use opaque IDs rather than titles in their filesystem paths.
 - Application settings (such as window state and preferences), stored in Electron's local `userData` directory
 
-None of this data is transmitted anywhere. It exists only in the files Driftleaf writes to your own disk.
+Vault contents remain on your device. The app also makes update-check requests
+to GitHub when automatic update checks are enabled, or when you manually
+choose **Check for updates**. These requests are for public release metadata;
+they do not include notes, vault contents, the passphrase, or an account
+identifier. GitHub receives the ordinary network request metadata (such as
+your IP address). Update downloads are user-initiated. Disable automatic checks
+in **Settings → Updates** to skip startup checks. Extensions run with network
+access disabled by the app.
 
 ## Data We Do Not Intentionally Collect
 
@@ -30,9 +37,15 @@ Driftleaf does not include user accounts, built-in analytics or tracking, advert
 
 ## Network Requests
 
-Driftleaf makes no network requests. It does not check for updates, phone home, sync, or transmit any data over the internet. The application is fully functional offline and has no code path that contacts a remote server.
+Apart from the GitHub release checks and user-initiated update downloads
+described above, Driftleaf does not sync, phone home, or transmit vault data.
+Extensions run in isolated windows with network access disabled by the app.
+The application remains usable offline; update checks simply fail until a
+network connection is available.
 
-If networked features — such as optional device sync — are added in a future release, they will be off by default, and this policy will be updated to describe exactly what is sent and where before that release ships.
+If other networked features — such as optional device sync — are added in a
+future release, they will be off by default, and this policy will be updated
+to describe exactly what is sent and where before that release ships.
 
 ## Encryption and Your Passphrase
 

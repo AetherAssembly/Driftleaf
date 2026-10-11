@@ -10,28 +10,30 @@ my-vault/
 │   ├── vault.json     format version + scrypt salt (or the raw key, for
 │   │                  passphrase-less vaults) — never the derived key itself
 │   ├── canary.enc      known-plaintext blob used to check a passphrase on unlock
-│   ├── manifest.json   plaintext index of note, folder, and database metadata
+│   ├── manifest.enc    encrypted index of note, folder, and database metadata
+│   ├── notes/
+│   │   └── <note-id>.enc  encrypted note content under an opaque filename
 │   └── <database-id>.db.enc  encrypted database schema and rows
-├── <folder>/
-│   └── <title>.md.enc  one file per note, AES-256-GCM encrypted content, named
-│                        after the note's title (like any other encrypted file
-│                        keeps its name with the extension changed) — a note
-│                        titled "Meeting notes" is stored as "Meeting notes.md.enc"
 ```
 
-Note and database content is encrypted. Titles, folder placement, timestamps, and database IDs live in the plaintext `manifest.json` sidecar so the app can display the vault without decrypting every item. Database property definitions and row values are stored encrypted in `.driftleaf/<database-id>.db.enc`. For notes, the filename is cosmetic (for browsing the vault folder in a normal file manager) and is not the source of truth — the manifest is. If a note's title collides with another note already in the same folder, its filename gets a " (2)", " (3)", … suffix. Vaults created before this scheme existed keep their original `<note-id>.enc` filenames until the note is next renamed, or until the next unlock's reconciliation pass opportunistically migrates them.
+Notes, database contents, and metadata (titles, folder paths, IDs, and timestamps)
+are encrypted. Note ciphertext uses opaque ID filenames under `.driftleaf/notes/`;
+folders are private vault organization and are not represented by named disk
+directories. Existing vaults migrate their plaintext manifest and legacy note
+files on successful unlock. Empty legacy folders are removed; directories
+containing unrelated files are left untouched.
 
 ## "My Vault Won't Open"
 
 1. **Wrong passphrase** — the app tells you this directly; retry carefully. There's no passphrase reset (see below).
 2. **`vault.json` or `canary.enc` missing/corrupted** — these hold the key material and salt; they can't be reconstructed. Restore the `.driftleaf/` folder from a backup. Without a backup, the vault's notes aren't recoverable — this is the tradeoff of encryption with no server-side escrow.
-3. **`manifest.json` missing/corrupted** — note entries can be rebuilt from encrypted note files, but database metadata cannot currently be reconstructed automatically. Database files may remain on disk but will be unindexed and unavailable in the app. Do not delete the manifest as a repair step if the vault contains databases. Restore `manifest.json` or the whole `.driftleaf/` directory from a backup.
+3. **`manifest.enc` missing/corrupted** — note titles/folders and database metadata cannot be reconstructed from opaque IDs alone. The encrypted note/database files may remain on disk but will be unavailable. Restore `manifest.enc` or the whole `.driftleaf/` directory from a backup.
 
 ## "A Note Won't Open" / "This Note Is Corrupted"
 
 AES-GCM authenticates ciphertext, so any bit-flip or truncation of a `.enc` file is detected on read rather than silently returning garbage. If you see this error:
 
-- Check whether you have a backup of the vault folder from before the corruption, and restore just that one `<title>.md.enc` file.
+- Check whether you have a backup of the vault folder from before the corruption, and restore just that note's `<note-id>.enc` file from `.driftleaf/notes/`.
 - If not, the note's content is unrecoverable, but it won't affect any other note — corruption is detected per-file, not vault-wide.
 
 ## Crash / Power Loss Mid-Save
@@ -45,7 +47,7 @@ You shouldn't need to do anything manually for this case. If a crash happens in 
 
 ## Passphrase Recovery
 
-None, by design — the passphrase (or the derived key) is never stored anywhere, including by Driftleaf's developers. If you lose it, the vault's note and database _contents_ aren't recoverable; only the plaintext manifest (titles, folder names, and database metadata) survives.
+None, by design — the passphrase (or the derived key) is never stored anywhere, including by Driftleaf's developers. If you lose it, the vault's encrypted contents and metadata aren't recoverable.
 
 **Recommendation:** write your passphrase down somewhere durable (a password manager, a physical note in a safe place) at vault creation, and keep a backup of the vault folder somewhere separate from this device.
 

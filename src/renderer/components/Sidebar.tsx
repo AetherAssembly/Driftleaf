@@ -24,6 +24,11 @@ interface SidebarProps {
   onSelectSearchResult: (id: string) => void;
   onLock: () => void;
   onOpenSettings: () => void;
+  onOpenExtensions: () => void;
+  graphOpen: boolean;
+  canvasOpen: boolean;
+  onOpenGraph: () => void;
+  onOpenCanvas: () => void;
   onMoveNote: (id: string) => void;
   onRenameFolder: (oldPath: string, newPath: string) => void;
   onDeleteFolder: (folderPath: string) => void;
@@ -54,6 +59,11 @@ export function Sidebar({
   onSelectSearchResult,
   onLock,
   onOpenSettings,
+  onOpenExtensions,
+  graphOpen,
+  canvasOpen,
+  onOpenGraph,
+  onOpenCanvas,
   onMoveNote,
   onRenameFolder,
   onDeleteFolder,
@@ -217,6 +227,24 @@ export function Sidebar({
             <span className="sidebar__section-label">Folders</span>
             <div className="sidebar__folders-header-actions">
               <Button
+                variant={graphOpen ? "secondary" : "ghost"}
+                size="sm"
+                onClick={onOpenGraph}
+                aria-label="Open note graph"
+                aria-pressed={graphOpen}
+              >
+                Graph
+              </Button>
+              <Button
+                variant={canvasOpen ? "secondary" : "ghost"}
+                size="sm"
+                onClick={onOpenCanvas}
+                aria-label="Open workspace canvas"
+                aria-pressed={canvasOpen}
+              >
+                Canvas
+              </Button>
+              <Button
                 variant="ghost"
                 size="sm"
                 onClick={onImport}
@@ -375,6 +403,9 @@ export function Sidebar({
       )}
 
       <div className="sidebar__footer">
+        <Button variant="ghost" size="sm" onClick={onOpenExtensions} aria-label="Open extensions">
+          Extensions
+        </Button>
         <Button variant="ghost" size="sm" onClick={onOpenSettings} aria-label="Open settings">
           Settings
         </Button>

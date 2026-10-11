@@ -6,6 +6,7 @@ export interface AppSettings {
   theme: Theme;
   editorFontSizePx: number;
   autosaveIntervalMs: number;
+  checkUpdatesAutomatically: boolean;
 }
 
 export type Theme = "system" | "light" | "dark" | "aquatic" | "mossy" | "sunset" | "space";
@@ -55,6 +56,25 @@ export interface DatabaseRow {
   updatedAt: number;
 }
 
+export type DatabaseViewType = "table" | "board" | "calendar";
+
+export interface DatabaseFilter {
+  propertyId: string;
+  operator: "contains" | "equals" | "is_empty" | "is_not_empty";
+  value: string;
+}
+
+export interface DatabaseViewDefinition {
+  id: string;
+  name: string;
+  type: DatabaseViewType;
+  sortPropertyId?: string;
+  sortDirection?: "ascending" | "descending";
+  groupPropertyId?: string;
+  datePropertyId?: string;
+  filters?: DatabaseFilter[];
+}
+
 export interface DatabaseMeta {
   id: string;
   title: string;
@@ -66,6 +86,8 @@ export interface DatabaseData {
   meta: DatabaseMeta;
   properties: DatabaseProperty[];
   rows: DatabaseRow[];
+  views?: DatabaseViewDefinition[];
+  activeViewId?: string;
 }
 
 export interface AppDiagnostics {
@@ -77,6 +99,26 @@ export interface AppDiagnostics {
   chromium: string;
   displayServer: string;
   desktopEnvironment: string;
+}
+
+export type UpdateStatusKind =
+  | "idle"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "downloaded"
+  | "up-to-date"
+  | "unsupported"
+  | "error";
+
+export interface UpdateStatus {
+  state: UpdateStatusKind;
+  currentVersion: string;
+  availableVersion: string | null;
+  downloadUrl: string | null;
+  checkedAt: number | null;
+  message: string;
+  automaticInstall: boolean;
 }
 
 export interface VaultHealthCheck {
@@ -102,6 +144,38 @@ export interface SearchResult {
   title: string;
   folderPath: string;
   snippet: string;
+}
+
+export interface NoteGraph {
+  nodes: Pick<NoteMeta, "id" | "title" | "folderPath">[];
+  edges: { sourceId: string; targetId: string }[];
+  unlinkedMentions: { sourceId: string; targetId: string }[];
+}
+
+export type ExtensionPermission = "read_notes" | "read_graph" | "read_databases";
+
+export interface ExtensionSummary {
+  id: string;
+  name: string;
+  permissions: ExtensionPermission[];
+  databaseIds: string[];
+  sampleId?: string;
+}
+
+export interface ExtensionSample {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export type CanvasItemKind = "note" | "database";
+
+export interface CanvasItem {
+  id: string;
+  kind: CanvasItemKind;
+  targetId: string;
+  x: number;
+  y: number;
 }
 
 // Reported after every unlock: what reconcileVault() found and self-healed by cross-checking
@@ -142,12 +216,19 @@ export interface DriftleafApi {
     remove(id: string): Promise<void>;
     move(id: string, targetFolder: string): Promise<NoteMeta>;
     import(filePaths: string[], targetFolder: string): Promise<ImportResult>;
+    graph(): Promise<NoteGraph>;
   };
   databases: {
     list(folderPath?: string): Promise<DatabaseMeta[]>;
     read(id: string): Promise<DatabaseData>;
     create(title: string, folderPath: string): Promise<DatabaseMeta>;
-    update(id: string, properties: DatabaseProperty[], rows: DatabaseRow[]): Promise<void>;
+    update(
+      id: string,
+      properties: DatabaseProperty[],
+      rows: DatabaseRow[],
+      views?: DatabaseViewDefinition[],
+      activeViewId?: string,
+    ): Promise<void>;
     createRow(databaseId: string): Promise<DatabaseRow>;
     deleteRow(databaseId: string, rowId: string): Promise<void>;
     delete(id: string): Promise<void>;
@@ -160,6 +241,23 @@ export interface DriftleafApi {
   search: {
     query(text: string): Promise<SearchResult[]>;
   };
+  extensions: {
+    list(): Promise<ExtensionSummary[]>;
+    install(): Promise<ExtensionSummary | null>;
+    samples(): Promise<ExtensionSample[]>;
+    installSample(sampleId: string): Promise<ExtensionSummary>;
+    setPermissions(
+      id: string,
+      permissions: ExtensionPermission[],
+      databaseIds?: string[],
+    ): Promise<void>;
+    run(id: string): Promise<void>;
+    remove(id: string): Promise<void>;
+  };
+  canvas: {
+    read(): Promise<CanvasItem[]>;
+    update(items: CanvasItem[]): Promise<void>;
+  };
   settings: {
     read(): Promise<AppSettings>;
     patch(update: Partial<AppSettings>): Promise<AppSettings>;
@@ -167,9 +265,17 @@ export interface DriftleafApi {
   diagnostics: {
     read(): Promise<AppDiagnostics>;
   };
+  updates: {
+    status(): Promise<UpdateStatus>;
+    check(): Promise<UpdateStatus>;
+    download(): Promise<UpdateStatus>;
+    install(): Promise<void>;
+    openDownload(): Promise<void>;
+  };
   events: {
     // Fired by the global quick-capture hotkey (main/index.ts). Returns an unsubscribe fn.
     onQuickCapture(callback: () => void): () => void;
+    onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
   };
 }
 
@@ -177,6 +283,7 @@ export interface DriftleafApi {
 // invoke/handle calls). Kept separate since these use ipcRenderer.on, not .invoke.
 export const RENDERER_EVENTS = {
   quickCapture: "event:quickCapture",
+  updateStatus: "event:updateStatus",
 } as const;
 
 export const IPC_CHANNELS = {
@@ -199,6 +306,7 @@ export const IPC_CHANNELS = {
   notesRename: "notes:rename",
   notesRemove: "notes:remove",
   notesImport: "notes:import",
+  notesGraph: "notes:graph",
   databasesList: "databases:list",
   databasesRead: "databases:read",
   databasesCreate: "databases:create",
@@ -214,4 +322,23 @@ export const IPC_CHANNELS = {
   settingsRead: "settings:read",
   settingsPatch: "settings:patch",
   diagnosticsRead: "diagnostics:read",
+  updatesStatus: "updates:status",
+  updatesCheck: "updates:check",
+  updatesDownload: "updates:download",
+  updatesInstall: "updates:install",
+  updatesOpenDownload: "updates:openDownload",
+  extensionsList: "extensions:list",
+  extensionsInstall: "extensions:install",
+  extensionsSetPermissions: "extensions:setPermissions",
+  extensionsRun: "extensions:run",
+  extensionsRemove: "extensions:remove",
+  extensionNotesList: "extension:notes:list",
+  extensionNotesRead: "extension:notes:read",
+  extensionGraph: "extension:graph",
+  extensionsSamples: "extensions:samples",
+  extensionsInstallSample: "extensions:installSample",
+  extensionDatabasesList: "extension:databases:list",
+  extensionDatabaseRead: "extension:databases:read",
+  canvasRead: "canvas:read",
+  canvasUpdate: "canvas:update",
 } as const;

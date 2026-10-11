@@ -5,6 +5,8 @@
 import { createRequire } from "node:module";
 import type { Vault, NoteMeta } from "./vault";
 import { listNotes, readNote } from "./vault";
+import type { NoteGraph } from "../shared/ipc";
+import { mapWikiLinks, resolveWikiLink } from "../shared/note-links";
 
 const require = createRequire(__filename);
 const Database = require("better-sqlite3") as typeof import("better-sqlite3");
@@ -87,6 +89,46 @@ export function reindexNote(index: SearchIndex, meta: NoteMeta, content: string)
 
 export function removeFromIndex(index: SearchIndex, id: string): void {
   index.db.prepare("DELETE FROM notes_fts WHERE id = ?").run(id);
+}
+
+export function buildNoteGraph(index: SearchIndex): NoteGraph {
+  const rows = index.db
+    .prepare("SELECT id, title, folderPath, content FROM notes_fts ORDER BY id")
+    .all() as { id: string; title: string; folderPath: string; content: string }[];
+  const nodes = rows.map(({ id, title, folderPath }) => ({ id, title, folderPath }));
+  const edges = new Map<string, { sourceId: string; targetId: string }>();
+  const linked = new Set<string>();
+  const unlinkedMentions = new Map<string, { sourceId: string; targetId: string }>();
+
+  for (const row of rows) {
+    const plainText = mapWikiLinks(row.content, ({ target }) => {
+      const targetId = resolveWikiLink(target, nodes);
+      if (targetId && targetId !== row.id) {
+        const key = `${row.id}\0${targetId}`;
+        edges.set(key, { sourceId: row.id, targetId });
+        linked.add(key);
+      }
+      return "";
+    });
+    const searchableText = plainText
+      .replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, " ")
+      .replace(/`[^`]*`/g, " ");
+    for (const note of nodes) {
+      if (note.id === row.id || !note.title.trim()) continue;
+      const key = `${row.id}\0${note.id}`;
+      if (linked.has(key)) continue;
+      const escapedTitle = note.title.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const mention = new RegExp(
+        `(?<![\\p{L}\\p{N}_])${escapedTitle}(?![\\p{L}\\p{N}_])`,
+        "iu",
+      );
+      if (mention.test(searchableText)) {
+        unlinkedMentions.set(key, { sourceId: row.id, targetId: note.id });
+      }
+    }
+  }
+
+  return { nodes, edges: [...edges.values()], unlinkedMentions: [...unlinkedMentions.values()] };
 }
 
 // Build an FTS5 MATCH expression from free-text input. Each word becomes a quoted
