@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
+## [0.6.2]
+
+### Added
+
+- Added Cherry, Arctic, and Amber color themes.
+
+### Fixed
+
+- Fixed Windows update checks by including channel-specific updater metadata in release assets.
+
 ## [0.6.1] - 2026-10-11
 
 ### Added

@@ -53,7 +53,10 @@
 :root[data-theme="aquatic"],
 :root[data-theme="mossy"],
 :root[data-theme="sunset"],
-:root[data-theme="space"] {
+:root[data-theme="space"],
+:root[data-theme="cherry"],
+:root[data-theme="arctic"],
+:root[data-theme="amber"] {
   color-scheme: dark;
   --ae-color-danger: #f87171;
   --ae-color-danger-hover: #ef4444;
@@ -134,6 +137,60 @@
   --ae-color-text-muted: #b1b9dc;
   --ae-color-text-placeholder: #858fb8;
   --ae-color-info: #82b9ff;
+}
+
+:root[data-theme="cherry"] {
+  --ae-color-primary: #f28caf;
+  --ae-color-primary-hover: #e8759a;
+  --ae-color-primary-active: #ce5e83;
+  --ae-color-primary-fg: #2d111c;
+  --ae-color-secondary: #482934;
+  --ae-color-secondary-hover: #5c3543;
+  --ae-color-secondary-fg: #f6e6ec;
+  --ae-color-bg: #21141a;
+  --ae-color-surface: #321c26;
+  --ae-color-surface-hover: #462733;
+  --ae-color-border: #5d3947;
+  --ae-color-border-focus: #f5a3bd;
+  --ae-color-text: #f5e8ed;
+  --ae-color-text-muted: #d0b2bd;
+  --ae-color-text-placeholder: #a88794;
+}
+
+:root[data-theme="arctic"] {
+  --ae-color-primary: #72c9e8;
+  --ae-color-primary-hover: #59b5d6;
+  --ae-color-primary-active: #4399bb;
+  --ae-color-primary-fg: #0d202b;
+  --ae-color-secondary: #203b4b;
+  --ae-color-secondary-hover: #2b4d60;
+  --ae-color-secondary-fg: #e2f2f8;
+  --ae-color-bg: #0d1b24;
+  --ae-color-surface: #142633;
+  --ae-color-surface-hover: #203744;
+  --ae-color-border: #345363;
+  --ae-color-border-focus: #91d8ed;
+  --ae-color-text: #e5f1f5;
+  --ae-color-text-muted: #a9c4cf;
+  --ae-color-text-placeholder: #7d9ca9;
+}
+
+:root[data-theme="amber"] {
+  --ae-color-primary: #efb957;
+  --ae-color-primary-hover: #dda644;
+  --ae-color-primary-active: #bf8c32;
+  --ae-color-primary-fg: #291b08;
+  --ae-color-secondary: #493820;
+  --ae-color-secondary-hover: #5a4628;
+  --ae-color-secondary-fg: #f7eedc;
+  --ae-color-bg: #211a10;
+  --ae-color-surface: #302516;
+  --ae-color-surface-hover: #43331d;
+  --ae-color-border: #5a472b;
+  --ae-color-border-focus: #f3c977;
+  --ae-color-text: #f3ecde;
+  --ae-color-text-muted: #cbbd9f;
+  --ae-color-text-placeholder: #a59678;
 }
 
 /* Accessibility: visible focus indicators for keyboard navigation */

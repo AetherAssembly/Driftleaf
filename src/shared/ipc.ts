@@ -9,7 +9,17 @@ export interface AppSettings {
   checkUpdatesAutomatically: boolean;
 }
 
-export type Theme = "system" | "light" | "dark" | "aquatic" | "mossy" | "sunset" | "space";
+export type Theme =
+  | "system"
+  | "light"
+  | "dark"
+  | "aquatic"
+  | "mossy"
+  | "sunset"
+  | "space"
+  | "cherry"
+  | "arctic"
+  | "amber";
 
 export type VaultTemplateId = "blank" | "general" | "productivity" | "journal" | "study";
 

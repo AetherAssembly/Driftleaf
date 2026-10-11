@@ -68,6 +68,9 @@ export function SettingsModal({
     { value: "mossy", label: "Mossy", color: "#1e2819" },
     { value: "sunset", label: "Sunset", color: "#302026" },
     { value: "space", label: "Space", color: "#171b35" },
+    { value: "cherry", label: "Cherry", color: "#321c26" },
+    { value: "arctic", label: "Arctic", color: "#142633" },
+    { value: "amber", label: "Amber", color: "#302516" },
   ];
   const tabs: Array<{ id: SettingsTab; label: string; detail: string }> = [
     { id: "appearance", label: "Appearance", detail: "Theme and color" },
