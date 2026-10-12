@@ -828,6 +828,10 @@ body {
   font-size: 0.85em;
 }
 
+.extensions-modal__community-links {
+  line-height: 1.5;
+}
+
 .extensions-modal__community-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));

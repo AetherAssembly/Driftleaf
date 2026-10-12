@@ -46,8 +46,8 @@ Driftleaf encrypts your notes locally using a key derived from a passphrase that
 
 You are solely responsible for:
 
-- Choosing and remembering (or securely storing) your passphrase — if it is lost, your vault cannot be recovered by AetherAssembly or anyone else
-- Backing up your vault directory
+- Choosing and remembering (or securely storing) your passphrase — if it is lost, your branch cannot be recovered by AetherAssembly or anyone else
+- Backing up your branch folder
 - Complying with local laws and regulations applicable to your use of encryption software
 
 ## Support

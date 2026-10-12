@@ -2,7 +2,7 @@
 
 The installed version and update status appear in **Settings → Updates** and
 **Settings → About**. A new release can also appear as a banner, including on
-the vault unlock screen. Update checks can be disabled in Settings, and
+the branch unlock screen. Update checks can be disabled in Settings, and
 **Check for updates** remains available on demand.
 
 ## Installing an update
@@ -23,7 +23,7 @@ stable builds do not offer beta releases as updates.
 ## Network and privacy
 
 Update checks request public release information from GitHub. They do not send
-vault contents, note titles, passphrases, or account identifiers. Update
+branch contents, note titles, passphrases, or account identifiers. Update
 downloads begin only after the user chooses to download or opens the release
 link.
 

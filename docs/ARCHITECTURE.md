@@ -1,58 +1,64 @@
 # How Driftleaf Keeps Your Data
 
-Driftleaf stores each vault as a folder on your computer. There is no account
-or cloud service holding your notes. Your vault remains available offline, and
-you choose where its folder lives.
+In the app's interface, this private workspace is called a **branch**. The
+internal API and storage implementation still use **vault** terminology (for
+example, `window.driftleaf.vault`, `vault:*` IPC channels, and the `.driftleaf`
+directory inside it). The API and IPC names refer to the branch; `.driftleaf`
+is its hidden data directory. This does not mean a Git branch.
+
+Driftleaf stores each branch as a folder on your computer. There is no account
+or cloud service holding your notes. Your branch remains available offline,
+and you choose where its folder lives.
 
 ## Encryption and privacy
 
-Notes, database contents, and vault organization are encrypted while stored.
-The vault passphrase protects the encryption key; Driftleaf does not keep a
+Notes, database contents, and branch organization are encrypted while stored.
+The branch passphrase protects the encryption key; Driftleaf does not keep a
 copy and cannot reset a forgotten passphrase. Note titles, folder names,
 database details, extensions, and canvas layout are encrypted along with the
 content. On disk, encrypted notes use opaque filenames rather than their
 titles.
 
-When a vault is unlocked, Driftleaf decrypts the information needed for the
+When a branch is unlocked, Driftleaf decrypts the information needed for the
 open session. Search and note-link information are kept in memory and cleared
-when the vault is locked. They are not saved as a separate, unencrypted index.
+when the branch is locked. They are not saved as a separate, unencrypted index.
 
-Driftleaf does not send vault contents to an account or cloud service. Optional
+Driftleaf does not send branch contents to an account or cloud service. Optional
 update checks request public release information from GitHub; community
 galleries request public release information and assets when opened or
 refreshed. Those services receive ordinary network request metadata, but not
 your notes or account identity. See [Software Updates](UPDATES.md) and
 [Community extensions and templates](COMMUNITY.md).
 
-## Vault files and backups
+## Branch files and backups
 
-A vault is a regular folder with a hidden `.driftleaf` directory containing
+A branch is a regular folder with a hidden `.driftleaf` directory containing
 encrypted notes, databases, and the metadata needed to organize them. A backup
-needs the whole vault, including that hidden directory. Copying only visible
-note files does not preserve the complete vault.
+needs the whole branch, including that hidden directory. Copying only visible
+note files does not preserve the complete branch.
 
-Driftleaf checks vault files when they are opened and detects encrypted content
+Driftleaf checks branch files when they are opened and detects encrypted content
 that is damaged or incomplete. Some interrupted changes can be recovered
 automatically, but lost metadata or a forgotten passphrase cannot be
-reconstructed. See [Vault Recovery](RECOVERY.md) for backup and recovery
+reconstructed. See [Branch Recovery](RECOVERY.md) for backup and recovery
 details.
 
 ## Notes, links, and search
 
 Notes use Markdown and include a live preview. Search covers note titles and
-content in the unlocked vault. Links written as
+content in the unlocked branch. Links written as
 `[[Note title]]` appear in previews and connect notes in the graph. A folder
 path can distinguish notes with duplicate titles, as in
 `[[Projects/Driftleaf]]`; unresolved or ambiguous links remain ordinary text.
 
 The graph and backlinks are derived from the notes currently available in the
-unlocked vault. They are not separate copies of note content.
+unlocked branch. They are not separate copies of note content.
 
 ## Databases, canvas, and extensions
 
 Databases support rows, properties, formulas, relations, rollups, and saved
 table, board, and calendar views. Database contents and view settings are
-encrypted in the vault. CSV and JSON imports become Driftleaf databases; see
+encrypted in the branch. CSV and JSON imports become Driftleaf databases; see
 [Databases](DATABASES.md) for supported formats and their limitations.
 
 Canvas is a spatial view of references to notes and database views. Its cards

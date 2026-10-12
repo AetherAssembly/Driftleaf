@@ -1,6 +1,8 @@
 # Data Loss Testing Suite
 
-Test suite for verifying Driftleaf's data loss safeguards across vault operations.
+Test suite for verifying Driftleaf's data loss safeguards across branch operations.
+In this developer documentation, "vault" names the internal API/module and the
+on-disk format for a user-facing branch.
 
 ## Tests
 

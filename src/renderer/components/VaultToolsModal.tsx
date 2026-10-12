@@ -87,7 +87,7 @@ export function VaultToolsModal({ open, onClose, theme, noteCount }: VaultToolsM
     try {
       setHealthReport(await window.driftleaf.vault.healthCheck());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Vault health check failed");
+      setError(err instanceof Error ? err.message : "Branch health check failed");
     } finally {
       setBusy(false);
     }
@@ -141,14 +141,14 @@ export function VaultToolsModal({ open, onClose, theme, noteCount }: VaultToolsM
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Diagnostics & Vault Health">
+    <Modal open={open} onClose={onClose} title="Diagnostics & Branch Health">
       <div className="tools-modal">
         <section className="settings__panel tools-modal__section">
           <span className="settings__eyebrow">RECOVERY</span>
           <h2>Create a backup</h2>
           <p className="settings__about">
-            Copy the open vault, including its hidden encrypted database files, into a new dated
-            folder. Existing backups are never overwritten. Choose a destination outside the vault.
+            Copy the open branch, including its hidden encrypted database files, into a new dated
+            folder. Existing backups are never overwritten. Choose a destination outside the branch.
           </p>
           <Button
             variant="secondary"
@@ -170,7 +170,7 @@ export function VaultToolsModal({ open, onClose, theme, noteCount }: VaultToolsM
           <span className="settings__eyebrow">APP DETAILS</span>
           <h2>Diagnostics</h2>
           <p className="settings__about">
-            Copy safe environment details to include in a bug report. Note contents, vault paths,
+            Copy safe environment details to include in a bug report. Note contents, branch paths,
             and passphrases are not included.
           </p>
           {diagnostics ? (
@@ -202,10 +202,10 @@ export function VaultToolsModal({ open, onClose, theme, noteCount }: VaultToolsM
 
         <section className="settings__panel tools-modal__section">
           <span className="settings__eyebrow">INTEGRITY</span>
-          <h2>Vault health</h2>
+          <h2>Branch health</h2>
           <p className="settings__about">
-            Checks vault metadata, encrypted note contents, recoverable files, and the search index.
-            This may take a while for large vaults.
+            Checks branch metadata, encrypted note contents, recoverable files, and the search index.
+            This may take a while for large branches.
           </p>
           <Button
             variant="secondary"
@@ -223,7 +223,7 @@ export function VaultToolsModal({ open, onClose, theme, noteCount }: VaultToolsM
           <span className="settings__eyebrow">RECOVERY</span>
           <h2>Verify a backup</h2>
           <p className="settings__about">
-            Select a copied vault folder to verify its key check, manifest, and encrypted notes.
+            Select a copied branch folder to verify its key check, manifest, and encrypted notes.
             Verification does not change the selected folder.
           </p>
           <Button

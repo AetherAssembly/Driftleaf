@@ -107,7 +107,7 @@ export function ExtensionsModal({
       <div className="extensions-modal">
         <p>
           Extensions run in isolated windows with network access disabled. Grant only the
-          capabilities you trust; permissions are encrypted with this vault.
+          capabilities you trust; permissions are encrypted with this branch.
         </p>
         <div className="extensions-modal__install">
           <Button variant="secondary" size="sm" onClick={onInstall}>
@@ -153,6 +153,26 @@ export function ExtensionsModal({
               {communityLoading ? "Loading…" : "Refresh"}
             </Button>
           </header>
+          <p className="extensions-modal__community-links">
+            Want to create and share your own? Explore the community repositories:
+            {" "}
+            <a
+              href="https://github.com/AetherAssembly/Driftleaf-Extensions"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Extensions
+            </a>
+            {" · "}
+            <a
+              href="https://github.com/AetherAssembly/Driftleaf-Templates"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Templates
+            </a>
+            .
+          </p>
           {communityError && <p className="extensions-modal__error">{communityError}</p>}
           {!communityLoading && !communityError && communityItems.length === 0 && (
             <p>No released extensions or templates are available yet.</p>
@@ -193,7 +213,7 @@ export function ExtensionsModal({
                 )}
                 {item.kind === "template" && (
                   <p className="extensions-modal__notice">
-                    Installs as notes and databases under “Community templates” in this vault.
+                    Installs as notes and databases under “Community templates” in this branch.
                   </p>
                 )}
                 <Button
@@ -204,7 +224,7 @@ export function ExtensionsModal({
                       onInstallCommunityExtension(item.assetId);
                     } else if (
                       window.confirm(
-                        `Download and import the "${item.name}" template into this encrypted vault? Its contents will be added under Community templates.`,
+                        `Download and import the "${item.name}" template into this encrypted branch? Its contents will be added under Community templates.`,
                       )
                     ) {
                       onInstallCommunityTemplate(item.assetId);
@@ -269,7 +289,7 @@ export function ExtensionsModal({
                         {database.title}
                       </label>
                     ))}
-                    {databases.length === 0 && <small>No databases in this vault.</small>}
+                    {databases.length === 0 && <small>No databases in this branch.</small>}
                   </div>
                 )}
                 <div className="modal-actions">

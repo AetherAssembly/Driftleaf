@@ -29,7 +29,7 @@ export function UnlockScreen({ onUnlocked, version }: UnlockScreenProps) {
       const recovery = await window.driftleaf.vault.unlock(path, "");
       onUnlocked(recovery);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to open vault");
+      setError(err instanceof Error ? err.message : "Failed to open branch");
       setRootPath(path);
       setMode("unlock");
     } finally {
@@ -62,7 +62,7 @@ export function UnlockScreen({ onUnlocked, version }: UnlockScreenProps) {
     try {
       if (mode === "create") {
         if (!passphrase || passphrase.trim().length === 0) {
-          throw new Error("A passphrase is required to create a vault.");
+          throw new Error("A passphrase is required to create a branch.");
         }
         await window.driftleaf.vault.create(rootPath, passphrase, template);
         onUnlocked();
@@ -71,7 +71,7 @@ export function UnlockScreen({ onUnlocked, version }: UnlockScreenProps) {
         onUnlocked(recovery);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to open vault");
+      setError(err instanceof Error ? err.message : "Failed to open branch");
     } finally {
       setBusy(false);
     }
@@ -80,7 +80,7 @@ export function UnlockScreen({ onUnlocked, version }: UnlockScreenProps) {
   function submit() {
     if (mode === "create") {
       if (!passphrase || passphrase.trim().length === 0) {
-        setError("A passphrase is required to create a vault.");
+        setError("A passphrase is required to create a branch.");
         return;
       }
       if (!acknowledgedNoRecovery) {
@@ -116,10 +116,10 @@ export function UnlockScreen({ onUnlocked, version }: UnlockScreenProps) {
               loading={busy}
               onClick={() => choosePath("create")}
             >
-              Create a new vault
+              Create a new branch
             </Button>
             <Button variant="secondary" loading={busy} onClick={() => choosePath("unlock")}>
-              Open an existing vault
+              Open an existing branch
             </Button>
           </div>
         ) : (
@@ -132,12 +132,12 @@ export function UnlockScreen({ onUnlocked, version }: UnlockScreenProps) {
             <p className="unlock-screen__path">{rootPath}</p>
             {mode === "create" && (
               <label className="unlock-screen__template">
-                Vault template
+                Branch template
                 <select
                   value={template}
                   onChange={(event) => setTemplate(event.target.value as VaultTemplateId)}
                 >
-                  <option value="blank">Blank vault</option>
+                  <option value="blank">Blank branch</option>
                   <option value="general">General notes</option>
                   <option value="productivity">To-do / Productivity</option>
                   <option value="journal">Journal</option>
@@ -145,7 +145,7 @@ export function UnlockScreen({ onUnlocked, version }: UnlockScreenProps) {
                 </select>
                 <span className="unlock-screen__template-hint">
                   You can browse and install community templates from the Extensions gallery after
-                  opening your vault.
+                  opening your branch.
                 </span>
               </label>
             )}
@@ -172,7 +172,7 @@ export function UnlockScreen({ onUnlocked, version }: UnlockScreenProps) {
             />
             <div className="unlock-screen__actions">
               <Button type="submit" variant="primary" loading={busy}>
-                {mode === "create" ? "Create vault" : "Unlock"}
+                {mode === "create" ? "Create branch" : "Unlock"}
               </Button>
               <Button
                 type="button"
@@ -205,7 +205,7 @@ export function UnlockScreen({ onUnlocked, version }: UnlockScreenProps) {
             Cancel
           </Button>
           <Button variant="primary" size="sm" onClick={confirmNoRecovery}>
-            I understand, create vault
+            I understand, create branch
           </Button>
         </div>
       </Modal>

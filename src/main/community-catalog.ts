@@ -93,10 +93,25 @@ function itemsFromRelease(
       version: release.name?.trim() || release.tag_name,
       description:
         release.body?.trim() ||
-        (kind === "extension" ? "Community JavaScript extension." : "Community vault template."),
+        (kind === "extension" ? "Community JavaScript extension." : "Community branch template."),
       repository,
       size: asset.size,
     }));
+}
+
+function latestItemsFromReleases(
+  repository: CommunityRepository,
+  releases: Release[],
+): CommunityReleaseItem[] {
+  const seen = new Set<string>();
+  return releases
+    .flatMap((release) => itemsFromRelease(repository, release))
+    .filter((item) => {
+      const key = item.name.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 export async function listCommunityReleases(): Promise<CommunityCatalog> {
@@ -105,7 +120,7 @@ export async function listCommunityReleases(): Promise<CommunityCatalog> {
       try {
         const releases = await releasesFor(name);
         return {
-          items: releases.flatMap((release) => itemsFromRelease(name, release)),
+          items: latestItemsFromReleases(name, releases),
           error: null,
         };
       } catch (error) {
@@ -128,9 +143,9 @@ async function findAsset(assetId: number, kind: CommunityReleaseItem["kind"]) {
   }
   const repository = kind === "extension" ? "Driftleaf-Extensions" : "Driftleaf-Templates";
   const releases = await releasesFor(repository);
-  const asset = releases
-    .flatMap((release) => itemsFromRelease(repository, release))
-    .find((item) => item.assetId === assetId);
+  const asset = latestItemsFromReleases(repository, releases).find(
+    (item) => item.assetId === assetId,
+  );
   if (!asset) throw new Error("This release asset is no longer available");
   return asset;
 }

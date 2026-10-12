@@ -2,7 +2,7 @@
 
 Extensions add optional features to Driftleaf. Each extension is JavaScript
 that runs in its own isolated window. Installed extensions are stored inside
-the encrypted vault.
+the encrypted branch.
 
 ## Installing and managing extensions
 
@@ -25,7 +25,7 @@ changing a permission takes effect on its next request.
 ## Privacy and trust
 
 Extension windows cannot use Node.js, navigate to websites, open popups, or
-make network requests. Their access to vault data is mediated by Driftleaf and
+make network requests. Their access to branch data is mediated by Driftleaf and
 checked against the extension's current permissions.
 
 Extensions are still executable code from a source you choose. A granted
@@ -34,6 +34,6 @@ running. Review unfamiliar source and consider its permissions before
 installation. Isolation reduces access to the rest of the app and device, but
 cannot protect against vulnerabilities in Electron or the operating system.
 
-Extensions and their permissions are stored in the encrypted vault. Community
+Extensions and their permissions are stored in the encrypted branch. Community
 gallery behavior and network requests are described in
 [Community Gallery](COMMUNITY.md).

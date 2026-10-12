@@ -64,7 +64,7 @@ function describeRecovery(report: VaultRecoveryReport): string | null {
     );
   }
   if (parts.length === 0) return null;
-  return `Vault self-check: ${parts.join(", ")}.`;
+  return `Branch self-check: ${parts.join(", ")}.`;
 }
 
 const SEARCH_DEBOUNCE_MS = 200;
@@ -776,7 +776,7 @@ export default function App() {
     },
     { id: "extensions", label: "Open extensions", run: () => void openExtensions() },
     { id: "open-settings", label: "Open settings", run: () => setSettingsOpen(true) },
-    { id: "lock-vault", label: "Lock vault", run: () => void handleLock() },
+    { id: "lock-vault", label: "Lock branch", run: () => void handleLock() },
     ...folders.map((f): Command => ({
       id: `goto-${f || "root"}`,
       label: `Go to folder: ${f || "All notes"}`,

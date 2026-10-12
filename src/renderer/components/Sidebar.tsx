@@ -7,7 +7,7 @@ import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 function SidebarActionIcon({
   name,
 }: {
-  name: "graph" | "canvas" | "import" | "folder";
+  name: "graph" | "canvas" | "import" | "folder" | "extensions";
 }) {
   return (
     <svg
@@ -46,6 +46,9 @@ function SidebarActionIcon({
           <path d="M2.5 5.5A1.5 1.5 0 0 1 4 4h4l2 2h6A1.5 1.5 0 0 1 17.5 7.5v7A1.5 1.5 0 0 1 16 16H4a1.5 1.5 0 0 1-1.5-1.5z" />
           <path d="M10 8.5v5M7.5 11h5" />
         </>
+      )}
+      {name === "extensions" && (
+        <path d="M7 3.5h2a1.5 1.5 0 1 1 3 0h2a2 2 0 0 1 2 2V8h-1a2 2 0 1 0 0 4h1v2.5a2 2 0 0 1-2 2h-2.5v-1a2 2 0 1 0-4 0v1H5a2 2 0 0 1-2-2V12h1a2 2 0 1 0 0-4H3V5.5a2 2 0 0 1 2-2h2z" />
       )}
     </svg>
   );
@@ -448,7 +451,7 @@ export function Sidebar({
             {notes.filter((n) => n.folderPath === selectedFolder).length === 0 &&
               (notes.length === 0 && databases.length === 0 ? (
                 <li className="sidebar__empty">
-                  Your vault is empty. Click &ldquo;+ Note&rdquo; to create your first note.
+                  Your branch is empty. Click &ldquo;+ Note&rdquo; to create your first note.
                 </li>
               ) : (
                 <li className="sidebar__empty">This folder is empty.</li>
@@ -480,13 +483,13 @@ export function Sidebar({
 
       <div className="sidebar__footer" aria-label="Sidebar actions">
         <Button variant="ghost" size="sm" onClick={onOpenExtensions} aria-label="Open extensions" title="Extensions">
-          {collapsed ? "Ex" : "Extensions"}
+          {collapsed ? <SidebarActionIcon name="extensions" /> : "Extensions"}
         </Button>
         <Button variant="ghost" size="sm" onClick={onOpenSettings} aria-label="Open settings" title="Settings">
           {collapsed ? "⚙" : "Settings"}
         </Button>
-        <Button variant="ghost" size="sm" onClick={onLock} aria-label="Lock vault" title="Lock vault">
-          {collapsed ? "⌑" : "Lock vault"}
+        <Button variant="ghost" size="sm" onClick={onLock} aria-label="Lock branch" title="Lock branch">
+          {collapsed ? "⌑" : "Lock branch"}
         </Button>
       </div>
 

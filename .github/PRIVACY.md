@@ -16,16 +16,18 @@ Driftleaf is developed and maintained by [AetherAssembly](https://aetherassembly
 
 ## Data We Process
 
-Driftleaf stores the following information locally on your device, inside the vault folder you choose:
+Driftleaf stores the following information locally on your device, inside the
+branch folder you choose. The app's internal API and storage format still use
+the term "vault" for this same branch.
 
 - Your note content, encrypted with AES-256-GCM using a key derived from your passphrase
 - An encrypted manifest (`.driftleaf/manifest.enc`) recording note titles, folders, timestamps, and installed extension code and permissions. Note files use opaque IDs rather than titles in their filesystem paths.
 - Application settings (such as window state and preferences), stored in Electron's local `userData` directory
 
-Vault contents remain on your device. The app also makes update-check requests
+Branch contents remain on your device. The app also makes update-check requests
 to GitHub when automatic update checks are enabled, or when you manually
 choose **Check for updates**. These requests are for public release metadata;
-they do not include notes, vault contents, the passphrase, or an account
+they do not include notes, branch contents, the passphrase, or an account
 identifier. GitHub receives the ordinary network request metadata (such as
 your IP address). Update downloads are user-initiated. Disable automatic checks
 in **Settings → Updates** to skip startup checks. Extensions run with network
@@ -33,7 +35,7 @@ access disabled by the app. When you open or refresh **Extensions → Community
 gallery**, Driftleaf requests public release metadata from GitHub for the
 `AetherAssembly/Driftleaf-Extensions` and `AetherAssembly/Driftleaf-Templates`
 repositories. Previewing or installing an item downloads its public release
-asset from GitHub. These requests do not include vault data or an account
+asset from GitHub. These requests do not include branch data or an account
 identifier; GitHub receives ordinary network request metadata such as your IP
 address. Community items are optional, and the app remains usable offline.
 
@@ -45,7 +47,7 @@ Driftleaf does not include user accounts, built-in analytics or tracking, advert
 
 Apart from the GitHub release checks, community catalog requests, and
 user-initiated downloads described above, Driftleaf does not sync, phone home,
-or transmit vault data. Extensions run in isolated windows with network access
+or transmit branch data. Extensions run in isolated windows with network access
 disabled by the app. The application remains usable offline; release catalog
 requests simply fail until a network connection is available.
 
@@ -55,7 +57,7 @@ to describe exactly what is sent and where before that release ships.
 
 ## Encryption and Your Passphrase
 
-Your vault is encrypted with a key derived from your passphrase using scrypt. Your passphrase is never transmitted anywhere and is not stored by Driftleaf or AetherAssembly in any recoverable form. This also means AetherAssembly cannot reset your passphrase or recover your notes if it is lost.
+Your branch is encrypted with a key derived from your passphrase using scrypt. Your passphrase is never transmitted anywhere and is not stored by Driftleaf or AetherAssembly in any recoverable form. This also means AetherAssembly cannot reset your passphrase or recover your notes if it is lost.
 
 ## Data Sharing
 
@@ -63,7 +65,7 @@ Driftleaf does not sell, rent, or share your notes or any other local data with 
 
 ## Data Retention and Deletion
 
-Your data remains on your device, in the vault folder you chose, until you delete it yourself. Uninstalling the application does not delete your vault or Electron's local settings directory — you are responsible for removing those manually if desired.
+Your data remains on your device, in the branch folder you chose, until you delete it yourself. Uninstalling the application does not delete your branch or Electron's local settings directory — you are responsible for removing those manually if desired.
 
 ## Open Source Nature of the Project
 

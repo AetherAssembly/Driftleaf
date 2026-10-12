@@ -76,7 +76,7 @@ export function SettingsModal({
     { id: "appearance", label: "Appearance", detail: "Theme and color" },
     { id: "editor", label: "Editor", detail: "Writing preferences" },
     { id: "updates", label: "Updates", detail: "Version and releases" },
-    { id: "vault", label: "Vault", detail: "Privacy and diagnostics" },
+    { id: "vault", label: "Branch", detail: "Privacy and diagnostics" },
     { id: "about", label: "About", detail: "Driftleaf information" },
   ];
   const lastVaultName = settings.lastVaultPath
@@ -224,15 +224,15 @@ export function SettingsModal({
           {tab === "vault" && (
             <section className="settings__panel">
               <span className="settings__eyebrow">YOUR PRIVATE SPACE</span>
-              <h2>Vault and privacy</h2>
+              <h2>Branch and privacy</h2>
               <p>
-                Notes and vault metadata are encrypted at rest. Driftleaf does not sync or send
-                vault contents anywhere.
+                Notes and branch metadata are encrypted at rest. Driftleaf does not sync or send
+                branch contents anywhere.
               </p>
               {lastVaultName && (
                 <div className="settings__vault-card">
                   <div>
-                    <small>LAST OPENED VAULT</small>
+                    <small>LAST OPENED BRANCH</small>
                     <strong title={settings.lastVaultPath ?? ""}>{lastVaultName}</strong>
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => onPatch({ lastVaultPath: null })}>
@@ -242,15 +242,15 @@ export function SettingsModal({
               )}
               <div className="settings__tools-card">
                 <div>
-                  <strong>Diagnostics &amp; Vault Health</strong>
-                  <p>Inspect app details, check vault integrity, and verify backups.</p>
+                  <strong>Diagnostics &amp; Branch Health</strong>
+                  <p>Inspect app details, check branch integrity, and verify backups.</p>
                 </div>
                 <Button variant="secondary" size="sm" onClick={onOpenTools}>
                   Open tools
                 </Button>
               </div>
               <p className="settings__hint">
-                There is no passphrase reset. Keep a secure backup of your passphrase and vault.
+                There is no passphrase reset. Keep a secure backup of your passphrase and branch.
               </p>
             </section>
           )}
@@ -263,7 +263,7 @@ export function SettingsModal({
               <p className="settings__version-pill">Version {updateStatus.currentVersion}</p>
               <p>
                 A calm, private place for notes, connected ideas, and flexible databases.
-                Everything stays in your encrypted vault.
+                Everything stays in your encrypted branch.
               </p>
               <Button variant="ghost" size="sm" onClick={onCheckUpdates} loading={busy}>
                 Check for updates

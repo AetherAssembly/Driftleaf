@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
+## [0.6.3] - 2026-10-12
+
+### Changed
+
+- Community gallery now shows only the newest release of each extension or
+  template asset, preventing duplicate entries across releases.
+- Replaced the collapsed sidebar's “Ex” label with an Extensions icon.
+- Renamed the user-facing private workspace from “vault” to “branch”; internal
+  API and storage terminology remains unchanged.
+
+### Documentation
+
+- Updated user guides and repository policy copies to use “branch” for the
+  private workspace, clarifying where “vault” remains the internal term.
+
 ## [0.6.2]
 
 ### Added

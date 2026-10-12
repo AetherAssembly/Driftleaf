@@ -1,9 +1,9 @@
 # Databases
 
 Driftleaf databases can be created directly or imported from CSV and JSON.
-Databases appear in the vault's folder in the sidebar and can be explored as
+Databases appear in the branch's folder in the sidebar and can be explored as
 table, board, calendar, gallery, or list views. Rows, properties, and view
-definitions are stored encrypted in the vault; they are not converted into
+definitions are stored encrypted in the branch; they are not converted into
 Markdown notes. See the [Database Roadmap](DATABASE_ROADMAP.md) for planned
 database improvements.
 
@@ -17,8 +17,8 @@ name can be entered when prompted. Add rows and properties in the table view.
 
 Choose **Import** and select a `.csv`, `.json`, or `.zip` file. CSV and JSON
 files can be selected directly or included in a ZIP archive. Import places each
-database in the currently selected vault folder. ZIP paths are preserved as
-vault folders. Markdown files in the same import can be imported alongside
+database in the currently selected branch folder. ZIP paths are preserved as
+branch folders. Markdown files in the same import can be imported alongside
 databases.
 
 - **CSV:** the header row becomes the property names. Driftleaf infers common
@@ -109,7 +109,7 @@ text in CSV. CSV cannot preserve Driftleaf property types or saved views.
 Use **Export JSON** for a lossless Driftleaf database backup. It includes
 property definitions, formula expressions, row values, and saved views. Import
 that JSON file into Driftleaf to restore those structures as a new database.
-Both formats are written as plaintext files outside the encrypted vault, so
+Both formats are written as plaintext files outside the encrypted branch, so
 Driftleaf asks you to confirm before exporting.
 
 ## Privacy and backups
@@ -117,8 +117,8 @@ Driftleaf asks you to confirm before exporting.
 The manifest stores database titles, IDs, folder paths, and timestamps
 encrypted in `manifest.enc`. Property definitions, saved views, formulas, and
 row values are encrypted together in `.driftleaf/<database-id>.db.enc` with
-the vault key.
-Create backups from **Settings → Diagnostics & Vault Health → Create backup**;
+the branch key.
+Create backups from **Settings → Diagnostics & Branch Health → Create backup**;
 this includes the hidden `.driftleaf/` directory. Health checks and backup
 verification also validate encrypted database files.
 
@@ -126,4 +126,4 @@ The database index metadata is stored encrypted in `manifest.enc`. Unlike
 Markdown notes, database files cannot currently be re-indexed automatically if
 that manifest is lost. Restore `manifest.enc` or the `.driftleaf/` directory
 from a backup; see
-[Vault Recovery](RECOVERY.md).
+[Branch Recovery](RECOVERY.md).
