@@ -19,7 +19,7 @@ The format is based on Keep a Changelog and this project uses semantic versionin
 - Updated user guides and repository policy copies to use “branch” for the
   private workspace, clarifying where “vault” remains the internal term.
 
-## [0.6.2]
+## [0.6.2] - 2026-10-11
 
 ### Added
 
