@@ -8,17 +8,45 @@ same page for testing.
 
 ### Debian, Ubuntu, and Raspberry Pi OS
 
-#### Debian package
+#### Stable APT repository (recommended)
 
-The Driftleaf APT repository is currently unavailable. Debian, Ubuntu, and
-Raspberry Pi OS users can install the `.deb` package from the
-[GitHub Releases page](https://github.com/AetherAssembly/Driftleaf/releases):
+The signing-key fingerprint must be `32B72F22E77E21F510B31849A7B44812A39EEB9C`. Both applications use this key. The repository supports **amd64** and **arm64**, including 64-bit Raspberry Pi OS; 32-bit armhf is not supported.
+
+Only stable releases are published to APT. New stable releases may take up to 12 hours to appear. Beta releases are available directly from GitHub; there is no beta APT channel.
+
+```sh
+sudo apt update
+sudo apt install ca-certificates curl gnupg
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://apt.aetherassembly.org/before-its-gone/apt-repo-public.asc -o /tmp/aetherassembly-apt-public.asc
+gpg --show-keys --with-fingerprint /tmp/aetherassembly-apt-public.asc
+
+# Confirm the fingerprint below before continuing.
+sudo install -m 0644 /tmp/aetherassembly-apt-public.asc /etc/apt/keyrings/aetherassembly.asc
+echo "deb [arch=amd64,arm64 signed-by=/etc/apt/keyrings/aetherassembly.asc] https://apt.aetherassembly.org/driftleaf stable main" \
+  | sudo tee /etc/apt/sources.list.d/driftleaf.list >/dev/null
+rm /tmp/aetherassembly-apt-public.asc
+sudo apt update
+sudo apt install driftleaf
+```
+
+To update later:
+
+```sh
+sudo apt update
+sudo apt install --only-upgrade driftleaf
+```
+
+If you previously configured the old AetherAssembly repository, remove its obsolete source entry (including any beta entry) before adding the new one. Do not remove other applications' source entries.
+
+#### Manual Debian package
+
+Download the matching stable `.deb` from GitHub Releases, then install it with:
 
 ```sh
 sudo apt install ./driftleaf-<version>-amd64.deb
+# For ARM64, use the asset ending in arm64.deb instead.
 ```
-
-For ARM64 systems, use the release asset ending in `arm64.deb`.
 
 ### Fedora, RHEL, CentOS Stream, Rocky Linux, and AlmaLinux
 
