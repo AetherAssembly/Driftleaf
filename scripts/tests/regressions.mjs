@@ -6,13 +6,15 @@ import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
 import { createRequire } from "node:module";
-import { EventEmitter } from "node:events";
+import { EventEmitter, once } from "node:events";
+import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import ts from "typescript";
 import * as vault from "../../src/main/vault.ts";
 import * as links from "../../src/shared/note-links.ts";
 import * as contract from "../../src/shared/ipc.ts";
 import { SerialQueue } from "../../src/shared/serial-queue.ts";
+import * as storage from "../../src/shared/storage.ts";
 import { DraftWrites } from "../../src/renderer/lib/draft-writes.ts";
 
 const require = createRequire(import.meta.url);
@@ -47,11 +49,18 @@ function loadModule(relative, mocks) {
 // The production addon is rebuilt for Electron in CI. Run the actual search
 // functions against Node's FTS5 engine without rebuilding that addon for tests.
 class TestDatabase {
-  constructor() {
-    this.db = new DatabaseSync(":memory:");
+  constructor(filename = ":memory:") {
+    this.db = new DatabaseSync(filename);
+    this.db.exec("PRAGMA busy_timeout = 0");
   }
   exec(sql) {
-    return this.db.exec(sql);
+    try {
+      return this.db.exec(sql);
+    } catch (error) {
+      if (error.errcode === 5) error.code = "SQLITE_BUSY";
+      if (error.errcode === 6) error.code = "SQLITE_LOCKED";
+      throw error;
+    }
   }
   prepare(sql) {
     return this.db.prepare(sql);
@@ -79,6 +88,11 @@ const search = loadModule("src/main/search.ts", {
   "../shared/note-links": links,
 });
 
+const branchLocks = loadModule("src/main/branch-lock.ts", {
+  "node:module": { createRequire: () => () => TestDatabase },
+  "../shared/storage": storage,
+});
+
 async function temporaryBranch(run) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "driftleaf-regression-"));
   try {
@@ -88,7 +102,7 @@ async function temporaryBranch(run) {
   }
 }
 
-function ipcHarness() {
+function ipcHarness(settings = { patchSettings: async () => {} }) {
   const handlers = new Map();
   const api = loadModule("src/main/ipc.ts", {
     electron: {
@@ -102,7 +116,8 @@ function ipcHarness() {
     "./window-lifecycle": {},
     "./vault": vault,
     "./search": search,
-    "./settings": { patchSettings: async () => {} },
+    "./settings": settings,
+    "./branch-lock": branchLocks,
     "./updates": {},
     "./database-export": {},
     "./community-catalog": {},
@@ -282,4 +297,125 @@ test("close handshake validates sender, drains after acknowledgement, and permit
   await retry;
   assert.equal(lifecycle.isCloseApproved(win), true);
   assert.equal(drained, 1);
+});
+
+test("independent sessions cannot unlock the same branch until the owner locks it", async () => {
+  await temporaryBranch(async (directory) => {
+    const first = ipcHarness();
+    const second = ipcHarness();
+    try {
+      await first(contract.IPC_CHANNELS.vaultCreate, directory, "passphrase", "blank");
+      await assert.rejects(
+        second(contract.IPC_CHANNELS.vaultUnlock, directory, "passphrase"),
+        /already open/,
+      );
+      await first(contract.IPC_CHANNELS.vaultLock);
+      await second(contract.IPC_CHANNELS.vaultUnlock, directory, "passphrase");
+    } finally {
+      await first(contract.IPC_CHANNELS.vaultLock);
+      await second(contract.IPC_CHANNELS.vaultLock);
+    }
+  });
+});
+
+test("failed unlock and failed session setup release the writer lock", async () => {
+  await temporaryBranch(async (directory) => {
+    await vault.createVault(directory, "passphrase");
+    const first = ipcHarness();
+    await assert.rejects(
+      first(contract.IPC_CHANNELS.vaultUnlock, directory, "wrong"),
+      /Incorrect passphrase/,
+    );
+    const broken = ipcHarness({
+      patchSettings: async () => {
+        throw new Error("Settings are read-only");
+      },
+    });
+    await assert.rejects(
+      broken(contract.IPC_CHANNELS.vaultUnlock, directory, "passphrase"),
+      /read-only/,
+    );
+    try {
+      await first(contract.IPC_CHANNELS.vaultUnlock, directory, "passphrase");
+    } finally {
+      await first(contract.IPC_CHANNELS.vaultLock);
+    }
+  });
+});
+
+test("backup includes flushed drafts but excludes the live writer lock", async () => {
+  await temporaryBranch(async (directory) => {
+    const source = path.join(directory, "source");
+    const destination = path.join(directory, "backups");
+    const { mkdir, access } = await import("node:fs/promises");
+    await mkdir(destination);
+    const lock = await branchLocks.acquireBranchLock(source, true);
+    try {
+      const branch = await vault.createVault(source, "passphrase");
+      const note = await vault.createNote(branch, "", "Pending draft");
+      const drafts = new DraftWrites();
+      drafts.set("note", () => vault.writeNote(branch, note.id, "Latest edit"));
+      await drafts.flush();
+      const backup = await vault.createVaultBackup(branch, destination);
+      await assert.rejects(access(path.join(backup, storage.BRANCH_LOCK_FILENAME)), {
+        code: "ENOENT",
+      });
+      const restored = await vault.unlockVault(backup, "passphrase");
+      assert.equal(await vault.readNote(restored.vault, note.id), "Latest edit");
+    } finally {
+      lock.release();
+    }
+  });
+});
+
+test("OS writer lock is released after another process crashes", async () => {
+  await temporaryBranch(async (directory) => {
+    const filename = path.join(directory, storage.BRANCH_LOCK_FILENAME);
+    const child = spawn(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `
+      import { DatabaseSync } from 'node:sqlite';
+      const db = new DatabaseSync(process.argv[1]);
+      db.exec('BEGIN EXCLUSIVE');
+      process.on('message', () => {});
+      process.send('locked');
+    `,
+        filename,
+      ],
+      { stdio: ["ignore", "ignore", "inherit", "ipc"] },
+    );
+    try {
+      const [message] = await once(child, "message");
+      assert.equal(message, "locked");
+      await assert.rejects(branchLocks.acquireBranchLock(directory), /already open/);
+      const exited = once(child, "exit");
+      child.kill("SIGKILL");
+      await exited;
+      const lock = await branchLocks.acquireBranchLock(directory);
+      lock.release();
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        const exited = once(child, "exit");
+        child.kill("SIGKILL");
+        await exited;
+      }
+    }
+  });
+});
+
+test("failed canvas writes remain queued and persist the newest revision on retry", async () => {
+  const drafts = new DraftWrites();
+  let persisted;
+  drafts.set("canvas", async () => {
+    throw new Error("Read-only branch");
+  });
+  await assert.rejects(drafts.flush(), /Read-only/);
+  drafts.set("canvas", async () => {
+    persisted = [{ id: "card", x: 20, y: 30 }];
+  });
+  await drafts.flush();
+  assert.deepEqual(persisted, [{ id: "card", x: 20, y: 30 }]);
 });

@@ -317,11 +317,12 @@ export default function App() {
   }
 
   async function updateCanvas(items: CanvasItem[]) {
+    setCanvasItems(items);
+    draftWrites.set("canvas", () => window.driftleaf.canvas.update(items));
     try {
-      await window.driftleaf.canvas.update(items);
-      setCanvasItems(items);
+      await draftWrites.flush();
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "Could not update canvas");
+      showToast(error instanceof Error ? error.message : "Could not save canvas; changes retained for retry");
     }
   }
 
@@ -448,6 +449,7 @@ export default function App() {
     const paths = await window.driftleaf.vault.pickImportFiles();
     if (!paths || paths.length === 0) return;
     try {
+      await draftWrites.flush();
       const result = await window.driftleaf.notes.import(paths, selectedFolder);
       await refreshVaultState();
       await refreshNoteGraph();

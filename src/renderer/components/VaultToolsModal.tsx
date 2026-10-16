@@ -1,3 +1,4 @@
+import { draftWrites } from "../lib/draft-writes";
 import { useEffect, useState } from "react";
 import { Button, Input, Modal } from "@aetherAssembly/ui";
 import type { AppDiagnostics, AppSettings, VaultHealthReport } from "../../shared/ipc";
@@ -132,6 +133,7 @@ export function VaultToolsModal({ open, onClose, theme, noteCount }: VaultToolsM
     try {
       const destination = await window.driftleaf.vault.pickBackupDestination();
       if (!destination) return;
+      await draftWrites.flush();
       setCreatedBackupPath(await window.driftleaf.vault.createBackup(destination));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create backup");

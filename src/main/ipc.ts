@@ -1,3 +1,4 @@
+import { acquireBranchLock, type BranchLock } from "./branch-lock";
 import { SerialQueue } from "../shared/serial-queue";
 import { app, BrowserWindow, ipcMain, dialog, type IpcMainInvokeEvent } from "electron";
 import { prepareWindowClose, cancelWindowClose } from "./window-lifecycle";
@@ -22,9 +23,10 @@ import { downloadCommunityAsset, listCommunityReleases } from "./community-catal
 interface Session {
   vault: Vault | null;
   index: SearchIndex | null;
+  branchLock: BranchLock | null;
 }
 
-const session: Session = { vault: null, index: null };
+const session: Session = { vault: null, index: null, branchLock: null };
 
 function requireVault(): Vault {
   if (!session.vault) throw new Error("No vault is unlocked");
@@ -111,13 +113,41 @@ async function openSession(vault: Vault): Promise<void> {
   }
 }
 
+// Called inside the operation queue, before unlock's reconciliation can write.
+async function startSession<T>(
+  rootPath: string,
+  create: boolean,
+  load: (canonicalPath: string) => Promise<{ vault: Vault; result: T }>,
+): Promise<T> {
+  if (session.vault) throw new Error("Lock the current branch before opening another one");
+  const branchLock = await acquireBranchLock(rootPath, create);
+  let vault: Vault | undefined;
+  try {
+    const loaded = await load(branchLock.rootPath);
+    vault = loaded.vault;
+    await settingsModule.patchSettings({ lastVaultPath: branchLock.rootPath });
+    await openSession(vault);
+    session.branchLock = branchLock;
+    return loaded.result;
+  } catch (error) {
+    vault?.key.fill(0);
+    branchLock.release();
+    throw error;
+  }
+}
+
 export function lockSession(): Promise<void> {
   return serialized(async () => {
     closeExtensionWindows();
     session.vault?.key.fill(0);
-    session.index?.db.close();
-    session.vault = null;
-    session.index = null;
+    try {
+      session.index?.db.close();
+    } finally {
+      session.vault = null;
+      session.index = null;
+      session.branchLock?.release();
+      session.branchLock = null;
+    }
   });
 }
 
@@ -230,17 +260,18 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       passphrase: string,
       template: Parameters<typeof vaultModule.createVault>[2],
     ) => {
-      const vault = await vaultModule.createVault(rootPath, passphrase, template);
-      await openSession(vault);
-      await settingsModule.patchSettings({ lastVaultPath: rootPath });
+      return startSession(rootPath, true, async (canonicalPath) => ({
+        vault: await vaultModule.createVault(canonicalPath, passphrase, template),
+        result: undefined,
+      }));
     },
   );
 
   handle(IPC_CHANNELS.vaultUnlock, async (_e, rootPath: string, passphrase: string) => {
-    const { vault, recovery } = await vaultModule.unlockVault(rootPath, passphrase);
-    await openSession(vault);
-    await settingsModule.patchSettings({ lastVaultPath: rootPath });
-    return recovery;
+    return startSession(rootPath, false, async (canonicalPath) => {
+      const { vault, recovery } = await vaultModule.unlockVault(canonicalPath, passphrase);
+      return { vault, result: recovery };
+    });
   });
 
   handle(IPC_CHANNELS.vaultHasPassphrase, (_e, rootPath: string) => {

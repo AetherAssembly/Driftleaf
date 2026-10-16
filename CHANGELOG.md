@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
+## [Unreleased]
+
+### Tauri migration
+
+- Added exclusive branch writer locks before creation/unlock and reconciliation,
+  preventing two cooperating Driftleaf processes from modifying one branch.
+  Locks release on branch lock, window close, failed session setup, and process exit.
+- Kept runtime lock files out of backups and flushed pending drafts before backup
+  creation and imports.
+- Retained failed canvas edits in the shared save queue for retry and safe close.
+- Added session, backup, canvas retry, and cross-process crash-recovery regressions.
+- Kept Electron and the existing branch format. Phase 1 will begin only after
+  manual verification of Phase 0.
+
 ## [0.6.4] - 2026-10-15
 
 ### Fixed

@@ -70,3 +70,8 @@ write/lock ordering, failed-draft retries, in-flight close flushing, close sende
 validation, and search/graph replacement. It runs production TypeScript modules
 with a mocked Electron transport and Node SQLite FTS5 (the packaged SQLite addon
 is rebuilt for Electron, not the CI Node runtime). No personal branches are used.
+
+Phase 0 also tests separate-session writer exclusion, releasing locks after
+failed unlock/setup, cross-process lock recovery after forced termination,
+backup exclusion of runtime lock files, and canvas draft retry. SQLite lock
+semantics are exercised against real files, including a separate Node process.
