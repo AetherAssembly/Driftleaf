@@ -216,7 +216,7 @@ export function SettingsModal({
               <p className="settings__hint">
                 {updateStatus.automaticInstall
                   ? "Updates can be downloaded and installed in-app on this platform."
-                  : "Updates are detected here and installed manually. macOS automatic installation can be enabled in signed builds."}
+                  : "Updates are detected here and installed manually."}
               </p>
             </section>
           )}
