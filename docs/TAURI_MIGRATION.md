@@ -106,22 +106,31 @@ request bodies on that private pipe.
 `src/tauri-bridge/index.ts` implements the same `DriftleafApi` contract Electron's preload
 does; `src/renderer/main.tsx` installs it as `window.driftleaf` only when nothing has already
 (Tauri vs. Electron detection), so every component under `src/renderer/**` is unchanged, per
-the plan's "unchanged React interface" requirement. Notes, folders, search, settings,
-diagnostics, databases, canvas, and most of extensions (everything except `install` and `run`,
-which need a native picker and a sandboxed window respectively) are wired through to the
-sidecar. Commands that are genuinely not resolved yet — `notes.import`,
-`vault.createBackup`/`verifyBackup` (picker-security-coupled, see below), `databases.export`
-(also needs a native save dialog), `extensions.install`/`run`, and the updater — throw a clear
-"not yet available in this Tauri preview build" instead of silently no-opping.
+the plan's "unchanged React interface" requirement. Every command is wired except
+`extensions.run` (needs a sandboxed window Tauri doesn't have yet — Phase 3 territory) and the
+updater (`updates.check`/`download`/`install`/`openDownload` — a separate later phase); those
+throw a clear "not yet available in this Tauri preview build" instead of silently no-opping.
 
-**Why pickers split the way they did.** Native dialogs must be shown from Rust — the Node
-child has no GUI. Rather than give the sidecar a way to ask Rust to show one (a duplex
-protocol) or re-derive the single-use "only import what was actually picked" allowlist in
-Rust, this slice sidesteps the question: `vault.pickDirectory` is a Rust-native command
-(`pick_directory`, no sidecar round-trip) and the three commands whose security check is
-coupled to a prior pick (`notes.import`, `vault.createBackup`, `vault.verifyBackup`) are
-simply not wired yet — they aren't needed for create/unlock → edit → search → lock → close.
-Resolving this is a prerequisite before those three commands can be enabled.
+**How pickers split, resolved.** Native dialogs must be shown from Rust — the Node child has
+no GUI. Rather than give the sidecar a way to ask Rust to show one (a duplex protocol),
+`vault.pickDirectory`, `pickBackupDirectory`, `pickBackupDestination`, and `pickImportFiles`
+are all Rust-native commands (`tauri-plugin-dialog`, no sidecar round-trip). The three
+commands whose security check in `service.ts` is coupled to a prior pick — `notes.import`,
+`vault.createBackup`, `vault.verifyBackup` — needed more: their single-use "only act on what
+was actually picked" allowlist (see `src/main/service.ts`) is specific to *service.ts's own*
+`pick*()` methods, which Rust's native pickers never call, so routing straight to
+`service.notes.import`/etc. would always fail that check. Resolved by moving the allowlist
+check itself to Rust (`PickerState` in `src-tauri/src/main.rs`, same single-use
+reset-on-pick/consume-on-use semantics, now tracking what Rust's own dialogs returned) and
+adding "trusted" sidecar commands (`notes.trustedImport`, `vault.trustedCreateBackup`,
+`vault.trustedVerifyBackup` in `sidecar/index.mjs`) that skip that check entirely — safe
+because the sidecar's only caller is Rust, a trusted process the renderer can't reach
+directly, and Rust has already validated the path before calling. `extensions.install` and
+`databases.export` turned out to need the same treatment even though they don't have a
+separate pick-then-call step in the DriftleafApi surface: Rust shows the dialog, reads the
+file (for install) or writes the exported content (for export) itself, and only the
+vault-reading part crosses into the sidecar (`extensions.trustedInstall`,
+`databases.trustedExportContent`).
 
 **Why the sidecar uses `node:sqlite` instead of `better-sqlite3`.** The review flagged
 building the SQLite native addon for the sidecar's own Node ABI/OS/architecture as something
@@ -200,16 +209,20 @@ with no orphaned processes. Also verified against a real, pre-existing productio
 opening it through "Open an existing branch" with the correct passphrase now correctly shows
 all its real notes, folders, and a database — confirming decryption and the full read path
 behave identically to Electron once the two bridge bugs above were fixed. No data was written
-to that branch during this verification.
+to that branch during this verification. Separately, against a disposable test branch: file
+import (native picker → `notes.import`), backup creation and verification (native pickers →
+`vault.createBackup`/`verifyBackup`, including the Rust-side single-use allowlist actually
+gating the call), extension install (native picker → `extensions.install`), and database
+export (native save dialog → `databases.export`, real file written to disk) all confirmed
+working end to end.
 
 **Explicitly not done in this slice:** Windows and macOS are untested (no access to those
 platforms from here). No installable build was produced (`tauri build`, code signing,
-icons/bundle identity are unaddressed — see Phase 3). `notes.import`,
-`vault.createBackup`/`verifyBackup`, `databases.export`, and `extensions.install`/`run` remain
-unwired (picker/window-coupled, see above); the updater is unwired. Startup time, memory, and
-package size were not measured. IME, screen readers, and keyboard-shortcut parity were not
-checked. Verification was against one real vault on one machine — not a substitute for the
-broader fixture-based cross-runtime testing Phase 4 calls for.
+icons/bundle identity are unaddressed — see Phase 3). `extensions.run` (needs a sandboxed
+window) and the updater remain unwired. Startup time, memory, and package size were not
+measured. IME, screen readers, and keyboard-shortcut parity were not checked. Verification was
+manual, against one real vault and one disposable test branch on one machine — not a
+substitute for the broader fixture-based cross-runtime testing Phase 4 calls for.
 
 Automated checks: `cargo check` and `cargo clippy` (clean, no warnings) for `src-tauri/`;
 `npm run typecheck`, `npm run lint`, `npm run build`, `npm test` all still pass unchanged for

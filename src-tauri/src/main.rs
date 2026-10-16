@@ -206,6 +206,255 @@ async fn pick_directory(app: AppHandle) -> Result<Option<String>, String> {
     rx.await.map_err(|_| "The folder picker closed unexpectedly".to_string())
 }
 
+// Single-use picked-path tracking for the commands whose security check in service.ts
+// requires that a matching pick*() call happened first (notes.import / vault.createBackup /
+// vault.verifyBackup) — see the "Trusted commands" comment in sidecar/index.mjs for why that
+// check had to move here instead of staying in the sidecar. Each field is reset when its
+// picker runs and consumed (taken) by the one mutating call that's allowed to use it, the
+// same single-use semantics service.ts originally had.
+struct PickerState {
+    last_backup_path: StdMutex<Option<String>>,
+    last_backup_destination: StdMutex<Option<String>>,
+    last_import_paths: StdMutex<Option<std::collections::HashSet<String>>>,
+}
+
+#[tauri::command]
+async fn pick_backup_directory(
+    app: AppHandle,
+    picker: tauri::State<'_, std::sync::Arc<PickerState>>,
+) -> Result<Option<String>, String> {
+    *picker.last_backup_path.lock().unwrap() = None;
+    let (tx, rx) = oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Choose a Driftleaf backup folder")
+        .pick_folder(move |folder| {
+            let _ = tx.send(folder.map(|f| f.to_string()));
+        });
+    let picked = rx.await.map_err(|_| "The folder picker closed unexpectedly".to_string())?;
+    *picker.last_backup_path.lock().unwrap() = picked.clone();
+    Ok(picked)
+}
+
+#[tauri::command]
+async fn pick_backup_destination(
+    app: AppHandle,
+    picker: tauri::State<'_, std::sync::Arc<PickerState>>,
+) -> Result<Option<String>, String> {
+    *picker.last_backup_destination.lock().unwrap() = None;
+    let (tx, rx) = oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Choose where to save the backup")
+        .pick_folder(move |folder| {
+            let _ = tx.send(folder.map(|f| f.to_string()));
+        });
+    let picked = rx.await.map_err(|_| "The folder picker closed unexpectedly".to_string())?;
+    *picker.last_backup_destination.lock().unwrap() = picked.clone();
+    Ok(picked)
+}
+
+#[tauri::command]
+async fn pick_import_files(
+    app: AppHandle,
+    picker: tauri::State<'_, std::sync::Arc<PickerState>>,
+) -> Result<Option<Vec<String>>, String> {
+    *picker.last_import_paths.lock().unwrap() = None;
+    let (tx, rx) = oneshot::channel();
+    app.dialog()
+        .file()
+        .add_filter("Notes, tables, and zip archives", &["md", "csv", "json", "zip"])
+        .add_filter("Markdown", &["md"])
+        .add_filter("Tables (CSV / JSON)", &["csv", "json"])
+        .add_filter("Zip archive", &["zip"])
+        .pick_files(move |files| {
+            let _ = tx.send(files);
+        });
+    let picked = rx.await.map_err(|_| "The file picker closed unexpectedly".to_string())?;
+    let Some(files) = picked else { return Ok(None) };
+    let paths: Vec<String> = files.iter().map(|f| f.to_string()).collect();
+    *picker.last_import_paths.lock().unwrap() = Some(paths.iter().cloned().collect());
+    Ok(Some(paths))
+}
+
+#[tauri::command]
+async fn create_backup(
+    destination_path: String,
+    sidecar: tauri::State<'_, std::sync::Arc<Sidecar>>,
+    picker: tauri::State<'_, std::sync::Arc<PickerState>>,
+) -> Result<Value, String> {
+    let selected = picker.last_backup_destination.lock().unwrap().take();
+    if selected.as_deref() != Some(destination_path.as_str()) {
+        return Err("Choose the backup destination using the folder picker first".to_string());
+    }
+    sidecar
+        .call("vault.trustedCreateBackup", vec![json!(destination_path)])
+        .await
+}
+
+#[tauri::command]
+async fn verify_backup(
+    root_path: String,
+    passphrase: String,
+    sidecar: tauri::State<'_, std::sync::Arc<Sidecar>>,
+    picker: tauri::State<'_, std::sync::Arc<PickerState>>,
+) -> Result<Value, String> {
+    let selected = picker.last_backup_path.lock().unwrap().clone();
+    if selected.as_deref() != Some(root_path.as_str()) {
+        return Err("Choose the backup folder using the folder picker before verifying it".to_string());
+    }
+    sidecar
+        .call("vault.trustedVerifyBackup", vec![json!(root_path), json!(passphrase)])
+        .await
+}
+
+#[tauri::command]
+async fn import_files(
+    file_paths: Vec<String>,
+    target_folder: String,
+    sidecar: tauri::State<'_, std::sync::Arc<Sidecar>>,
+    picker: tauri::State<'_, std::sync::Arc<PickerState>>,
+) -> Result<Value, String> {
+    // Mirrors service.ts's notes.import: only forward paths that actually came back from the
+    // most recent pick_import_files call, single-use (consumed here so it can't be replayed).
+    let allowed = picker.last_import_paths.lock().unwrap().take().unwrap_or_default();
+    let safe_paths: Vec<String> = file_paths.iter().filter(|p| allowed.contains(*p)).cloned().collect();
+    let rejected_paths: Vec<&String> = file_paths.iter().filter(|p| !allowed.contains(*p)).collect();
+
+    let mut result = sidecar
+        .call("notes.trustedImport", vec![json!(safe_paths), json!(target_folder)])
+        .await?;
+    if !rejected_paths.is_empty() {
+        if let Some(skipped) = result.get_mut("skipped").and_then(Value::as_array_mut) {
+            for path in rejected_paths {
+                let base = std::path::Path::new(path)
+                    .file_name()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .unwrap_or_else(|| path.clone());
+                skipped.push(json!(format!("{base} (not selected via the file picker)")));
+            }
+        }
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+async fn install_extension(
+    app: AppHandle,
+    sidecar: tauri::State<'_, std::sync::Arc<Sidecar>>,
+) -> Result<Option<Value>, String> {
+    let (tx, rx) = oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Choose a JavaScript extension")
+        .add_filter("JavaScript extension", &["js"])
+        .pick_file(move |file| {
+            let _ = tx.send(file);
+        });
+    let Some(picked) = rx.await.map_err(|_| "The file picker closed unexpectedly".to_string())? else {
+        return Ok(None);
+    };
+    let path_string = picked.to_string();
+    let path = std::path::Path::new(&path_string);
+    if !path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("js"))
+    {
+        return Err("Choose a JavaScript (.js) extension file".to_string());
+    }
+    let metadata = tokio::fs::metadata(&path)
+        .await
+        .map_err(|e| format!("Could not read the extension file: {e}"))?;
+    if metadata.len() > 512 * 1024 {
+        return Err("Extension files must be smaller than 512 KB".to_string());
+    }
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|e| format!("Could not read the extension file: {e}"))?;
+    let source = String::from_utf8(bytes)
+        .map_err(|_| "Extension files must contain valid UTF-8 JavaScript".to_string())?;
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Extension")
+        .to_string();
+    let result = sidecar
+        .call("extensions.trustedInstall", vec![json!(name), json!(source)])
+        .await?;
+    Ok(Some(result))
+}
+
+// databases.export's content (the encrypted data, decrypted) comes from the sidecar; the save
+// dialog and the file write both happen here since by this point the content is already
+// plaintext and Rust needs no vault access to write it to disk.
+fn sanitize_filename_component(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| if "<>:\"/\\|?*".contains(c) || (c as u32) < 0x20 { '-' } else { c })
+        .take(100)
+        .collect()
+}
+
+#[tauri::command]
+async fn export_database(
+    app: AppHandle,
+    id: String,
+    format: String,
+    sidecar: tauri::State<'_, std::sync::Arc<Sidecar>>,
+) -> Result<bool, String> {
+    if format != "csv" && format != "json" {
+        return Err("Unsupported database export format".to_string());
+    }
+    let content_result = sidecar
+        .call("databases.trustedExportContent", vec![json!(id), json!(format)])
+        .await?;
+    let title = content_result.get("title").and_then(Value::as_str).unwrap_or("database");
+    let content = content_result.get("content").and_then(Value::as_str).unwrap_or("");
+    let safe_title = sanitize_filename_component(title);
+    let suggested_name = format!(
+        "{}.{format}",
+        if safe_title.is_empty() { "database" } else { &safe_title }
+    );
+    let filter_name = if format == "csv" { "CSV spreadsheet" } else { "Driftleaf database JSON" };
+
+    let (tx, rx) = oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title(format!("Export {title}"))
+        .set_file_name(&suggested_name)
+        .add_filter(filter_name, &[format.as_str()])
+        .save_file(move |file| {
+            let _ = tx.send(file);
+        });
+    let Some(destination) = rx.await.map_err(|_| "The save dialog closed unexpectedly".to_string())? else {
+        return Ok(false);
+    };
+    let destination_path = destination.into_path().map_err(|e| e.to_string())?;
+    // Plain string-appended temp path (not PathBuf::with_extension, whose "replace after the
+    // last dot" semantics are easy to get subtly wrong) — same atomic write-then-rename
+    // pattern vault.ts and settings-store.ts already use.
+    let temp_path = std::path::PathBuf::from(format!(
+        "{}.tmp-{}",
+        destination_path.display(),
+        uuid_like_suffix(),
+    ));
+    tokio::fs::write(&temp_path, content)
+        .await
+        .map_err(|e| format!("Could not write the export file: {e}"))?;
+    if let Err(error) = tokio::fs::rename(&temp_path, &destination_path).await {
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return Err(format!("Could not write the export file: {error}"));
+    }
+    Ok(true)
+}
+
+fn uuid_like_suffix() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+    format!("{nanos:x}")
+}
+
 // Window close handshake, mirroring src/main/window-lifecycle.ts's Electron implementation:
 // ask the frontend to flush pending drafts, wait for it to report success (bounded by the
 // same 30s budget), lock the vault through the sidecar, then actually close. Declining to
@@ -263,6 +512,11 @@ fn main() {
                 next_id: AtomicU64::new(1),
                 approved: StdMutex::new(std::collections::HashSet::new()),
             }));
+            app.manage(std::sync::Arc::new(PickerState {
+                last_backup_path: StdMutex::new(None),
+                last_backup_destination: StdMutex::new(None),
+                last_import_paths: StdMutex::new(None),
+            }));
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -309,7 +563,19 @@ fn main() {
                 });
             }
         })
-        .invoke_handler(tauri::generate_handler![sidecar_call, pick_directory, flush_result])
+        .invoke_handler(tauri::generate_handler![
+            sidecar_call,
+            pick_directory,
+            pick_backup_directory,
+            pick_backup_destination,
+            pick_import_files,
+            create_backup,
+            verify_backup,
+            import_files,
+            install_extension,
+            export_database,
+            flush_result,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running the Driftleaf Tauri shell");
 }

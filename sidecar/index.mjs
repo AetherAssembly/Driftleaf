@@ -206,10 +206,55 @@ function errorMessage(error) {
   return String(error);
 }
 
+// Trusted commands: not part of the DriftleafApi/service.ts command set, and not subject to
+// service.ts's single-use picked-path allowlist (notes.import / vault.createBackup /
+// vault.verifyBackup normally require that a matching service.vault.pick*() call happened
+// first — see src/main/service.ts). Rust is this sidecar's only caller, and Rust owns every
+// OS dialog directly (see src-tauri/src/main.rs), so by the time one of these arrives the
+// path has already been validated against Rust's own single-use tracking of what the native
+// dialog actually returned. Re-running service.ts's own picker-coupled commands here would
+// just throw "choose it via the picker first" every time, since this sidecar's pickers are
+// never actually called (see the unsupportedPicker stubs above). Each still runs inside the
+// same serialized op queue and gets the same friendly-error translation as every other
+// command, via service.__internal.
+const trustedCommands = {
+  "vault.trustedCreateBackup": (destinationPath) =>
+    service.__internal.runSerializedCommand(() =>
+      vaultModule.createVaultBackup(service.__internal.requireVault(), destinationPath),
+    ),
+  "vault.trustedVerifyBackup": (rootPath, passphrase) =>
+    service.__internal.runSerializedCommand(() => vaultModule.verifyVaultBackup(rootPath, passphrase)),
+  "notes.trustedImport": (filePaths, targetFolder) =>
+    service.__internal.runSerializedCommand(async () => {
+      const vault = service.__internal.requireVault();
+      const result = await vaultModule.importFiles(vault, filePaths, targetFolder);
+      const index = service.__internal.currentIndex();
+      if (index) {
+        for (const meta of result.imported) {
+          const content = await vaultModule.readNote(vault, meta.id);
+          search.reindexNote(index, meta, content);
+        }
+      }
+      return {
+        imported: result.imported.length,
+        importedDatabases: result.importedDatabases.length,
+        skipped: result.skipped,
+      };
+    }),
+  "extensions.trustedInstall": (name, source) =>
+    service.__internal.runSerializedCommand(() =>
+      vaultModule.installExtension(service.__internal.requireVault(), name, source),
+    ),
+  "databases.trustedExportContent": (id, format) =>
+    service.__internal.runSerializedCommand(() =>
+      databaseExportModule.exportDatabase(service.__internal.requireVault(), id, format),
+    ),
+};
+
 function resolveCommand(method) {
-  if (typeof method !== "string" || !method.includes(".")) {
-    throw new Error(`Unknown sidecar command: ${String(method)}`);
-  }
+  if (typeof method !== "string") throw new Error(`Unknown sidecar command: ${String(method)}`);
+  if (Object.hasOwn(trustedCommands, method)) return trustedCommands[method];
+  if (!method.includes(".")) throw new Error(`Unknown sidecar command: ${method}`);
   const [group, action] = method.split(".");
   const target = service[group];
   const fn = target ? target[action] : undefined;

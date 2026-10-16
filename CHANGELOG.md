@@ -29,9 +29,7 @@ The format is based on Keep a Changelog and this project uses semantic versionin
   proving branch create/unlock, note/database/canvas read-write with live preview,
   search, lock, and a clean window-close handshake against the unmodified Node domain
   service, run as a sidecar child process over a private framed stdin/stdout protocol.
-  Pickers that gate on the single-use "only act on what was actually picked" security
-  check (import, backup, verify-backup) are intentionally not wired yet. Verified
-  manually on CachyOS, including against a real existing branch with its real
+  Verified manually on CachyOS, including against a real existing branch with its real
   passphrase; Windows, macOS, and installable builds remain.
 - Fixed two Tauri-bridge-only bugs found during that verification, neither touching
   branch encryption or the unlock procedure: an unhandled rejection in the initial
@@ -40,6 +38,12 @@ The format is based on Keep a Changelog and this project uses semantic versionin
   sidecar as `null` instead of absent, which made note listing filter out everything.
 - Confirmed native Wayland rendering works in WebKitGTK with software-rendering
   environment variables alone — no need to force X11, despite an earlier false start.
+- Wired file import, backup creation/verification, extension install, and database
+  export into the Tauri shell. Each needed a native Rust dialog plus a sidecar command
+  that trusts Rust's already-validated input, since the single-use "only act on what
+  was actually picked" allowlist those commands gate on belongs to the picker that
+  shows the dialog — which is now Rust, not the sidecar. Verified manually against a
+  disposable branch.
 
 ## [0.6.4] - 2026-10-15
 

@@ -3,12 +3,19 @@
 // migration plan calls for — never has to know which shell it's running under. See
 // docs/ELECTRON_MIGRATION_REVIEW.md, Phase 2.
 //
-// Rust owns every OS dialog directly (pick_directory), so only that one command bypasses the
-// sidecar. Everything else that has real session/data semantics goes through sidecar_call,
+// Rust owns every OS dialog directly (pick_directory, pick_backup_directory,
+// pick_backup_destination, pick_import_files, and the file pickers inside install_extension/
+// export_database), so those bypass the sidecar entirely. The commands whose security check
+// is coupled to a prior pick (createBackup, verifyBackup, notes.import) also go through
+// dedicated Rust commands that validate the single-use picked-path allowlist on the Rust side
+// before forwarding to the sidecar's "trusted" variants — see the "Trusted commands" comment
+// in sidecar/index.mjs for why that check couldn't just stay in service.ts for this shell.
+// Everything else that has real session/data semantics goes through the generic sidecar_call,
 // which forwards to the Node domain service (src/main/service.ts, unmodified) over a private
-// stdin/stdout pipe. Commands not needed for this first slice's edit-and-close workflow throw
-// a clear "not yet available" error instead of silently doing nothing — see the Phase 2
-// section of docs/TAURI_MIGRATION.md for exactly what's wired versus stubbed.
+// stdin/stdout pipe. Commands that are still genuinely unresolved (extensions.run needs a
+// sandboxed window Tauri doesn't have yet; the updater is a separate later phase) throw a
+// clear "not yet available" error instead of silently doing nothing — see the Phase 2 section
+// of docs/TAURI_MIGRATION.md for exactly what's wired versus stubbed.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { DriftleafApi } from "../shared/ipc";
@@ -33,15 +40,15 @@ function notSupported(name: string): () => Promise<never> {
 export const tauriDriftleafApi: DriftleafApi = {
   vault: {
     pickDirectory: () => invoke<string | null>("pick_directory"),
-    pickBackupDirectory: notSupported("vault.pickBackupDirectory"),
-    pickBackupDestination: notSupported("vault.pickBackupDestination"),
-    createBackup: notSupported("vault.createBackup"),
-    pickImportFiles: notSupported("vault.pickImportFiles"),
+    pickBackupDirectory: () => invoke<string | null>("pick_backup_directory"),
+    pickBackupDestination: () => invoke<string | null>("pick_backup_destination"),
+    createBackup: (destinationPath) => invoke<string>("create_backup", { destinationPath }),
+    pickImportFiles: () => invoke<string[] | null>("pick_import_files"),
     create: (rootPath, passphrase, template) => call("vault.create", rootPath, passphrase, template),
     unlock: (rootPath, passphrase) => call("vault.unlock", rootPath, passphrase),
     hasPassphrase: (rootPath) => call("vault.hasPassphrase", rootPath),
     healthCheck: () => call("vault.healthCheck"),
-    verifyBackup: notSupported("vault.verifyBackup"),
+    verifyBackup: (rootPath, passphrase) => invoke("verify_backup", { rootPath, passphrase }),
     lock: () => call("vault.lock"),
   },
   notes: {
@@ -53,7 +60,7 @@ export const tauriDriftleafApi: DriftleafApi = {
     rename: (id, title) => call("notes.rename", id, title),
     remove: (id) => call("notes.remove", id),
     move: (id, targetFolder) => call("notes.move", id, targetFolder),
-    import: notSupported("notes.import"),
+    import: (filePaths, targetFolder) => invoke("import_files", { filePaths, targetFolder }),
     graph: () => call("notes.graph"),
   },
   databases: {
@@ -65,9 +72,7 @@ export const tauriDriftleafApi: DriftleafApi = {
       call("databases.update", id, properties, rows, views, activeViewId),
     createRow: (databaseId) => call("databases.createRow", databaseId),
     deleteRow: (databaseId, rowId) => call("databases.deleteRow", databaseId, rowId),
-    // databases.export needs a native save-file dialog on the Rust side (like
-    // vault.createBackup/notes.import, it's picker-coupled), not wired yet.
-    export: notSupported("databases.export"),
+    export: (id, format) => invoke<boolean>("export_database", { id, format }),
     delete: (id) => call("databases.delete", id),
   },
   folders: {
@@ -80,8 +85,7 @@ export const tauriDriftleafApi: DriftleafApi = {
   },
   extensions: {
     list: () => call("extensions.list"),
-    // extensions.install needs a native file-picker dialog on the Rust side, not wired yet.
-    install: notSupported("extensions.install"),
+    install: () => invoke("install_extension"),
     samples: () => call("extensions.samples"),
     installSample: (sampleId) => call("extensions.installSample", sampleId),
     community: () => call("extensions.community"),
