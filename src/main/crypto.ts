@@ -55,7 +55,7 @@ export function decrypt(payload: EncryptedPayload, key: Buffer): Buffer {
   return Buffer.concat([decipher.update(payload.ciphertext), decipher.final()]);
 }
 
-// On-disk framing for a `.enc` file: [16-byte iv][16-byte authTag][ciphertext].
+// On-disk framing for a `.enc` file: [12-byte iv][16-byte authTag][ciphertext].
 export function packPayload(payload: EncryptedPayload): Buffer {
   return Buffer.concat([payload.iv, payload.authTag, payload.ciphertext]);
 }

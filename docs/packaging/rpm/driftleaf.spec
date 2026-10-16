@@ -11,7 +11,7 @@
 %global __os_install_post %{nil}
 
 Name:           driftleaf
-Version:        0.6.3
+Version:        0.6.4
 Release:        1%{?dist}
 Summary:        A local-first encrypted notes, graph, and database app
 License:        AGPL-3.0-or-later
@@ -70,6 +70,12 @@ ln -s /opt/Driftleaf/driftleaf %{buildroot}%{_bindir}/driftleaf
 %{_datadir}/icons/hicolor/1024x1024/apps/driftleaf.png
 
 %changelog
+* Thu Oct 15 2026 AetherAssembly <support@aetherassembly.org> - 0.6.4-1
+- Protect existing branches, drain writes before locking or closing, and retain
+  failed edits for retry.
+- Fix duplicate search entries and run data-loss regression tests in CI.
+- Announce the planned desktop upgrade, with a Windows migration notice.
+
 * Mon Oct 12 2026 AetherAssembly <support@aetherassembly.org> - 0.6.3-1
 - Show only the newest release for duplicate community catalog assets.
 - Replace the collapsed sidebar's Extensions text abbreviation with an icon.

@@ -1,6 +1,6 @@
 {
   "name": "driftleaf",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "So your thoughts don't drift. A local-first, encrypted-by-default notes app.",
   "main": "dist-electron/main/index.js",
   "private": true,
@@ -28,7 +28,8 @@
     "publish:windows": "npm run build && electron-builder --config electron-builder/windows.yml --win nsis portable --publish always -c.electronVersion=43.1.0",
     "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc -b --noEmit",
-    "postinstall": "electron-rebuild -f -w better-sqlite3"
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "test": "node scripts/tests/data-loss.js && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/regressions.mjs"
   },
   "dependencies": {
     "@aetherAssembly/ui": "^1.0.4",

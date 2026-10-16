@@ -37,7 +37,7 @@ vault folder.
 **Run:**
 
 ```bash
-node scripts/tests/data-loss.js
+npm test
 ```
 
 ## When to Run
@@ -62,3 +62,11 @@ These tests verify:
 7. **Persistence** - encrypted manifest changes survive unlocks
 
 See [docs/DATA_LOSS_TESTING.md](../docs/DATA_LOSS_TESTING.md) for a user-facing overview of vault integrity and recovery limits.
+
+## Save and lifecycle regressions
+
+`regressions.mjs` also verifies exclusive branch creation, the actual IPC
+write/lock ordering, failed-draft retries, in-flight close flushing, close sender
+validation, and search/graph replacement. It runs production TypeScript modules
+with a mocked Electron transport and Node SQLite FTS5 (the packaged SQLite addon
+is rebuilt for Electron, not the CI Node runtime). No personal branches are used.

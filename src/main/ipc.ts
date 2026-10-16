@@ -1,4 +1,6 @@
+import { SerialQueue } from "../shared/serial-queue";
 import { app, BrowserWindow, ipcMain, dialog, type IpcMainInvokeEvent } from "electron";
+import { prepareWindowClose, cancelWindowClose } from "./window-lifecycle";
 import { randomUUID } from "node:crypto";
 import { readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -29,16 +31,12 @@ function requireVault(): Vault {
   return session.vault;
 }
 
-// Serializes vault-mutating operations so two concurrent IPC calls (e.g. an in-flight
-// autosave racing a delete, or two rapid folder operations) can't interleave their
-// manifest read-modify-write and lose or resurrect a change. Read-only operations
-// (list/read/search) don't need to join this queue.
-let vaultOpQueue: Promise<unknown> = Promise.resolve();
+// Async vault operations and locking share one queue. Each operation retains the
+// key and index until its file I/O and index maintenance have both finished.
+const vaultOpQueue = new SerialQueue();
 
 function serialized<T>(fn: () => Promise<T>): Promise<T> {
-  const run = vaultOpQueue.catch(() => {}).then(fn);
-  vaultOpQueue = run.catch(() => {});
-  return run;
+  return vaultOpQueue.run(fn);
 }
 
 // The renderer is only supposed to import files it selected via vault:pickImportFiles's
@@ -75,7 +73,12 @@ function handle<Args extends unknown[], Result>(
 ): void {
   ipcMain.handle(channel, async (event, ...args: Args) => {
     try {
-      return await fn(event, ...args);
+      const invoke = () => fn(event, ...args);
+      // Serialize the entire operation, including reads and index maintenance.
+      // Resolve requireVault inside this boundary, never before waiting for it.
+      return await (channel.startsWith("updates:") || channel.startsWith("settings:")
+        ? invoke()
+        : serialized(async () => invoke()));
     } catch (err) {
       throw friendlyError(err);
     }
@@ -94,14 +97,28 @@ async function openSession(vault: Vault): Promise<void> {
     await searchModule.buildIndex(index, vault);
   } catch (err) {
     index.db.close();
+    vault.key.fill(0);
     throw err;
   }
+  session.vault?.key.fill(0);
+  session.index?.db.close();
+  closeExtensionWindows();
   session.vault = vault;
   session.index = index;
   const sessionDuration = Date.now() - sessionStart;
   if (process.env.DEBUG_SEARCH) {
     console.log(`[ipc] openSession (unlock + index build): ${sessionDuration}ms`);
   }
+}
+
+export function lockSession(): Promise<void> {
+  return serialized(async () => {
+    closeExtensionWindows();
+    session.vault?.key.fill(0);
+    session.index?.db.close();
+    session.vault = null;
+    session.index = null;
+  });
 }
 
 let currentWindow: BrowserWindow | null = null;
@@ -183,7 +200,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       throw new Error("Choose the backup destination using the folder picker first");
     }
     const vault = requireVault();
-    return serialized(() => vaultModule.createVaultBackup(vault, selectedDestination));
+    return vaultModule.createVaultBackup(vault, selectedDestination);
   });
 
   ipcMain.handle(IPC_CHANNELS.vaultPickImportFiles, async () => {
@@ -258,15 +275,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return vaultModule.verifyVaultBackup(rootPath, passphrase);
   });
 
-  ipcMain.handle(IPC_CHANNELS.vaultLock, async () => {
-    closeExtensionWindows();
-    // Zero the raw AES key before dropping the reference — GC timing isn't a scrub
-    // guarantee, and this app's entire pitch is "lock this vault."
-    session.vault?.key.fill(0);
-    session.index?.db.close();
-    session.vault = null;
-    session.index = null;
-  });
+  ipcMain.handle(IPC_CHANNELS.vaultLock, () => lockSession());
 
   ipcMain.handle(IPC_CHANNELS.notesList, (_e, folderPath?: string) => {
     return vaultModule.listNotes(requireVault(), folderPath);
@@ -282,21 +291,21 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   handle(IPC_CHANNELS.notesWrite, async (_e, id: string, content: string) => {
     const vault = requireVault();
-    await serialized(() => vaultModule.writeNote(vault, id, content));
+    await vaultModule.writeNote(vault, id, content);
     const meta = vaultModule.listNotes(vault).find((n) => n.id === id);
     if (meta && session.index) searchModule.reindexNote(session.index, meta, content);
   });
 
   handle(IPC_CHANNELS.notesCreate, async (_e, folderPath: string, title: string) => {
     const vault = requireVault();
-    const meta = await serialized(() => vaultModule.createNote(vault, folderPath, title));
+    const meta = await vaultModule.createNote(vault, folderPath, title);
     if (session.index) searchModule.reindexNote(session.index, meta, "");
     return meta;
   });
 
   handle(IPC_CHANNELS.notesRename, async (_e, id: string, title: string) => {
     const vault = requireVault();
-    await serialized(() => vaultModule.renameNote(vault, id, title));
+    await vaultModule.renameNote(vault, id, title);
     const meta = vaultModule.listNotes(vault).find((n) => n.id === id);
     if (meta && session.index) {
       const content = await vaultModule.readNote(vault, id);
@@ -306,13 +315,13 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   handle(IPC_CHANNELS.notesRemove, async (_e, id: string) => {
     const vault = requireVault();
-    await serialized(() => vaultModule.deleteNote(vault, id));
+    await vaultModule.deleteNote(vault, id);
     if (session.index) searchModule.removeFromIndex(session.index, id);
   });
 
   handle(IPC_CHANNELS.foldersCreate, async (_e, folderPath: string) => {
     const vault = requireVault();
-    await serialized(() => vaultModule.createFolder(vault, folderPath));
+    await vaultModule.createFolder(vault, folderPath);
   });
 
   handle(IPC_CHANNELS.notesImport, async (_e, filePaths: string[], targetFolder: string) => {
@@ -327,7 +336,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const safePaths = filePaths.filter((p) => allowed?.has(p));
     const rejectedPaths = filePaths.filter((p) => !allowed?.has(p));
 
-    const result = await serialized(() => vaultModule.importFiles(vault, safePaths, targetFolder));
+    const result = await vaultModule.importFiles(vault, safePaths, targetFolder);
     if (session.index) {
       for (const meta of result.imported) {
         const content = await vaultModule.readNote(vault, meta.id);
@@ -355,16 +364,14 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   handle(IPC_CHANNELS.databasesCreate, async (_e, title: string, folderPath: string) => {
     const vault = requireVault();
-    return serialized(() =>
-      vaultModule.createDatabase(vault, title, folderPath, [
-        { id: randomUUID(), name: "Title", type: "title" },
-      ], []),
-    );
+    return vaultModule.createDatabase(vault, title, folderPath, [
+      { id: randomUUID(), name: "Title", type: "title" },
+    ], []);
   });
 
   handle(IPC_CHANNELS.databasesRename, async (_e, id: string, title: string) => {
     const vault = requireVault();
-    return serialized(() => vaultModule.renameDatabase(vault, id, title));
+    return vaultModule.renameDatabase(vault, id, title);
   });
 
   handle(
@@ -378,20 +385,18 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       activeViewId: Parameters<typeof vaultModule.updateDatabase>[5],
     ) => {
       const vault = requireVault();
-      await serialized(() =>
-        vaultModule.updateDatabase(vault, id, properties, rows, views, activeViewId),
-      );
+      await vaultModule.updateDatabase(vault, id, properties, rows, views, activeViewId);
     },
   );
 
   handle(IPC_CHANNELS.databasesCreateRow, async (_e, id: string) => {
     const vault = requireVault();
-    return serialized(() => vaultModule.createDatabaseRow(vault, id));
+    return vaultModule.createDatabaseRow(vault, id);
   });
 
   handle(IPC_CHANNELS.databasesDeleteRow, async (_e, id: string, rowId: string) => {
     const vault = requireVault();
-    await serialized(() => vaultModule.deleteDatabaseRow(vault, id, rowId));
+    await vaultModule.deleteDatabaseRow(vault, id, rowId);
   });
 
   handle(
@@ -430,12 +435,12 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   handle(IPC_CHANNELS.databasesDelete, async (_e, id: string) => {
     const vault = requireVault();
-    await serialized(() => vaultModule.deleteDatabase(vault, id));
+    await vaultModule.deleteDatabase(vault, id);
   });
 
   handle(IPC_CHANNELS.notesMove, async (_e, id: string, targetFolder: string) => {
     const vault = requireVault();
-    const meta = await serialized(() => vaultModule.moveNote(vault, id, targetFolder));
+    const meta = await vaultModule.moveNote(vault, id, targetFolder);
     if (session.index) {
       const content = await vaultModule.readNote(vault, id);
       searchModule.reindexNote(session.index, meta, content);
@@ -445,13 +450,13 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   handle(IPC_CHANNELS.foldersRename, async (_e, oldPath: string, newPath: string) => {
     const vault = requireVault();
-    await serialized(() => vaultModule.renameFolder(vault, oldPath, newPath));
+    await vaultModule.renameFolder(vault, oldPath, newPath);
     if (session.index) await searchModule.buildIndex(session.index, vault);
   });
 
   handle(IPC_CHANNELS.foldersDelete, async (_e, folderPath: string) => {
     const vault = requireVault();
-    const deletedIds = await serialized(() => vaultModule.deleteFolder(vault, folderPath));
+    const deletedIds = await vaultModule.deleteFolder(vault, folderPath);
     if (session.index) {
       deletedIds.forEach((id) => searchModule.removeFromIndex(session.index!, id));
     }
@@ -496,7 +501,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       throw new Error("Extension files must contain valid UTF-8 JavaScript");
     }
     const name = path.basename(filePath, path.extname(filePath));
-    return serialized(() => vaultModule.installExtension(vault, name, source));
+    return vaultModule.installExtension(vault, name, source);
   });
 
   handle(
@@ -508,9 +513,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       databaseIds: string[] = [],
     ) => {
       const vault = requireVault();
-      await serialized(() =>
-        vaultModule.setExtensionPermissions(vault, id, permissions, databaseIds),
-      );
+      await vaultModule.setExtensionPermissions(vault, id, permissions, databaseIds);
     },
   );
 
@@ -533,14 +536,12 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     } catch {
       throw new Error("The extension release asset is not valid UTF-8 JavaScript");
     }
-    return serialized(() => vaultModule.installExtension(vault, item.name, source));
+    return vaultModule.installExtension(vault, item.name, source);
   });
   handle(IPC_CHANNELS.templatesCommunityInstall, async (_event, assetId: number) => {
     const vault = requireVault();
     const { item, bytes } = await downloadCommunityAsset(assetId, "template");
-    const result = await serialized(() =>
-      vaultModule.importTemplateArchive(vault, bytes, item.name),
-    );
+    const result = await vaultModule.importTemplateArchive(vault, bytes, item.name);
     if (session.index) {
       for (const meta of result.imported) {
         const content = await vaultModule.readNote(vault, meta.id);
@@ -555,12 +556,12 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   });
   handle(IPC_CHANNELS.extensionsInstallSample, async (_event, sampleId: string) => {
     const vault = requireVault();
-    return serialized(() => vaultModule.installExtensionSample(vault, sampleId));
+    return vaultModule.installExtensionSample(vault, sampleId);
   });
 
   handle(IPC_CHANNELS.extensionsRemove, async (_event, id: string) => {
     const vault = requireVault();
-    await serialized(() => vaultModule.removeExtension(vault, id));
+    await vaultModule.removeExtension(vault, id);
     for (const [webContentsId, context] of extensionContexts) {
       if (context.extensionId === id) extensionWindows.get(webContentsId)?.close();
     }
@@ -568,7 +569,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   handle(IPC_CHANNELS.extensionsRun, async (_event, id: string) => {
     const vault = requireVault();
-    const extension = await serialized(() => Promise.resolve(vaultModule.getExtension(vault, id)));
+    const extension = vaultModule.getExtension(vault, id);
     if (!extension) throw new Error("Extension not found");
     if (!currentWindow || currentWindow.isDestroyed()) {
       throw new Error("No Driftleaf window is available");
@@ -685,7 +686,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   handle(IPC_CHANNELS.canvasRead, () => vaultModule.readCanvas(requireVault()));
   handle(IPC_CHANNELS.canvasUpdate, async (_event, items: Parameters<typeof vaultModule.updateCanvas>[1]) => {
     const vault = requireVault();
-    await serialized(() => vaultModule.updateCanvas(vault, items));
+    await vaultModule.updateCanvas(vault, items);
   });
 
   ipcMain.handle(IPC_CHANNELS.settingsRead, () => {
@@ -719,6 +720,19 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle(IPC_CHANNELS.updatesStatus, () => updatesModule.getUpdateStatus());
   handle(IPC_CHANNELS.updatesCheck, () => updatesModule.checkForUpdates());
   handle(IPC_CHANNELS.updatesDownload, () => updatesModule.downloadUpdate());
-  handle(IPC_CHANNELS.updatesInstall, () => updatesModule.installUpdate());
+  handle(IPC_CHANNELS.updatesInstall, async () => {
+    if (!currentWindow) throw new Error("No Driftleaf window is available");
+    const status = updatesModule.getUpdateStatus();
+    if (status.state !== "downloaded" || !status.automaticInstall) {
+      throw new Error("No downloaded update is ready to install");
+    }
+    await prepareWindowClose(currentWindow, async () => { await vaultOpQueue.run(async () => {}); });
+    try {
+      updatesModule.installUpdate();
+    } catch (error) {
+      cancelWindowClose(currentWindow);
+      throw error;
+    }
+  });
   handle(IPC_CHANNELS.updatesOpenDownload, () => updatesModule.openUpdateDownload());
 }

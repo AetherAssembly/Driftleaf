@@ -8,8 +8,8 @@ import { listNotes, readNote } from "./vault";
 import type { NoteGraph } from "../shared/ipc";
 import { mapWikiLinks, resolveWikiLink } from "../shared/note-links";
 
-const require = createRequire(__filename);
-const Database = require("better-sqlite3") as typeof import("better-sqlite3");
+const nativeRequire = createRequire(__filename);
+const Database = nativeRequire("better-sqlite3") as typeof import("better-sqlite3");
 
 export interface SearchIndex {
   db: InstanceType<typeof Database>;
@@ -81,10 +81,12 @@ export async function buildIndex(index: SearchIndex, vault: Vault): Promise<void
 }
 
 export function reindexNote(index: SearchIndex, meta: NoteMeta, content: string): void {
-  // REPLACE INTO is atomic and more efficient than DELETE + INSERT
-  index.db
-    .prepare("REPLACE INTO notes_fts (id, title, folderPath, content) VALUES (?, ?, ?, ?)")
-    .run(meta.id, meta.title, meta.folderPath, content);
+  index.db.transaction(() => {
+    index.db.prepare("DELETE FROM notes_fts WHERE id = ?").run(meta.id);
+    index.db
+      .prepare("INSERT INTO notes_fts (id, title, folderPath, content) VALUES (?, ?, ?, ?)")
+      .run(meta.id, meta.title, meta.folderPath, content);
+  })();
 }
 
 export function removeFromIndex(index: SearchIndex, id: string): void {

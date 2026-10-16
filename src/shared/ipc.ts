@@ -313,7 +313,9 @@ export interface DriftleafApi {
     openDownload(): Promise<void>;
   };
   events: {
-    // Fired by the global quick-capture hotkey (main/index.ts). Returns an unsubscribe fn.
+    // Lifecycle listeners return unsubscribe functions.
+    onCloseCancelled(callback: () => void): () => void;
+    onBeforeClose(callback: () => Promise<void>): () => void;
     onQuickCapture(callback: () => void): () => void;
     onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
   };
@@ -322,11 +324,14 @@ export interface DriftleafApi {
 // Main -> renderer push events (as opposed to IPC_CHANNELS, which are renderer -> main
 // invoke/handle calls). Kept separate since these use ipcRenderer.on, not .invoke.
 export const RENDERER_EVENTS = {
+  beforeClose: "event:beforeClose",
+  closeCancelled: "event:closeCancelled",
   quickCapture: "event:quickCapture",
   updateStatus: "event:updateStatus",
 } as const;
 
 export const IPC_CHANNELS = {
+  flushResult: "lifecycle:flushResult",
   vaultPickDirectory: "vault:pickDirectory",
   vaultPickBackupDirectory: "vault:pickBackupDirectory",
   vaultPickBackupDestination: "vault:pickBackupDestination",

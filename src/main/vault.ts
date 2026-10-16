@@ -1044,8 +1044,18 @@ export async function createVault(
   }
 
   const template = getVaultTemplate(templateId);
-  await mkdir(path.join(rootPath, DRIFTLEAF_DIR), { recursive: true });
-  await mkdir(path.join(rootPath, DRIFTLEAF_DIR, "notes"), { recursive: true });
+  await mkdir(rootPath, { recursive: true });
+  try {
+    // Exclusive directory creation also rejects concurrent initialization and
+    // incomplete branches. Never overwrite an existing salt or manifest.
+    await mkdir(path.join(rootPath, DRIFTLEAF_DIR));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error("This folder already contains a branch. Open it instead, or choose a new folder.", { cause: error });
+    }
+    throw error;
+  }
+  await mkdir(path.join(rootPath, DRIFTLEAF_DIR, "notes"));
 
   const salt = generateSalt();
   const key = await deriveVaultKey(passphrase, salt);

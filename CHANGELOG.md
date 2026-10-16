@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
+## [0.6.4] - 2026-10-15
+
+### Fixed
+
+- Refuse branch creation in folders with existing branch metadata, including
+  concurrent creation attempts, to protect encryption keys and existing notes.
+- Serialize complete branch operations and locking so active writes finish
+  before the encryption key is cleared.
+- Retain failed note, title, and database edits for retry. Block navigation and
+  locking when drafts cannot be saved; Ctrl/Cmd+S retries pending saves.
+- Wait for pending and active saves before closing, quitting, or restarting to
+  install an update. Keep the app open if saving fails.
+- Replace a note's search entry when saving, renaming, or moving it, preventing
+  duplicate results, obsolete search matches, and stale graph links.
+- Run storage and lifecycle regression tests explicitly in CI.
+
+### Added
+
+- Added a dismissible notice announcing the planned move from Electron to
+  Tauri while retaining the familiar interface. Windows users also see a
+  warning that the migration will require a one-time manual installation;
+  current Electron updates remain unchanged.
+
 ## [0.6.3] - 2026-10-12
 
 ### Changed

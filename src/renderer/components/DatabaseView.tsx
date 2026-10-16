@@ -1,3 +1,4 @@
+import { draftWrites } from "../lib/draft-writes";
 import { useEffect, useMemo, useState } from "react";
 import { Button, Input, Modal } from "@aetherAssembly/ui";
 import type {
@@ -240,25 +241,25 @@ export function DatabaseView({ databaseId, onDeleted, onRenamed }: DatabaseViewP
       ),
     };
     setData(next);
+    stageDatabase(next);
     return next;
+  }
+
+  function stageDatabase(nextData: DatabaseData) {
+    draftWrites.set(`database:${databaseId}`, () => window.driftleaf.databases.update(
+      databaseId, nextData.properties, nextData.rows, nextData.views, nextData.activeViewId,
+    ));
   }
 
   async function save(nextData = data) {
     if (!nextData) return;
+    stageDatabase(nextData);
     setBusy(true);
     setError(null);
     try {
-      await window.driftleaf.databases.update(
-        databaseId,
-        nextData.properties,
-        nextData.rows,
-        nextData.views,
-        nextData.activeViewId,
-      );
+      await draftWrites.flush();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save database");
-      const refreshed = await window.driftleaf.databases.read(databaseId).catch(() => null);
-      if (refreshed) setData(refreshed);
+      setError(err instanceof Error ? err.message : "Could not save database; edits retained for retry");
     } finally {
       setBusy(false);
     }
@@ -270,17 +271,10 @@ export function DatabaseView({ databaseId, onDeleted, onRenamed }: DatabaseViewP
     setData(nextData);
     setError(null);
     try {
-      await window.driftleaf.databases.update(
-        databaseId,
-        nextData.properties,
-        nextData.rows,
-        nextViews,
-        nextActiveViewId,
-      );
+      stageDatabase(nextData);
+      await draftWrites.flush();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save database view");
-      const refreshed = await window.driftleaf.databases.read(databaseId).catch(() => null);
-      if (refreshed) setData(refreshed);
     }
   }
 
@@ -332,6 +326,7 @@ export function DatabaseView({ databaseId, onDeleted, onRenamed }: DatabaseViewP
   async function addRow() {
     setError(null);
     try {
+      await draftWrites.flush();
       const row = await window.driftleaf.databases.createRow(databaseId);
       setData((current) => (current ? { ...current, rows: [...current.rows, row] } : current));
     } catch (err) {
@@ -344,6 +339,7 @@ export function DatabaseView({ databaseId, onDeleted, onRenamed }: DatabaseViewP
     setAddingCalendarRow(true);
     setError(null);
     try {
+      await draftWrites.flush();
       const row = await window.driftleaf.databases.createRow(databaseId);
       const nextRow = {
         ...row,
@@ -362,6 +358,7 @@ export function DatabaseView({ databaseId, onDeleted, onRenamed }: DatabaseViewP
   async function deleteRow(rowId: string) {
     setError(null);
     try {
+      await draftWrites.flush();
       await window.driftleaf.databases.deleteRow(databaseId, rowId);
       setData((current) =>
         current ? { ...current, rows: current.rows.filter((row) => row.id !== rowId) } : current,
@@ -380,6 +377,7 @@ export function DatabaseView({ databaseId, onDeleted, onRenamed }: DatabaseViewP
     setError(null);
     try {
       await window.driftleaf.databases.delete(databaseId);
+      draftWrites.remove(`database:${databaseId}`);
       onDeleted();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete database");
@@ -400,6 +398,7 @@ export function DatabaseView({ databaseId, onDeleted, onRenamed }: DatabaseViewP
     setBusy(true);
     setError(null);
     try {
+      await draftWrites.flush();
       const meta = await window.driftleaf.databases.rename(databaseId, title);
       setData((current) => (current ? { ...current, meta } : current));
       setRenamingDatabase(false);
@@ -419,6 +418,7 @@ export function DatabaseView({ databaseId, onDeleted, onRenamed }: DatabaseViewP
     }
     setError(null);
     try {
+      await draftWrites.flush();
       await window.driftleaf.databases.export(databaseId, format);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not export database");
@@ -509,17 +509,10 @@ export function DatabaseView({ databaseId, onDeleted, onRenamed }: DatabaseViewP
     setError(null);
     setBusy(true);
     try {
-      await window.driftleaf.databases.update(
-        databaseId,
-        properties,
-        rows,
-        data.views,
-        data.activeViewId,
-      );
+      stageDatabase({ ...data, properties, rows });
+      await draftWrites.flush();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add database property");
-      const refreshed = await window.driftleaf.databases.read(databaseId).catch(() => null);
-      if (refreshed) setData(refreshed);
     } finally {
       setBusy(false);
     }
@@ -548,18 +541,11 @@ export function DatabaseView({ databaseId, onDeleted, onRenamed }: DatabaseViewP
     setError(null);
     setBusy(true);
     try {
-      await window.driftleaf.databases.update(
-        databaseId,
-        properties,
-        data.rows,
-        data.views,
-        data.activeViewId,
-      );
+      stageDatabase(nextData);
+      await draftWrites.flush();
       setEditingFormulaId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save formula");
-      const refreshed = await window.driftleaf.databases.read(databaseId).catch(() => null);
-      if (refreshed) setData(refreshed);
     } finally {
       setBusy(false);
     }
@@ -573,18 +559,11 @@ export function DatabaseView({ databaseId, onDeleted, onRenamed }: DatabaseViewP
     setError(null);
     setBusy(true);
     try {
-      await window.driftleaf.databases.update(
-        databaseId,
-        nextData.properties,
-        nextData.rows,
-        nextData.views,
-        nextData.activeViewId,
-      );
+      stageDatabase(nextData);
+      await draftWrites.flush();
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : failureMessage);
-      const refreshed = await window.driftleaf.databases.read(databaseId).catch(() => null);
-      if (refreshed) setData(refreshed);
       return false;
     } finally {
       setBusy(false);

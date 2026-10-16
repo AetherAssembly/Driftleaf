@@ -109,6 +109,22 @@ const api: DriftleafApi = {
     openDownload: () => ipcRenderer.invoke(IPC_CHANNELS.updatesOpenDownload),
   },
   events: {
+    onCloseCancelled: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on(RENDERER_EVENTS.closeCancelled, listener);
+      return () => ipcRenderer.removeListener(RENDERER_EVENTS.closeCancelled, listener);
+    },
+    onBeforeClose: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, id: string) => {
+        void callback().then(
+          () => ipcRenderer.send(IPC_CHANNELS.flushResult, id),
+          (error: unknown) => ipcRenderer.send(IPC_CHANNELS.flushResult, id,
+            error instanceof Error ? error.message : "Could not save edits"),
+        );
+      };
+      ipcRenderer.on(RENDERER_EVENTS.beforeClose, listener);
+      return () => ipcRenderer.removeListener(RENDERER_EVENTS.beforeClose, listener);
+    },
     onQuickCapture: (callback) => {
       const listener = () => callback();
       ipcRenderer.on(RENDERER_EVENTS.quickCapture, listener);

@@ -1,3 +1,5 @@
+import { draftWrites } from "./lib/draft-writes";
+import { MigrationNotice } from "./components/MigrationNotice";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { UnlockScreen } from "./components/UnlockScreen";
 import { Sidebar } from "./components/Sidebar";
@@ -120,14 +122,10 @@ export default function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Content autosave and title-rename autosave each get their own timer/pending-write
-  // ref — they used to share one `saveTimer`, so editing the title and then quickly editing
-  // the body (or vice versa) would cancel whichever debounced write hadn't fired yet, with
-  // no error and no indication the edit was ever dropped.
+  // Independent debounce timers share a durable-in-session draft queue. Failed
+  // writes remain dirty, and flushing also waits for already-dispatched writes.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSave = useRef<{ noteId: string; content: string } | null>(null);
   const renameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingRename = useRef<{ noteId: string; title: string } | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Bumped on every dispatched search query; a response only gets applied if it's still the
   // most recent one in flight, so a slow early keystroke's results can't overwrite a faster
@@ -149,44 +147,36 @@ export default function App() {
     }
   }, []);
 
-  // Immediately performs (rather than waits out the debounce for) any save/rename still
-  // pending, so switching notes, deleting, or locking never silently drops the last edit
-  // still sitting in a debounce window.
-  const flushPendingSave = useCallback(async () => {
-    if (saveTimer.current) {
-      clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
-    const pending = pendingSave.current;
-    if (!pending) return;
-    pendingSave.current = null;
+  const flushPendingWrites = useCallback(async (): Promise<boolean> => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    if (renameTimer.current) clearTimeout(renameTimer.current);
     try {
-      await window.driftleaf.notes.write(pending.noteId, pending.content);
-      await refreshNoteGraph();
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : "Failed to save note");
+      await draftWrites.flush();
+      setSaveStatus("saved");
+      void refreshNoteGraph();
+      return true;
+    } catch (error) {
+      setSaveStatus("idle");
+      showToast(`Edits are still unsaved. Retry saving before leaving: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
     }
   }, [refreshNoteGraph]);
 
-  const flushPendingRename = useCallback(async () => {
-    if (renameTimer.current) {
-      clearTimeout(renameTimer.current);
-      renameTimer.current = null;
-    }
-    const pending = pendingRename.current;
-    if (!pending) return;
-    pendingRename.current = null;
-    try {
-      await window.driftleaf.notes.rename(pending.noteId, pending.title);
-      await refreshNoteGraph();
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : "Failed to rename note");
-    }
-  }, [refreshNoteGraph]);
+  useEffect(() => window.driftleaf.events.onCloseCancelled(() => {
+    document.body.inert = false;
+  }), []);
 
-  const flushPendingWrites = useCallback(async () => {
-    await Promise.all([flushPendingSave(), flushPendingRename()]);
-  }, [flushPendingSave, flushPendingRename]);
+  useEffect(() => window.driftleaf.events.onBeforeClose(async () => {
+    document.body.inert = true;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    if (renameTimer.current) clearTimeout(renameTimer.current);
+    try {
+      await draftWrites.flush();
+    } catch (error) {
+      document.body.inert = false;
+      throw error;
+    }
+  }), []);
 
   const refreshVaultState = useCallback(async () => {
     const [folderList, noteList, databaseList, canvasList] = await Promise.all([
@@ -268,13 +258,24 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [unlocked, settingsOpen, vaultToolsOpen, moveNoteId, quickCaptureOpen, showWelcome]);
 
+  useEffect(() => {
+    const retrySave = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s" && unlocked) {
+        event.preventDefault();
+        void flushPendingWrites();
+      }
+    };
+    window.addEventListener("keydown", retrySave);
+    return () => window.removeEventListener("keydown", retrySave);
+  }, [unlocked, flushPendingWrites]);
+
   async function handlePatchSettings(update: Partial<AppSettings>) {
     const next = await window.driftleaf.settings.patch(update);
     setSettings(next);
   }
 
   async function openNote(id: string) {
-    await flushPendingWrites();
+    if (!(await flushPendingWrites())) return;
     const note = notes.find((n) => n.id === id) ?? (await findNoteAnywhere(id));
     if (!note) return;
     try {
@@ -292,18 +293,27 @@ export default function App() {
   }
 
   async function openGraph() {
-    await flushPendingWrites();
+    if (!(await flushPendingWrites())) return;
     await refreshNoteGraph();
     setGraphOpen(true);
     setCanvasOpen(false);
     setSelectedDatabaseId(null);
   }
 
-  function openDatabase(id: string) {
+  async function openDatabase(id: string) {
+    if (!(await flushPendingWrites())) return;
     setGraphOpen(false);
     setCanvasOpen(false);
     setSelectedNote(null);
     setSelectedDatabaseId(id);
+  }
+
+  async function openCanvas() {
+    if (!(await flushPendingWrites())) return;
+    setGraphOpen(false);
+    setCanvasOpen((current) => !current);
+    setSelectedNote(null);
+    setSelectedDatabaseId(null);
   }
 
   async function updateCanvas(items: CanvasItem[]) {
@@ -321,24 +331,10 @@ export default function App() {
   }
 
   function scheduleSave(id: string, nextContent: string) {
-    pendingSave.current = { noteId: id, content: nextContent };
+    draftWrites.set(`note:${id}`, () => window.driftleaf.notes.write(id, nextContent));
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSaveStatus("saving");
-    saveTimer.current = setTimeout(() => {
-      const pending = pendingSave.current;
-      if (!pending) return;
-      pendingSave.current = null;
-      void window.driftleaf.notes
-        .write(pending.noteId, pending.content)
-        .then(async () => {
-          setSaveStatus("saved");
-          await refreshNoteGraph();
-        })
-        .catch((err) => {
-          setSaveStatus("idle");
-          showToast(err instanceof Error ? err.message : "Failed to save note");
-        });
-    }, settings.autosaveIntervalMs);
+    saveTimer.current = setTimeout(() => { void flushPendingWrites(); }, settings.autosaveIntervalMs);
   }
 
   function handleContentChange(next: string) {
@@ -351,21 +347,13 @@ export default function App() {
     const updated = { ...selectedNote, title };
     setSelectedNote(updated);
     setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
-    pendingRename.current = { noteId: updated.id, title };
+    draftWrites.set(`title:${updated.id}`, () => window.driftleaf.notes.rename(updated.id, title));
     if (renameTimer.current) clearTimeout(renameTimer.current);
-    renameTimer.current = setTimeout(() => {
-      const pending = pendingRename.current;
-      if (!pending) return;
-      pendingRename.current = null;
-      void window.driftleaf.notes
-        .rename(pending.noteId, pending.title)
-        .then(refreshNoteGraph)
-        .catch((err) => showToast(err instanceof Error ? err.message : "Failed to rename note"));
-    }, settings.autosaveIntervalMs);
+    renameTimer.current = setTimeout(() => { void flushPendingWrites(); }, settings.autosaveIntervalMs);
   }
 
   async function handleCreateNote() {
-    await flushPendingWrites();
+    if (!(await flushPendingWrites())) return;
     try {
       const meta = await window.driftleaf.notes.create(selectedFolder, "Untitled");
       setNotes((prev) => [...prev, meta]);
@@ -379,7 +367,7 @@ export default function App() {
   }
 
   async function handleCreateDatabase(title: string) {
-    await flushPendingWrites();
+    if (!(await flushPendingWrites())) return;
     try {
       const database = await window.driftleaf.databases.create(title, selectedFolder);
       setDatabases((previous) => [...previous, database]);
@@ -406,10 +394,10 @@ export default function App() {
     // "note not found" error or resurrect a file the user just asked to remove.
     if (saveTimer.current) clearTimeout(saveTimer.current);
     if (renameTimer.current) clearTimeout(renameTimer.current);
-    pendingSave.current = null;
-    pendingRename.current = null;
     try {
       await window.driftleaf.notes.remove(selectedNote.id);
+      draftWrites.remove(`note:${selectedNote.id}`);
+      draftWrites.remove(`title:${selectedNote.id}`);
       setNotes((prev) => prev.filter((n) => n.id !== selectedNote.id));
       await refreshNoteGraph();
       setSelectedNote(null);
@@ -440,7 +428,7 @@ export default function App() {
       await openNote(existing.id);
       return;
     }
-    await flushPendingWrites();
+    if (!(await flushPendingWrites())) return;
     try {
       await window.driftleaf.folders.create(DAILY_FOLDER);
       const meta = await window.driftleaf.notes.create(DAILY_FOLDER, title);
@@ -668,6 +656,7 @@ export default function App() {
   }
 
   async function handleDeleteFolder(folderPath: string) {
+    if (!(await flushPendingWrites())) return;
     try {
       const deletingSelectedDatabase = databases.some(
         (database) =>
@@ -711,26 +700,32 @@ export default function App() {
   }
 
   async function handleLock() {
-    // Flush before locking, not after — an error toast can only render while `unlocked` is
-    // still true (the toast element only exists in that branch below), so any failure here
-    // needs to surface before we flip back to the lock screen.
-    await flushPendingWrites();
-    await window.driftleaf.vault.lock();
-    setUnlocked(false);
-    setSelectedNote(null);
-    setSelectedDatabaseId(null);
-    setContent("");
-    setNoteGraph({ nodes: [], edges: [], unlinkedMentions: [] });
-    setCanvasItems([]);
-    setGraphOpen(false);
-    setCanvasOpen(false);
-    setSearchQuery("");
-    setSearchResults([]);
+    // Prevent new input after the final flush and before the backend lock.
+    document.body.inert = true;
+    try {
+      if (!(await flushPendingWrites())) return;
+      await window.driftleaf.vault.lock();
+      setUnlocked(false);
+      setSelectedNote(null);
+      setSelectedDatabaseId(null);
+      setContent("");
+      setNoteGraph({ nodes: [], edges: [], unlinkedMentions: [] });
+      setCanvasItems([]);
+      setGraphOpen(false);
+      setCanvasOpen(false);
+      setSearchQuery("");
+      setSearchResults([]);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Could not lock branch");
+    } finally {
+      document.body.inert = false;
+    }
   }
 
   if (!unlocked) {
     return (
       <>
+        <MigrationNotice />
         <UpdateBanner
           status={updateStatus}
           onDownload={() => void downloadUpdate()}
@@ -767,12 +762,7 @@ export default function App() {
     {
       id: "workspace-canvas",
       label: "Open workspace canvas",
-      run: () => {
-        setGraphOpen(false);
-        setCanvasOpen(true);
-        setSelectedNote(null);
-        setSelectedDatabaseId(null);
-      },
+      run: () => { void openCanvas(); },
     },
     { id: "extensions", label: "Open extensions", run: () => void openExtensions() },
     { id: "open-settings", label: "Open settings", run: () => setSettingsOpen(true) },
@@ -788,6 +778,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <MigrationNotice />
       <UpdateBanner
         status={updateStatus}
         onDownload={() => void downloadUpdate()}
@@ -800,10 +791,13 @@ export default function App() {
         databases={databases}
         selectedFolder={selectedFolder}
         onSelectFolder={(folder) => {
-          setGraphOpen(false);
-          setCanvasOpen(false);
-          setSelectedFolder(folder);
-          setSelectedDatabaseId(null);
+          void flushPendingWrites().then((saved) => {
+            if (!saved) return;
+            setGraphOpen(false);
+            setCanvasOpen(false);
+            setSelectedFolder(folder);
+            setSelectedDatabaseId(null);
+          });
         }}
         selectedNoteId={selectedNote?.id ?? null}
         selectedDatabaseId={selectedDatabaseId}
@@ -826,12 +820,7 @@ export default function App() {
           if (graphOpen) setGraphOpen(false);
           else void openGraph();
         }}
-        onOpenCanvas={() => {
-          setGraphOpen(false);
-          setCanvasOpen((current) => !current);
-          setSelectedNote(null);
-          setSelectedDatabaseId(null);
-        }}
+        onOpenCanvas={() => { void openCanvas(); }}
         onMoveNote={(id) => setMoveNoteId(id)}
         onRenameFolder={(old, next) => void handleRenameFolder(old, next)}
         onDeleteFolder={(fp) => void handleDeleteFolder(fp)}
