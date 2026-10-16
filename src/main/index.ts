@@ -1,9 +1,11 @@
 import { isCloseApproved, prepareWindowClose } from "./window-lifecycle";
-import { app, BrowserWindow, globalShortcut, shell, dialog } from "electron";
+import { app, BrowserWindow, globalShortcut, dialog } from "electron";
 import path from "node:path";
-import { registerIpcHandlers, lockSession } from "./ipc";
+import { closeExtensionWindows, registerIpcHandlers } from "./ipc";
 import { RENDERER_EVENTS } from "../shared/ipc";
 import { initializeUpdates } from "./updates";
+import { createDriftleafService } from "./service";
+import { createElectronHost } from "./electron-host";
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 
@@ -12,6 +14,18 @@ if (process.platform === "linux") {
 }
 
 let quitRequested = false;
+// Tracked separately from BrowserWindow.getAllWindows()[0] so the host's dialogs always
+// anchor to whichever window was created or focused most recently.
+let latestWindow: BrowserWindow | null = null;
+
+// Composition root: the one place that wires the Electron-independent service
+// (src/main/service.ts) to real Electron capabilities (src/main/electron-host.ts). See
+// docs/ELECTRON_MIGRATION_REVIEW.md, Phase 1.
+const host = createElectronHost({
+  getWindow: () => latestWindow,
+  onSessionReset: () => closeExtensionWindows(),
+});
+const service = createDriftleafService(host);
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -24,12 +38,13 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
+  latestWindow = win;
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (URL.canParse(url)) {
       const externalUrl = new URL(url);
       if (externalUrl.protocol === "https:") {
-        void shell.openExternal(externalUrl.href).catch((err: unknown) => {
+        void host.openExternal(externalUrl.href).catch((err: unknown) => {
           console.error("Failed to open external link:", err);
         });
       }
@@ -46,7 +61,7 @@ function createWindow() {
     if (destination.protocol === "http:" || destination.protocol === "https:") {
       event.preventDefault();
       if (destination.protocol === "https:") {
-        void shell.openExternal(destination.href).catch((err: unknown) => {
+        void host.openExternal(destination.href).catch((err: unknown) => {
           console.error("Failed to open external link:", err);
         });
       }
@@ -59,20 +74,25 @@ function createWindow() {
     event.preventDefault();
     if (closing) return;
     closing = true;
-    void prepareWindowClose(win, lockSession).then(() => {
-      if (quitRequested) app.quit();
-      else win.close();
-    }).catch((error: unknown) => {
-      quitRequested = false;
-      void dialog.showMessageBox(win, {
-        type: "error",
-        title: "Edits could not be saved",
-        message: "Driftleaf stayed open to protect your edits.",
-        detail: error instanceof Error ? error.message : String(error),
+    void prepareWindowClose(win, () => service.vault.lock())
+      .then(() => {
+        if (quitRequested) app.quit();
+        else win.close();
+      })
+      .catch((error: unknown) => {
+        quitRequested = false;
+        void dialog.showMessageBox(win, {
+          type: "error",
+          title: "Edits could not be saved",
+          message: "Driftleaf stayed open to protect your edits.",
+          detail: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .finally(() => {
+        closing = false;
       });
-    }).finally(() => { closing = false; });
   });
-  registerIpcHandlers(win);
+  registerIpcHandlers(win, service);
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL);
@@ -82,7 +102,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  initializeUpdates();
+  initializeUpdates({ getSettings: () => host.settings.readSettings() });
   createWindow();
 
   // Quick-capture: works even when Driftleaf isn't focused, since it's the whole point —
@@ -106,7 +126,9 @@ app.whenReady().then(() => {
   }
 });
 
-app.on("before-quit", () => { quitRequested = true; });
+app.on("before-quit", () => {
+  quitRequested = true;
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

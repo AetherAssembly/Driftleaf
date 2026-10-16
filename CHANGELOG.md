@@ -17,6 +17,14 @@ The format is based on Keep a Changelog and this project uses semantic versionin
 - Added session, backup, canvas retry, and cross-process crash-recovery regressions.
 - Kept Electron and the existing branch format. Phase 1 will begin only after
   manual verification of Phase 0.
+- Moved session ownership and every branch/note/database/folder/search/canvas/
+  extension-data command out of the Electron IPC layer into an Electron-independent
+  service, with settings-directory, picker, external-link, and updater behavior
+  injected rather than imported. The Electron adapter keeps only what needs a real
+  window: the extension sandbox window and the update-install close handshake.
+- Added contract tests proving the same command sequence behaves identically
+  whether called directly against the new service or through the existing
+  Electron-mocked adapter, without launching Electron either way.
 
 ## [0.6.4] - 2026-10-15
 

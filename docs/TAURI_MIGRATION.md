@@ -5,7 +5,7 @@ Work branch: `development`. Record changes under `[Unreleased]` in `CHANGELOG.md
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 0 | Stabilize data handling and exclusive writers | Implemented |
-| 1 | Separate domain service and desktop adapters | Not started |
+| 1 | Separate domain service and desktop adapters | Implemented |
 | 2 | Prove Tauri shell with the existing interface | Not started |
 | 3 | Extension isolation, packaging, and updates | Not started |
 | 4 | Rust backend with branch-format compatibility | Not started |
@@ -48,3 +48,42 @@ network/shared-filesystem behavior is not yet qualified.
 Automated checks: `npm test` (17 storage tests and 12 regression tests),
 `npm run build` (including typecheck), `npm run lint`, and `git diff --check`.
 Cross-platform GUI/installer checks remain manual.
+
+## Phase 1 verification
+
+Session ownership, the save/lock op queue, and every branch/note/database/folder/search/
+canvas/extension-data command moved out of `src/main/ipc.ts` into an Electron-independent
+service (`src/main/service.ts`). The service never imports `electron`; it receives settings-
+directory, picker, external-link, and updater behavior through an injected `ServiceHost`
+(`src/main/service-host.ts`). The real implementation of that host
+(`src/main/electron-host.ts`) wires it to actual dialogs, `app.getPath`, `shell.openExternal`,
+and the existing `electron-updater`-based `updates.ts`. `src/main/index.ts` is now the
+composition root that builds the host and service once and injects them into
+`registerIpcHandlers`.
+
+`src/main/ipc.ts` keeps only what is genuinely Electron/window-bound: opening the sandboxed
+extension `BrowserWindow`, the extension-context map keyed by `webContents` id (inherently
+tied to a live sender identity), and the update-install close/relaunch handshake. Those
+handlers share the service's op queue and error translation through
+`service.__internal.runSerializedCommand` instead of duplicating either.
+
+Single-use picker allowlisting (backup destination/directory, import file paths) and the
+settings-patch-on-unlock write both moved into the service unchanged, so the security and
+save-ordering guarantees from Phase 0 apply identically regardless of which adapter is
+calling. The session now carries an explicit, inspectable generation counter
+(`service.__internal.generation()`); not load-bearing yet (the op queue already totally
+orders every command against lock), but it gives later phases — a sidecar, extensions as a
+separate command source — something to assert sessions against instead of only "is a vault
+currently present."
+
+**Gate:** `scripts/tests/regressions.mjs` adds two contract tests
+(`service contract: ...`) that run the identical create/hasPassphrase/write/read/lock/
+post-lock-rejection sequence twice: once calling `createDriftleafService` directly with a
+fake host (no Electron at all), and once through the existing Electron-mocked `ipc.ts`
+adapter. Both pass with the same assertions. `extensions.run` and `updates.install` are
+intentionally excluded from the service (window-bound, same reasoning as Phase 3's scope)
+and stay Electron-only special cases in `ipc.ts`.
+
+Automated checks: `npm test` (17 storage tests, 14 regression tests — 2 new contract
+tests), `npm run typecheck`, `npm run lint`, `npm run build`. No behavior change is intended
+for the packaged app; this phase only moved where the logic lives.

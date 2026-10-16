@@ -15,6 +15,8 @@ import * as links from "../../src/shared/note-links.ts";
 import * as contract from "../../src/shared/ipc.ts";
 import { SerialQueue } from "../../src/shared/serial-queue.ts";
 import * as storage from "../../src/shared/storage.ts";
+import * as databaseExport from "../../src/main/database-export.ts";
+import * as communityCatalog from "../../src/main/community-catalog.ts";
 import { DraftWrites } from "../../src/renderer/lib/draft-writes.ts";
 
 const require = createRequire(import.meta.url);
@@ -93,6 +95,18 @@ const branchLocks = loadModule("src/main/branch-lock.ts", {
   "../shared/storage": storage,
 });
 
+// The Electron-independent domain service (see docs/ELECTRON_MIGRATION_REVIEW.md, Phase 1).
+// Loaded once; every harness below calls createDriftleafService(...) fresh so sessions stay
+// isolated between independent harness instances without re-loading the module each time.
+const serviceModule = loadModule("src/main/service.ts", {
+  "../shared/serial-queue": { SerialQueue },
+  "./branch-lock": branchLocks,
+  "./vault": vault,
+  "./search": search,
+  "./database-export": databaseExport,
+  "./community-catalog": communityCatalog,
+});
+
 async function temporaryBranch(run) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "driftleaf-regression-"));
   try {
@@ -102,29 +116,136 @@ async function temporaryBranch(run) {
   }
 }
 
-function ipcHarness(settings = { patchSettings: async () => {} }) {
+// A minimal ServiceHost for tests: no real dialogs/updater/settings-directory, just enough
+// for the session/command logic under test. Pass `overrides.settings` to swap in a
+// settings store that fails, as the real app's settings directory might.
+function fakeHost(overrides = {}) {
+  return {
+    settings: overrides.settings ?? {
+      readSettings: async () => ({}),
+      patchSettings: async () => ({}),
+    },
+    updates: {
+      status: () => ({}),
+      check: async () => ({}),
+      download: async () => ({}),
+      openDownload: async () => {},
+    },
+    onSessionReset: () => {},
+    pickDirectory: async () => null,
+    pickBackupDirectory: async () => null,
+    pickBackupDestination: async () => null,
+    pickImportFiles: async () => null,
+    pickExtensionFile: async () => null,
+    pickExportDestination: async () => null,
+    openExternal: async () => {},
+    diagnosticsExtras: () => ({ version: "test", electron: "test", chromium: "test" }),
+    ...overrides,
+  };
+}
+
+// Exercises the production TypeScript service directly — no Electron, no IPC transport.
+// This and ipcHarness() below run the same contract tests against the two adapters
+// described by the Phase 1 gate in docs/ELECTRON_MIGRATION_REVIEW.md.
+function serviceHarness(hostOverrides) {
+  return serviceModule.createDriftleafService(fakeHost(hostOverrides));
+}
+
+// The existing Electron adapter, with "electron" mocked out — mirrors how ipc.ts actually
+// runs, just without a real ipcMain/BrowserWindow.
+function ipcHarness(settingsOverride) {
   const handlers = new Map();
+  const service = serviceHarness(settingsOverride ? { settings: settingsOverride } : undefined);
   const api = loadModule("src/main/ipc.ts", {
     electron: {
       ipcMain: { handle: (channel, fn) => handlers.set(channel, fn) },
-      app: {},
       BrowserWindow: class {},
-      dialog: {},
     },
-    "../shared/serial-queue": { SerialQueue },
     "../shared/ipc": contract,
     "./window-lifecycle": {},
     "./vault": vault,
     "./search": search,
-    "./settings": settings,
-    "./branch-lock": branchLocks,
     "./updates": {},
-    "./database-export": {},
-    "./community-catalog": {},
   });
-  api.registerIpcHandlers({});
+  api.registerIpcHandlers({}, service);
   return (channel, ...args) => handlers.get(channel)({}, ...args);
 }
+
+// Phase 1 gate (docs/ELECTRON_MIGRATION_REVIEW.md): the same assertions must hold whether
+// commands run through the Electron-mocked adapter or directly against the
+// Electron-independent service, with neither adapter launching real Electron.
+function serviceInvoke(service) {
+  return (method, ...args) => {
+    switch (method) {
+      case "vault.create":
+        return service.vault.create(...args);
+      case "vault.unlock":
+        return service.vault.unlock(...args);
+      case "vault.lock":
+        return service.vault.lock();
+      case "vault.hasPassphrase":
+        return service.vault.hasPassphrase(...args);
+      case "notes.create":
+        return service.notes.create(...args);
+      case "notes.write":
+        return service.notes.write(...args);
+      case "notes.read":
+        return service.notes.read(...args);
+      default:
+        throw new Error(`Unmapped contract method: ${method}`);
+    }
+  };
+}
+
+function ipcInvoke(invokeChannel) {
+  return (method, ...args) => {
+    switch (method) {
+      case "vault.create":
+        return invokeChannel(contract.IPC_CHANNELS.vaultCreate, ...args);
+      case "vault.unlock":
+        return invokeChannel(contract.IPC_CHANNELS.vaultUnlock, ...args);
+      case "vault.lock":
+        return invokeChannel(contract.IPC_CHANNELS.vaultLock);
+      case "vault.hasPassphrase":
+        return invokeChannel(contract.IPC_CHANNELS.vaultHasPassphrase, ...args);
+      case "notes.create":
+        return invokeChannel(contract.IPC_CHANNELS.notesCreate, ...args);
+      case "notes.write":
+        return invokeChannel(contract.IPC_CHANNELS.notesWrite, ...args);
+      case "notes.read":
+        return invokeChannel(contract.IPC_CHANNELS.notesRead, ...args);
+      default:
+        throw new Error(`Unmapped contract method: ${method}`);
+    }
+  };
+}
+
+// Shared assertions: create, prove the passphrase is recorded, round-trip a note through
+// write/read, lock, then prove the session is really gone (Finding #2's invariant — no
+// command can still see the vault once locked). `call(method, ...args)` is adapter-agnostic.
+async function runCoreCommandContract(call, directory) {
+  await call("vault.create", directory, "contract-passphrase", "blank");
+  assert.equal(await call("vault.hasPassphrase", directory), true);
+  const note = await call("notes.create", "", "Contract note");
+  await call("notes.write", note.id, "hello from the contract test");
+  assert.equal(await call("notes.read", note.id), "hello from the contract test");
+  await call("vault.lock");
+  await assert.rejects(call("notes.read", note.id), /No vault is unlocked/);
+}
+
+test("service contract: core session/note commands work directly against the service, no Electron involved", async () => {
+  await temporaryBranch(async (directory) => {
+    const service = serviceHarness();
+    await runCoreCommandContract(serviceInvoke(service), directory);
+  });
+});
+
+test("service contract: the same core session/note assertions hold through the Electron-mocked adapter", async () => {
+  await temporaryBranch(async (directory) => {
+    const invoke = ipcHarness();
+    await runCoreCommandContract(ipcInvoke(invoke), directory);
+  });
+});
 
 test("recreating a branch leaves all encryption metadata and existing notes intact", async () => {
   await temporaryBranch(async (directory) => {

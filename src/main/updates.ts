@@ -1,8 +1,7 @@
 import { app, BrowserWindow, shell } from "electron";
 import { autoUpdater } from "electron-updater";
-import type { UpdateStatus } from "../shared/ipc";
+import type { AppSettings, UpdateStatus } from "../shared/ipc";
 import { RENDERER_EVENTS } from "../shared/ipc";
-import { readSettings } from "./settings";
 
 const RELEASES_API = "https://api.github.com/repos/AetherAssembly/Driftleaf/releases?per_page=30";
 const RELEASES_PAGE = "https://github.com/AetherAssembly/Driftleaf/releases";
@@ -135,7 +134,11 @@ async function checkManualUpdates(): Promise<UpdateStatus> {
   );
 }
 
-export function initializeUpdates(): void {
+export interface InitializeUpdatesOptions {
+  getSettings(): Promise<AppSettings>;
+}
+
+export function initializeUpdates(options: InitializeUpdatesOptions): void {
   if (initialized) return;
   initialized = true;
 
@@ -186,7 +189,7 @@ export function initializeUpdates(): void {
   }
 
   if (app.isPackaged) {
-    void readSettings().then((settings) => {
+    void options.getSettings().then((settings) => {
       if (!settings.checkUpdatesAutomatically) return;
       const timer = setTimeout(() => void checkForUpdates(), 5_000);
       timer.unref();
