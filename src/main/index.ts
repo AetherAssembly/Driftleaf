@@ -1,13 +1,17 @@
-import { app, BrowserWindow, globalShortcut, shell } from "electron";
+import { isCloseApproved, prepareWindowClose } from "./window-lifecycle";
+import { app, BrowserWindow, globalShortcut, shell, dialog } from "electron";
 import path from "node:path";
-import { registerIpcHandlers } from "./ipc";
+import { registerIpcHandlers, lockSession } from "./ipc";
 import { RENDERER_EVENTS } from "../shared/ipc";
+import { initializeUpdates } from "./updates";
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 
 if (process.platform === "linux") {
   app.setDesktopName("driftleaf.desktop");
 }
+
+let quitRequested = false;
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -49,6 +53,25 @@ function createWindow() {
     }
   });
 
+  let closing = false;
+  win.on("close", (event) => {
+    if (isCloseApproved(win)) return;
+    event.preventDefault();
+    if (closing) return;
+    closing = true;
+    void prepareWindowClose(win, lockSession).then(() => {
+      if (quitRequested) app.quit();
+      else win.close();
+    }).catch((error: unknown) => {
+      quitRequested = false;
+      void dialog.showMessageBox(win, {
+        type: "error",
+        title: "Edits could not be saved",
+        message: "Driftleaf stayed open to protect your edits.",
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }).finally(() => { closing = false; });
+  });
   registerIpcHandlers(win);
 
   if (VITE_DEV_SERVER_URL) {
@@ -59,6 +82,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  initializeUpdates();
   createWindow();
 
   // Quick-capture: works even when Driftleaf isn't focused, since it's the whole point —
@@ -81,6 +105,8 @@ app.whenReady().then(() => {
     );
   }
 });
+
+app.on("before-quit", () => { quitRequested = true; });
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

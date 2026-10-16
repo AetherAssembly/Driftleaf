@@ -8,12 +8,12 @@
 [![Copr build status](https://copr.fedorainfracloud.org/coprs/aster1630/Driftleaf/package/driftleaf/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/aster1630/Driftleaf/package/driftleaf/)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
-A private, simple notes app for your desktop. Your notes stay on your computer - encrypted, organized, and completely yours. No accounts, no cloud, no third-party tracking. Just you and your thoughts.
+A private, local-first notes app for your desktop. Your branch stays on your computer, encrypted, organized, and yours. No accounts or cloud sync; optional update checks contact GitHub for public release metadata only. Just you and your thoughts.
 
 ## Why Driftleaf?
 
 - **Truly private** - All notes are encrypted on your disk. Driftleaf developers never see your data.
-- **You own it** - No accounts to create, no cloud lock-in. Your vault is just a folder on your computer.
+- **You own it** - No accounts to create, no cloud lock-in. Your branch is just a folder on your computer.
 - **Fast & responsive** - Everything runs locally. No waiting for the cloud or dealing with sync conflicts.
 - **Write anywhere** - Markdown support with a live preview so you can format as you write.
 - **Keyboard first** - Power users can do everything with keyboard shortcuts. Tab through everything, search instantly, capture thoughts without reaching for the mouse.
@@ -34,7 +34,7 @@ architecture-specific downloads, verification, and platform-specific installatio
 
 ### First Time Using Driftleaf
 
-1. **Create a vault** - This is where all your notes live. Choose a starting template or a blank vault, then set a strong passphrase you'll remember (there's no password reset).
+1. **Create a branch** - This is where all your notes live. Choose a starting template or a blank branch, then set a strong passphrase you'll remember (there's no password reset).
 2. **Create folders** - Organize your notes however you like.
 3. **Start writing** - Create notes in markdown. Use the live preview to see formatting as you type.
 4. **Search** - Use **Ctrl+K** to quickly find notes by title or content.
@@ -49,6 +49,17 @@ architecture-specific downloads, verification, and platform-specific installatio
 | **Tab**                               | Move between sections (sidebar, notes, editor)   |
 | **Escape**                            | Close search, close modals, back up              |
 
+### Link Your Notes
+
+Type `[[Note title]]` in a note to link to another note. Add an alias with
+`[[Note title|display text]]`, or use a folder-qualified target such as
+`[[Projects/Driftleaf]]` when titles aren't unique. Links work in the preview;
+open **Graph** in the sidebar to explore connections, and linked notes show
+their backlinks above the editor. Link data is derived from decrypted note
+content in memory while the branch is unlocked; graph data is not persisted.
+The graph can show the whole branch or focus on the selected note, and the editor
+also surfaces unlinked mentions that may be worth turning into links.
+
 ### Accessibility
 
 Driftleaf works great with screen readers and keyboard-only navigation:
@@ -62,7 +73,27 @@ Driftleaf works great with screen readers and keyboard-only navigation:
 
 Use **+ Database** to create an editable database in the current folder, or use **Import** to bring in Markdown notes (`.md`), database files (`.csv` or `.json`), or a ZIP export containing these files. CSV and JSON imports become encrypted Driftleaf databases with a table view; ZIP folder paths are preserved. Notion exports commonly include CSV database files alongside Markdown pages.
 
+Databases can have saved Table, Board, and Calendar views, with sorting,
+grouping, text filters, and a selected date property. View settings are stored
+encrypted with the database.
+
+Open **Canvas** in the sidebar to arrange note cards and database-view
+shortcuts into one spatial workspace per branch. Card positions and references
+are encrypted with the branch metadata.
+
+Driftleaf can also run local JavaScript extensions from the **Extensions**
+button. Extensions run in isolated windows with network access disabled; note
+graph, and selected-database access are separate permissions, off by default.
+The gallery includes small examples and browses stable community extension and
+template releases inside the app. Extension code and grants are stored inside
+the encrypted branch. See
+[docs/EXTENSIONS.md](docs/EXTENSIONS.md) before installing third-party code.
+
 Choose System, Light, Dark, Aquatic, Mossy, Sunset, or Space in Settings to change the app's appearance.
+The Settings screen also shows the app version and update status. Windows
+installer builds can download and install updates in-app; Linux and unsigned
+macOS builds detect new releases and link to manual downloads. See
+[docs/UPDATES.md](docs/UPDATES.md).
 
 Imported CSVs preserve their current cell values, but CSV exports do not contain Notion formula definitions. Add formula properties in the database table after import. Formula properties support Notion-style `prop("Property")` references, arithmetic/comparison/logical operators, and common functions such as `if`, `empty`, `contains`, `round`, `dateAdd`, and `dateBetween`; this is not full Notion formula-language parity. Relations between separately imported Notion databases are not connected automatically and need to be recreated in Driftleaf.
 
@@ -72,13 +103,13 @@ See [docs/DATABASES.md](docs/DATABASES.md) for supported formats, editing tables
 
 ### Your Passphrase is Your Security
 
-Driftleaf encrypts everything with your passphrase. There's no way to reset a forgotten passphrase - if you lose it, your notes are gone forever. **Write your passphrase down somewhere safe when you create a vault.**
+Driftleaf encrypts everything with your passphrase. There's no way to reset a forgotten passphrase - if you lose it, your notes are gone forever. **Write your passphrase down somewhere safe when you create a branch.**
 
 For more details on security and recovery, see [docs/RECOVERY.md](docs/RECOVERY.md).
 
-### Backing Up Your Vault
+### Backing Up Your Branch
 
-Your vault is just a folder on your computer. From **Settings → Diagnostics & Vault Health → Create backup**, choose a destination outside the vault. Driftleaf creates a dated copy (including the hidden `.driftleaf/` directory) without overwriting existing backups. For resilience against device failure, store it on an external drive or another computer. You can verify a copied backup from the same screen; verification asks for the passphrase when needed and does not modify the backup. To restore, copy the backup folder back.
+Your branch is just a folder on your computer. From **Settings → Diagnostics & Branch Health → Create backup**, choose a destination outside the branch. Driftleaf creates a dated copy (including the hidden `.driftleaf/` directory) without overwriting existing backups. For resilience against device failure, store it on an external drive or another computer. You can verify a copied backup from the same screen; verification asks for the passphrase when needed and does not modify the backup. To restore, copy the backup folder back.
 
 ---
 
@@ -114,7 +145,7 @@ export DEBUG_SEARCH=1
 npm run dev
 ```
 
-Open DevTools (Ctrl+Shift+I or Cmd+Opt+I) and search for `[search]` in the console. See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for details.
+Open DevTools (Ctrl+Shift+I or Cmd+Opt+I) and search for `[search]` in the console. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#debugging-search-performance) for details.
 
 **Packaging for distribution:**
 
@@ -131,11 +162,11 @@ Each platform has a `:beta` variant for pre-release testing. See the build confi
 ### Technical Details
 
 - **Stack**: Electron + React 19 + Vite + TypeScript
-- **Storage**: Encrypted markdown files (scrypt + AES-256-GCM) per folder-based vault
+- **Storage**: Encrypted markdown files (scrypt + AES-256-GCM) per folder-based branch
 - **Search**: SQLite FTS5 index, rebuilt on unlock
 - **Safety**: Atomic writes + consistency checks on every unlock
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full technical architecture.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for an overview of branch storage, encryption, privacy, and the internal API terminology.
 
 ## License
 

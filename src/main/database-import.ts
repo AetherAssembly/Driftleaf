@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   DatabaseCellValue,
+  DatabaseViewDefinition,
   DatabaseProperty,
   DatabasePropertyType,
   DatabaseRow,
@@ -10,6 +11,8 @@ export interface ParsedDatabase {
   title: string;
   properties: DatabaseProperty[];
   rows: DatabaseRow[];
+  views?: DatabaseViewDefinition[];
+  activeViewId?: string;
 }
 
 interface PropertyHint {
@@ -365,6 +368,30 @@ function normalizeJsonRow(value: unknown): Record<string, unknown> {
 
 export function parseJsonDatabase(text: string, title: string): ParsedDatabase {
   const parsed: unknown = JSON.parse(text.replace(/^\uFEFF/, ""));
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    !Array.isArray(parsed) &&
+    (parsed as Record<string, unknown>).format === "driftleaf/database-v1"
+  ) {
+    const exported = parsed as Record<string, unknown>;
+    if (
+      typeof exported.title !== "string" ||
+      !Array.isArray(exported.properties) ||
+      !Array.isArray(exported.rows) ||
+      !Array.isArray(exported.views) ||
+      typeof exported.activeViewId !== "string"
+    ) {
+      throw new Error("Driftleaf database export has an invalid schema");
+    }
+    return {
+      title: exported.title.trim() || title,
+      properties: exported.properties as DatabaseProperty[],
+      rows: exported.rows as DatabaseRow[],
+      views: exported.views as DatabaseViewDefinition[],
+      activeViewId: exported.activeViewId,
+    };
+  }
   let rows: unknown[];
   if (Array.isArray(parsed)) {
     rows = parsed;

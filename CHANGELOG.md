@@ -4,6 +4,112 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
+## [0.6.4] - 2026-10-15
+
+### Fixed
+
+- Refuse branch creation in folders with existing branch metadata, including
+  concurrent creation attempts, to protect encryption keys and existing notes.
+- Serialize complete branch operations and locking so active writes finish
+  before the encryption key is cleared.
+- Retain failed note, title, and database edits for retry. Block navigation and
+  locking when drafts cannot be saved; Ctrl/Cmd+S retries pending saves.
+- Wait for pending and active saves before closing, quitting, or restarting to
+  install an update. Keep the app open if saving fails.
+- Replace a note's search entry when saving, renaming, or moving it, preventing
+  duplicate results, obsolete search matches, and stale graph links.
+- Run storage and lifecycle regression tests explicitly in CI.
+
+### Added
+
+- Added a dismissible notice announcing the planned move from Electron to
+  Tauri while retaining the familiar interface. Windows users also see a
+  warning that the migration will require a one-time manual installation;
+  current Electron updates remain unchanged.
+
+## [0.6.3] - 2026-10-12
+
+### Changed
+
+- Community gallery now shows only the newest release of each extension or
+  template asset, preventing duplicate entries across releases.
+- Replaced the collapsed sidebar's “Ex” label with an Extensions icon.
+- Renamed the user-facing private workspace from “vault” to “branch”; internal
+  API and storage terminology remains unchanged.
+
+### Documentation
+
+- Updated user guides and repository policy copies to use “branch” for the
+  private workspace, clarifying where “vault” remains the internal term.
+
+## [0.6.2] - 2026-10-11
+
+### Added
+
+- Added Cherry, Arctic, and Amber color themes.
+
+### Fixed
+
+- Fixed Windows update checks by including channel-specific updater metadata in release assets.
+
+## [0.6.1] - 2026-10-11
+
+### Added
+
+- Added saved Gallery and List database views.
+- Added a saved Timeline view with month navigation and configurable start and
+  end date properties.
+- Improved Calendar view with a Today shortcut, editable event details, and
+  per-day row creation that pre-fills the selected date.
+- Added Week and Month modes to Calendar view, with mode-aware navigation.
+- Added configurable options directly in the property editor for Select,
+  Status, and Multi-select properties.
+- Added a view-independent property manager so properties can be deleted from
+  any database view.
+
+### Changed
+
+- Replaced separate database view-creation buttons with an Add view dropdown.
+- Moved sidebar actions below Search and separated them from the Folders heading.
+- Added accessible icons to sidebar actions and saved database views.
+- Made row title/name fields editable in Gallery and List views.
+
+## [0.6.0] - 2026-10-11
+
+### Added
+
+- Added named table, board, and calendar views for databases, with saved
+  sorting, grouping, text filters, and date-property selection.
+- Added `[[note]]` links, aliases, backlinks, unlinked mentions, and an
+  interactive graph that can focus on a selected note.
+- Encrypted vault metadata and moved notes to opaque-ID filenames; existing
+  vaults migrate automatically the next time they are unlocked.
+- Added local JavaScript extensions in isolated windows, with encrypted
+  extension storage, disabled network access, and per-extension read permissions.
+- Added scoped read-only database access for extensions, a starter gallery, and
+  an extension API guide.
+- Added a spatial canvas for arranging note and database-view cards, stored in
+  encrypted vault metadata.
+- Added update status and version information to Settings, with opt-out
+  automatic checks, Windows installer updates, and manual release detection on
+  Linux and unsigned macOS builds.
+- Reworked Settings into themed Appearance, Editor, Updates, Vault, and About
+  sections.
+- Improved database property management with repeatable column creation,
+  calculated formula fields with inline editing and previews, and safe
+  property/database renaming and deletion.
+- Added CSV value exports and lossless Driftleaf JSON database exports that
+  preserve property definitions, formula expressions, rows, and saved views.
+- Strengthened recovery and interoperability checks for encrypted databases,
+  backup restoration, formula evaluation, and import/export round trips.
+- Added searchable note-graph filtering and canvas sizing that keeps moved
+  cards reachable when the workspace grows.
+- Added a community gallery to browse stable extension and template releases
+  inside Driftleaf, preview extension source, and install templates directly
+  into the encrypted vault.
+- Added a portable `community/Driftleaf-Extensions` folder with five starter
+  extensions intended to move into its own repository.
+
 ## [0.5.0] - 2026-10-08
 
 ### Added

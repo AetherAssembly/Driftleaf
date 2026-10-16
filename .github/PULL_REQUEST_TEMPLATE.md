@@ -39,3 +39,6 @@ How was this tested? Include steps to verify:
 - [ ] Documentation updated (if needed)
 - [ ] Typecheck passes (`npm run typecheck`)
 - [ ] No new warnings or errors
+- [ ] Update/version behavior checked on applicable platforms
+- [ ] Extension capabilities remain least-privilege and main-process enforced
+- [ ] Canvas metadata remains encrypted and target deletion is handled

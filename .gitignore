@@ -12,3 +12,7 @@ release/
 *.driftleaf-vault/
 index.html
 
+
+#development files
+DATABASE_ROADMAP.md
+docs/ELECTRON_MIGRATION_REVIEW.md

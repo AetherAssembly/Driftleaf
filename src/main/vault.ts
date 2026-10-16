@@ -1,7 +1,6 @@
-// Vault = a folder tree of encrypted markdown notes on disk (see docs/ARCHITECTURE.md).
-// Organization is folder-based: a note's `folderPath` is also where its `.enc` file lives.
-// Note titles/folder placement are kept in a plaintext manifest sidecar so the sidebar tree
-// can render without decrypting every note — only note *content* is encrypted.
+// Vault = an encrypted workspace on disk (see docs/ARCHITECTURE.md). Note titles,
+// folder placement, and database metadata live in an encrypted manifest; note files
+// use opaque IDs under .driftleaf/notes rather than exposing names in paths.
 
 import { randomUUID } from "node:crypto";
 import {
@@ -13,6 +12,7 @@ import {
   writeFile,
   rm,
   rename,
+  rmdir,
   readdir,
   stat,
 } from "node:fs/promises";
@@ -28,7 +28,13 @@ import {
 } from "./crypto";
 import { getVaultTemplate } from "./templates";
 import { parseCsvDatabase, parseJsonDatabase } from "./database-import";
-import type { VaultTemplateId } from "../shared/ipc";
+import type {
+  CanvasItem,
+  ExtensionPermission,
+  ExtensionSample,
+  ExtensionSummary,
+  VaultTemplateId,
+} from "../shared/ipc";
 import type {
   DatabaseCellValue,
   DatabaseData,
@@ -36,6 +42,7 @@ import type {
   DatabaseProperty,
   DatabasePropertyType,
   DatabaseRow,
+  DatabaseViewDefinition,
   VaultHealthCheck,
   VaultHealthReport,
 } from "../shared/ipc";
@@ -52,14 +59,13 @@ const WELCOME_NOTE_CONTENT = `# Welcome to Driftleaf
 - Note content is encrypted at rest with AES-256-GCM. If you set a passphrase,
   it's the only way to unlock the vault — **there is no password reset**. Write
   it down and keep it somewhere safe.
-- Titles and folder names are kept in a plaintext index next to the encrypted
-  notes so the sidebar can render without decrypting everything — only note
-  *content* is encrypted.
+- Note titles, folder names, and database metadata are encrypted too. The app
+  decrypts the index only while this vault is unlocked.
 
 ## Organization
 
-Notes live in folders, not tags — the sidebar folder tree mirrors the vault's
-folder structure on disk. Right-click a folder to rename or delete it;
+Notes live in folders, not tags — the sidebar folder tree is private vault
+metadata, not the on-disk folder structure. Right-click a folder to rename or delete it;
 right-click a note to move it.
 
 ## Markdown
@@ -67,6 +73,7 @@ right-click a note to move it.
 The editor supports standard markdown with a live preview toggle:
 
 - \`**bold**\`, \`*italic*\`, \`[links](url)\`
+- \`[[Note title]]\` links, with backlinks and a note graph
 - \`# Heading\`, \`## Subheading\`
 - Inline code and fenced code blocks (wrap text in backticks)
 - \`- bullet\` or \`1. numbered\` lists
@@ -86,10 +93,8 @@ Delete this note whenever you like — it's a normal note, not a special one.
 export interface NoteMeta {
   id: string;
   title: string;
-  folderPath: string; // "" for vault root, else e.g. "Projects/Driftleaf"
-  fileName: string; // on-disk basename, e.g. "Meeting notes.md.enc" — kept in sync with
-  // `title` (see uniqueFileName/renameNote) so the vault folder is browsable in a normal
-  // file manager, the way any other encrypted file keeps its name with the extension changed.
+  folderPath: string;
+  fileName: string;
   updatedAt: number;
 }
 
@@ -110,17 +115,43 @@ function validateDatabaseProperties(properties: DatabaseProperty[]): void {
     ) {
       throw new Error("Database has an invalid property definition");
     }
-    if (ids.has(property.id) || names.has(property.name)) {
+    const normalizedName = property.name.trim().toLocaleLowerCase();
+    if (ids.has(property.id) || names.has(normalizedName)) {
       throw new Error("Database property IDs and names must be unique");
     }
     ids.add(property.id);
-    names.add(property.name);
+    names.add(normalizedName);
     if (property.type === "formula" && typeof property.formula !== "string") {
       throw new Error(`Formula property "${property.name}" needs a formula`);
     }
+    if (
+      property.options !== undefined &&
+      (!Array.isArray(property.options) ||
+        property.options.some((option) => typeof option !== "string") ||
+        new Set(property.options).size !== property.options.length)
+    ) {
+      throw new Error(`Database property "${property.name}" has invalid options`);
+    }
+    if (
+      property.type === "relation" &&
+      (typeof property.relationDatabaseId !== "string" ||
+        !/^[0-9a-f-]{36}$/i.test(property.relationDatabaseId))
+    ) {
+      throw new Error(`Relation property "${property.name}" needs a valid database`);
+    }
+    if (
+      property.type === "rollup" &&
+      (typeof property.rollupRelationPropertyId !== "string" ||
+        typeof property.rollupTargetPropertyId !== "string" ||
+        !["count", "sum", "average", "min", "max", "show_original"].includes(
+          property.rollupFunction ?? "",
+        ))
+    ) {
+      throw new Error(`Rollup property "${property.name}" has an invalid configuration`);
+    }
   }
-  if (!properties.some((property) => property.type === "title")) {
-    throw new Error("A database needs a title property");
+  if (properties.filter((property) => property.type === "title").length !== 1) {
+    throw new Error("A database needs exactly one title property");
   }
 }
 
@@ -152,6 +183,64 @@ function validateDatabaseRows(properties: DatabaseProperty[], rows: DatabaseRow[
         !(Array.isArray(value) && value.every((item) => typeof item === "string"))
       ) {
         throw new Error("Database cell has an unsupported value");
+      }
+    }
+  }
+}
+
+function validateDatabaseViews(
+  views: DatabaseViewDefinition[],
+  properties: DatabaseProperty[],
+): void {
+  if (!Array.isArray(views) || views.length === 0) {
+    throw new Error("A database needs at least one view");
+  }
+  const propertyIds = new Set(properties.map((property) => property.id));
+  const ids = new Set<string>();
+  for (const view of views) {
+    if (
+      !view ||
+      typeof view.id !== "string" ||
+      !view.id ||
+      ids.has(view.id) ||
+      typeof view.name !== "string" ||
+      !view.name.trim() ||
+      !["table", "board", "calendar", "gallery", "list", "timeline"].includes(view.type)
+    ) {
+      throw new Error("Database has an invalid view definition");
+    }
+    ids.add(view.id);
+    if (
+      (view.sortPropertyId && !propertyIds.has(view.sortPropertyId)) ||
+      (view.groupPropertyId && !propertyIds.has(view.groupPropertyId)) ||
+      (view.datePropertyId &&
+        !properties.some(
+          (property) => property.id === view.datePropertyId && property.type === "date",
+        )) ||
+      (view.endDatePropertyId &&
+        !properties.some(
+          (property) => property.id === view.endDatePropertyId && property.type === "date",
+        ))
+    ) {
+      throw new Error("Database view references an unknown or incompatible property");
+    }
+    if (
+      view.sortDirection !== undefined &&
+      view.sortDirection !== "ascending" &&
+      view.sortDirection !== "descending"
+    ) {
+      throw new Error("Database view has an invalid sort direction");
+    }
+    if (!Array.isArray(view.filters ?? [])) {
+      throw new Error("Database view filters must be an array");
+    }
+    for (const filter of view.filters ?? []) {
+      if (
+        !propertyIds.has(filter.propertyId) ||
+        !["contains", "equals", "is_empty", "is_not_empty"].includes(filter.operator) ||
+        typeof filter.value !== "string"
+      ) {
+        throw new Error("Database view has an invalid filter");
       }
     }
   }
@@ -231,7 +320,9 @@ export async function readDatabase(vault: Vault, id: string): Promise<DatabaseDa
   const data = parsed as DatabaseData;
   validateDatabaseProperties(data.properties);
   validateDatabaseRows(data.properties, data.rows);
-  return { ...data, meta };
+  const views = data.views ?? [{ id: "table", name: "Table", type: "table" as const }];
+  validateDatabaseViews(views, data.properties);
+  return { ...data, meta, views, activeViewId: data.activeViewId ?? views[0].id };
 }
 
 export async function createDatabase(
@@ -240,10 +331,35 @@ export async function createDatabase(
   folderPath: string,
   properties: DatabaseProperty[],
   rows: DatabaseRow[],
+  views?: DatabaseViewDefinition[],
+  activeViewId?: string,
 ): Promise<DatabaseMeta> {
   validateFolderPath(folderPath);
   validateDatabaseProperties(properties);
   validateDatabaseRows(properties, rows);
+  const existingDatabaseIds = new Set(databasesFor(vault).map((database) => database.id));
+  for (const property of properties) {
+    if (property.type === "relation" && !existingDatabaseIds.has(property.relationDatabaseId!)) {
+      throw new Error(`Relation property "${property.name}" references an unknown database`);
+    }
+    if (property.type === "rollup") {
+      const relation = properties.find(
+        (candidate) =>
+          candidate.id === property.rollupRelationPropertyId && candidate.type === "relation",
+      );
+      if (
+        !relation ||
+        !property.rollupTargetPropertyId ||
+        !property.rollupFunction
+      ) {
+        throw new Error(`Rollup property "${property.name}" needs a valid relation and target`);
+      }
+      const targetDatabase = await readDatabase(vault, relation.relationDatabaseId!);
+      if (!targetDatabase.properties.some((target) => target.id === property.rollupTargetPropertyId)) {
+        throw new Error(`Rollup property "${property.name}" references an unknown target property`);
+      }
+    }
+  }
   await ensureFolderChain(vault, folderPath);
   const meta: DatabaseMeta = {
     id: randomUUID(),
@@ -251,12 +367,24 @@ export async function createDatabase(
     folderPath,
     updatedAt: Date.now(),
   };
-  const data: DatabaseData = { meta, properties, rows };
+  const databaseViews = views ?? [{ id: "table", name: "Table", type: "table" as const }];
+  const selectedActiveViewId = activeViewId ?? databaseViews[0]?.id;
+  const data: DatabaseData = {
+    meta,
+    properties,
+    rows,
+    views: databaseViews,
+    activeViewId: selectedActiveViewId,
+  };
+  validateDatabaseViews(databaseViews, properties);
+  if (!selectedActiveViewId || !databaseViews.some((view) => view.id === selectedActiveViewId)) {
+    throw new Error("Active database view does not exist");
+  }
   await writeDatabaseData(vault, data);
   const prevDatabases = [...databasesFor(vault)];
   databasesFor(vault).push(meta);
   try {
-    await writeManifest(vault.rootPath, vault.manifest);
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
   } catch (error) {
     vault.manifest.databases = prevDatabases;
     await rm(databasePath(vault, meta.id), { force: true }).catch(() => {});
@@ -265,22 +393,106 @@ export async function createDatabase(
   return meta;
 }
 
+export async function renameDatabase(vault: Vault, id: string, title: string): Promise<DatabaseMeta> {
+  const meta = databasesFor(vault).find((database) => database.id === id);
+  if (!meta) throw new Error("Database not found");
+  const nextTitle = title.trim();
+  if (!nextTitle) throw new Error("Database name cannot be empty");
+  const previousTitle = meta.title;
+  const previousUpdatedAt = meta.updatedAt;
+  meta.title = nextTitle;
+  meta.updatedAt = Date.now();
+  try {
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
+  } catch (error) {
+    meta.title = previousTitle;
+    meta.updatedAt = previousUpdatedAt;
+    throw error;
+  }
+  return { ...meta };
+}
+
 export async function updateDatabase(
   vault: Vault,
   id: string,
   properties: DatabaseProperty[],
   rows: DatabaseRow[],
+  views?: DatabaseViewDefinition[],
+  activeViewId?: string,
 ): Promise<void> {
   validateDatabaseProperties(properties);
   validateDatabaseRows(properties, rows);
   const meta = databasesFor(vault).find((database) => database.id === id);
   if (!meta) throw new Error("Database not found");
+  const existingDatabaseIds = new Set(databasesFor(vault).map((database) => database.id));
+  for (const property of properties) {
+    if (
+      property.type === "relation" &&
+      (!existingDatabaseIds.has(property.relationDatabaseId!) || property.relationDatabaseId === id)
+    ) {
+      throw new Error(`Relation property "${property.name}" references an unknown database`);
+    }
+  }
+  const current = await readDatabase(vault, id);
+  const propertySchemaChanged =
+    JSON.stringify(current.properties) !== JSON.stringify(properties);
+  if (propertySchemaChanged) {
+    for (const property of properties.filter((candidate) => candidate.type === "rollup")) {
+      const relation = properties.find(
+        (candidate) =>
+          candidate.id === property.rollupRelationPropertyId && candidate.type === "relation",
+      );
+      if (!relation || !property.rollupTargetPropertyId) {
+        throw new Error(`Rollup property "${property.name}" needs a valid relation and target`);
+      }
+      const targetDatabase = await readDatabase(vault, relation.relationDatabaseId!);
+      if (!targetDatabase.properties.some((target) => target.id === property.rollupTargetPropertyId)) {
+        throw new Error(`Rollup property "${property.name}" references an unknown target property`);
+      }
+    }
+    const removedPropertyIds = new Set(
+      current.properties
+        .filter((property) => !properties.some((next) => next.id === property.id))
+        .map((property) => property.id),
+    );
+    if (removedPropertyIds.size > 0) {
+      for (const database of databasesFor(vault)) {
+        if (database.id === id) continue;
+        const referencingData = await readDatabase(vault, database.id);
+        for (const rollup of referencingData.properties.filter((property) => property.type === "rollup")) {
+          const relation = referencingData.properties.find(
+            (property) => property.id === rollup.rollupRelationPropertyId && property.type === "relation",
+          );
+          if (
+            relation?.relationDatabaseId === id &&
+            removedPropertyIds.has(rollup.rollupTargetPropertyId ?? "")
+          ) {
+            throw new Error(
+              `Property is used by the "${rollup.name}" rollup in "${database.title}" and cannot be deleted`,
+            );
+          }
+        }
+      }
+    }
+  }
+  const nextViews = views ?? current.views!;
+  const nextActiveViewId = activeViewId ?? current.activeViewId;
+  validateDatabaseViews(nextViews, properties);
+  if (!nextViews.some((view) => view.id === nextActiveViewId)) {
+    throw new Error("Active database view does not exist");
+  }
   const nextMeta = { ...meta, updatedAt: Date.now() };
-  await writeDatabaseData(vault, { meta: nextMeta, properties, rows });
+  await writeDatabaseData(vault, {
+    meta: nextMeta,
+    properties,
+    rows,
+    views: nextViews,
+    activeViewId: nextActiveViewId,
+  });
   const previous = { ...meta };
   Object.assign(meta, nextMeta);
   try {
-    await writeManifest(vault.rootPath, vault.manifest);
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
   } catch (error) {
     Object.assign(meta, previous);
     throw error;
@@ -301,7 +513,7 @@ export async function createDatabaseRow(vault: Vault, id: string): Promise<Datab
   }
   const row: DatabaseRow = { id: randomUUID(), values, createdAt: now, updatedAt: now };
   data.rows.push(row);
-  await updateDatabase(vault, id, data.properties, data.rows);
+  await updateDatabase(vault, id, data.properties, data.rows, data.views, data.activeViewId);
   return row;
 }
 
@@ -315,11 +527,18 @@ export async function deleteDatabaseRow(vault: Vault, id: string, rowId: string)
     const linkedData = await readDatabase(vault, meta.id);
     const cleared = clearRelationToRow(linkedData.rows, linkedData.properties, id, rowId);
     if (cleared.changed) {
-      await updateDatabase(vault, meta.id, linkedData.properties, cleared.rows);
+      await updateDatabase(
+        vault,
+        meta.id,
+        linkedData.properties,
+        cleared.rows,
+        linkedData.views,
+        linkedData.activeViewId,
+      );
     }
   }
   const cleared = clearRelationToRow(retainedRows, data.properties, id, rowId);
-  await updateDatabase(vault, id, data.properties, cleared.rows);
+  await updateDatabase(vault, id, data.properties, cleared.rows, data.views, data.activeViewId);
 }
 
 export async function deleteDatabase(vault: Vault, id: string): Promise<void> {
@@ -334,10 +553,15 @@ export async function deleteDatabase(vault: Vault, id: string): Promise<void> {
     }
   }
   const [meta] = databases.splice(index, 1);
+  const previousCanvas = vault.manifest.canvasItems;
+  vault.manifest.canvasItems = (previousCanvas ?? []).filter(
+    (item) => item.kind !== "database" || item.targetId !== id,
+  );
   try {
-    await writeManifest(vault.rootPath, vault.manifest);
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
   } catch (error) {
     databases.splice(index, 0, meta);
+    vault.manifest.canvasItems = previousCanvas;
     throw error;
   }
   await rm(databasePath(vault, id), { force: true });
@@ -347,6 +571,67 @@ interface Manifest {
   notes: NoteMeta[];
   folders: string[]; // explicitly created folders so empty ones survive restarts
   databases?: DatabaseMeta[];
+  extensions?: StoredExtension[];
+  canvasItems?: CanvasItem[];
+}
+
+export interface StoredExtension extends ExtensionSummary {
+  source: string;
+  sampleId?: string;
+}
+
+const EXTENSION_MAX_BYTES = 512 * 1024;
+const EXTENSION_PERMISSIONS: ExtensionPermission[] = [
+  "read_notes",
+  "read_graph",
+  "read_databases",
+];
+
+const EXTENSION_SAMPLES: Array<ExtensionSample & { source: string }> = [
+  {
+    id: "note-count",
+    name: "Note count",
+    description: "Shows how many notes are in the current vault.",
+    source:
+      '(async () => { const notes = await window.driftleafExtension.listNotes(); const main = document.createElement("main"); main.style.cssText = "font:16px system-ui;padding:32px"; const heading = document.createElement("h1"); heading.textContent = "Vault overview"; const summary = document.createElement("p"); summary.textContent = `${notes.length} notes`; main.append(heading, summary); document.body.replaceChildren(main); })();',
+  },
+  {
+    id: "database-summary",
+    name: "Database summary",
+    description: "Lists only the databases you explicitly grant access to.",
+    source:
+      '(async () => { const databases = await window.driftleafExtension.listDatabases(); const main = document.createElement("main"); main.style.cssText = "font:16px system-ui;padding:32px"; const heading = document.createElement("h1"); heading.textContent = "Shared databases"; main.append(heading); const list = document.createElement("ul"); for (const database of databases) { const item = document.createElement("li"); item.textContent = database.title; list.append(item); } if (!databases.length) { const item = document.createElement("li"); item.textContent = "No database access granted"; list.append(item); } main.append(list); document.body.replaceChildren(main); })();',
+  },
+];
+
+function extensionSummary(extension: StoredExtension): ExtensionSummary {
+  return {
+    id: extension.id,
+    name: extension.name,
+    permissions: [...extension.permissions],
+    databaseIds: [...extension.databaseIds],
+    ...(extension.sampleId ? { sampleId: extension.sampleId } : {}),
+  };
+}
+
+function validateExtension(extension: StoredExtension): void {
+  if (
+    !extension ||
+    !/^[0-9a-f-]{36}$/i.test(extension.id) ||
+    typeof extension.name !== "string" ||
+    !extension.name.trim() ||
+    extension.name.length > 100 ||
+    typeof extension.source !== "string" ||
+    Buffer.byteLength(extension.source, "utf8") > EXTENSION_MAX_BYTES ||
+    !Array.isArray(extension.permissions) ||
+    extension.permissions.some((permission) => !EXTENSION_PERMISSIONS.includes(permission)) ||
+    !Array.isArray(extension.databaseIds) ||
+    extension.databaseIds.some((id) => !/^[0-9a-f-]{36}$/i.test(id)) ||
+    (extension.sampleId !== undefined &&
+      !EXTENSION_SAMPLES.some((sample) => sample.id === extension.sampleId))
+  ) {
+    throw new Error("Vault contains an invalid extension definition");
+  }
 }
 
 const DATABASE_PROPERTY_TYPES: DatabasePropertyType[] = [
@@ -454,7 +739,7 @@ export async function createVaultBackup(vault: Vault, destinationParent: string)
 // recovery log (see writeFileAtomic/deleteNote/deleteFolder for how corruption is avoided
 // in the first place).
 export interface VaultRecoveryReport {
-  renamedLegacy: string[]; // note ids migrated from an old id-based filename to title.md.enc
+  renamedLegacy: string[]; // note ids migrated from old named paths to opaque-ID paths
   removedDangling: string[]; // note ids removed because no .enc file exists for them anymore
   recoveredOrphans: string[]; // note ids found on disk with no manifest entry, re-added
 }
@@ -465,51 +750,6 @@ function isEmptyReport(report: VaultRecoveryReport): boolean {
     report.removedDangling.length === 0 &&
     report.recoveredOrphans.length === 0
   );
-}
-
-const MAX_FILENAME_BASE_LENGTH = 120; // leaves headroom for " (NN).md.enc" + OS path limits
-const WINDOWS_RESERVED_NAMES = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
-
-// Turns a note title into a filesystem-safe basename: strips characters illegal on
-// Windows/macOS/Linux, collapses whitespace, and avoids Windows-reserved device names.
-function sanitizeTitleForFileName(title: string): string {
-  let base = title
-    .replace(/[\\/:*?"<>|\x00-\x1f]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/[. ]+$/, ""); // Windows disallows trailing dots/spaces
-  if (base.length > MAX_FILENAME_BASE_LENGTH) {
-    base = base.slice(0, MAX_FILENAME_BASE_LENGTH).trim();
-  }
-  if (!base || WINDOWS_RESERVED_NAMES.test(base)) {
-    base = "Untitled";
-  }
-  return base;
-}
-
-// Derives a `<title>.md.enc` filename for a note, adding a " (2)", " (3)", ... suffix if
-// another note in the same folder already claims that name — mirrors how a file manager
-// resolves a naming collision on copy/save.
-function uniqueFileName(
-  vault: Vault,
-  folderPath: string,
-  title: string,
-  excludeId?: string,
-): string {
-  const base = sanitizeTitleForFileName(title);
-  // Compared case-insensitively: Windows and default macOS (APFS/NTFS) filesystems are
-  // case-insensitive-but-preserving, so a candidate that only differs in case from an
-  // existing file would resolve to the same inode and silently overwrite it on rename.
-  const taken = new Set(
-    vault.manifest.notes
-      .filter((n) => n.folderPath === folderPath && n.id !== excludeId)
-      .map((n) => n.fileName.toLowerCase()),
-  );
-  let candidate = `${base}.md.enc`;
-  for (let i = 2; taken.has(candidate.toLowerCase()); i++) {
-    candidate = `${base} (${i}).md.enc`;
-  }
-  return candidate;
 }
 
 // Recovers a reasonable title from an on-disk filename when a note's manifest entry is
@@ -537,6 +777,10 @@ function configPath(rootPath: string): string {
 }
 
 function manifestPath(rootPath: string): string {
+  return path.join(rootPath, DRIFTLEAF_DIR, "manifest.enc");
+}
+
+function legacyManifestPath(rootPath: string): string {
   return path.join(rootPath, DRIFTLEAF_DIR, "manifest.json");
 }
 
@@ -544,7 +788,19 @@ function canaryPath(rootPath: string): string {
   return path.join(rootPath, DRIFTLEAF_DIR, "canary.enc");
 }
 
-function notePath(rootPath: string, note: Pick<NoteMeta, "folderPath" | "fileName">): string {
+function notePath(rootPath: string, note: Pick<NoteMeta, "id">): string {
+  if (!/^[0-9a-f-]{36}$/i.test(note.id)) throw new Error("Invalid note ID");
+  return path.join(rootPath, DRIFTLEAF_DIR, "notes", `${note.id}.enc`);
+}
+
+function legacyNotePath(
+  rootPath: string,
+  note: Pick<NoteMeta, "folderPath" | "fileName">,
+): string {
+  validateFolderPath(note.folderPath);
+  if (!note.fileName || path.basename(note.fileName) !== note.fileName) {
+    throw new Error("Invalid legacy note filename");
+  }
   return path.join(rootPath, note.folderPath, note.fileName);
 }
 
@@ -560,28 +816,204 @@ async function writeFileAtomic(filePath: string, data: Buffer | string): Promise
   await rename(tmpPath, filePath);
 }
 
-async function readManifest(rootPath: string): Promise<Manifest> {
-  try {
-    const raw = await readFile(manifestPath(rootPath), "utf-8");
-    const parsed = JSON.parse(raw) as Partial<Manifest>;
-    return { notes: [], folders: [], ...parsed };
-  } catch {
-    return { notes: [], folders: [] };
-  }
-}
-
-async function readManifestStrict(rootPath: string): Promise<Manifest> {
-  const raw = await readFile(manifestPath(rootPath), "utf-8");
-  const parsed: unknown = JSON.parse(raw);
+function parseManifest(value: unknown): Manifest {
   if (
-    !parsed ||
-    typeof parsed !== "object" ||
-    !Array.isArray((parsed as Partial<Manifest>).notes) ||
-    !Array.isArray((parsed as Partial<Manifest>).folders)
+    !value ||
+    typeof value !== "object" ||
+    !Array.isArray((value as Partial<Manifest>).notes) ||
+    !Array.isArray((value as Partial<Manifest>).folders)
   ) {
     throw new Error("Vault manifest is missing valid notes or folders arrays");
   }
-  return parsed as Manifest;
+  const manifest = { databases: [], extensions: [], canvasItems: [], ...(value as Manifest) };
+  if (!Array.isArray(manifest.extensions)) {
+    throw new Error("Vault manifest contains an invalid extensions list");
+  }
+  for (const extension of manifest.extensions) {
+    if (
+      extension &&
+      typeof extension === "object" &&
+      !Array.isArray(extension) &&
+      !Array.isArray(extension.databaseIds)
+    ) {
+      extension.databaseIds = [];
+    }
+  }
+  for (const extension of manifest.extensions) validateExtension(extension);
+  if (!Array.isArray(manifest.canvasItems)) {
+    throw new Error("Vault manifest contains invalid canvas items");
+  }
+  validateCanvasItems(manifest.canvasItems, manifest.notes, manifest.databases ?? []);
+  return manifest;
+}
+
+export function listExtensions(vault: Vault): ExtensionSummary[] {
+  return (vault.manifest.extensions ?? []).map(extensionSummary);
+}
+
+export function getExtension(vault: Vault, id: string): StoredExtension | null {
+  const extension = (vault.manifest.extensions ?? []).find((item) => item.id === id);
+  return extension ? { ...extension, permissions: [...extension.permissions] } : null;
+}
+
+export async function installExtension(
+  vault: Vault,
+  name: string,
+  source: string,
+): Promise<ExtensionSummary> {
+  if (typeof source !== "string" || Buffer.byteLength(source, "utf8") > EXTENSION_MAX_BYTES) {
+    throw new Error("Extension files must be smaller than 512 KB");
+  }
+  if (!source.trim()) throw new Error("The selected extension file is empty");
+  const extension: StoredExtension = {
+    id: randomUUID(),
+    name: name.trim().slice(0, 100) || "Extension",
+    source,
+    permissions: [],
+    databaseIds: [],
+  };
+  validateExtension(extension);
+  const extensions = (vault.manifest.extensions ??= []);
+  extensions.push(extension);
+  try {
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
+  } catch (error) {
+    extensions.pop();
+    throw error;
+  }
+  return extensionSummary(extension);
+}
+
+export async function setExtensionPermissions(
+  vault: Vault,
+  id: string,
+  permissions: ExtensionPermission[],
+  databaseIds: string[] = [],
+): Promise<void> {
+  if (
+    !Array.isArray(permissions) ||
+    permissions.some((permission) => !EXTENSION_PERMISSIONS.includes(permission)) ||
+    new Set(permissions).size !== permissions.length ||
+    !Array.isArray(databaseIds) ||
+    new Set(databaseIds).size !== databaseIds.length ||
+    databaseIds.some((databaseId) => !databasesFor(vault).some((database) => database.id === databaseId)) ||
+    (databaseIds.length > 0 && !permissions.includes("read_databases"))
+  ) {
+    throw new Error("Invalid extension permissions");
+  }
+  const extension = (vault.manifest.extensions ?? []).find((item) => item.id === id);
+  if (!extension) throw new Error("Extension not found");
+  const previous = extension.permissions;
+  const previousDatabaseIds = extension.databaseIds;
+  extension.permissions = [...permissions];
+  extension.databaseIds = [...databaseIds];
+  try {
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
+  } catch (error) {
+    extension.permissions = previous;
+    extension.databaseIds = previousDatabaseIds;
+    throw error;
+  }
+}
+
+export function listExtensionSamples(): ExtensionSample[] {
+  return EXTENSION_SAMPLES.map(({ id, name, description }) => ({ id, name, description }));
+}
+
+export async function installExtensionSample(
+  vault: Vault,
+  sampleId: string,
+): Promise<ExtensionSummary> {
+  const sample = EXTENSION_SAMPLES.find((item) => item.id === sampleId);
+  if (!sample) throw new Error("Unknown extension sample");
+  const extension = await installExtension(vault, sample.name, sample.source);
+  const stored = (vault.manifest.extensions ?? []).find((item) => item.id === extension.id);
+  if (!stored) throw new Error("The sample extension could not be stored");
+  stored.sampleId = sample.id;
+  try {
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
+  } catch (error) {
+    await removeExtension(vault, extension.id);
+    throw error;
+  }
+  return extensionSummary(stored);
+}
+
+function validateCanvasItems(
+  items: CanvasItem[],
+  notes: NoteMeta[],
+  databases: DatabaseMeta[],
+): void {
+  if (!Array.isArray(items) || items.length > 500) {
+    throw new Error("The canvas may contain up to 500 items");
+  }
+  const ids = new Set<string>();
+  for (const item of items) {
+    const targets = item?.kind === "note" ? notes : item?.kind === "database" ? databases : [];
+    if (
+      !item ||
+      !/^[0-9a-f-]{36}$/i.test(item.id) ||
+      ids.has(item.id) ||
+      typeof item.targetId !== "string" ||
+      !targets.some((target) => target.id === item.targetId) ||
+      !Number.isFinite(item.x) ||
+      !Number.isFinite(item.y) ||
+      item.x < 0 ||
+      item.y < 0 ||
+      item.x > 10000 ||
+      item.y > 10000
+    ) {
+      throw new Error("The canvas contains an invalid item");
+    }
+    ids.add(item.id);
+  }
+}
+
+export function readCanvas(vault: Vault): CanvasItem[] {
+  return (vault.manifest.canvasItems ?? []).map((item) => ({ ...item }));
+}
+
+export async function updateCanvas(vault: Vault, items: CanvasItem[]): Promise<void> {
+  validateCanvasItems(items, vault.manifest.notes, databasesFor(vault));
+  const previous = vault.manifest.canvasItems;
+  vault.manifest.canvasItems = items.map((item) => ({ ...item }));
+  try {
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
+  } catch (error) {
+    vault.manifest.canvasItems = previous;
+    throw error;
+  }
+}
+
+export async function removeExtension(vault: Vault, id: string): Promise<void> {
+  const extensions = vault.manifest.extensions ?? [];
+  const index = extensions.findIndex((item) => item.id === id);
+  if (index < 0) throw new Error("Extension not found");
+  const [removed] = extensions.splice(index, 1);
+  try {
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
+  } catch (error) {
+    extensions.splice(index, 0, removed);
+    throw error;
+  }
+}
+
+async function readManifest(rootPath: string, key: Buffer): Promise<Manifest> {
+  try {
+    const encrypted = await readFile(manifestPath(rootPath));
+    const plaintext = decrypt(unpackPayload(encrypted), key).toString("utf-8");
+    return parseManifest(JSON.parse(plaintext) as unknown);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw new Error("Encrypted vault index is damaged or cannot be decrypted", { cause: error });
+    }
+  }
+  const raw = await readFile(legacyManifestPath(rootPath), "utf-8");
+  return parseManifest(JSON.parse(raw) as unknown);
+}
+
+async function readManifestStrict(rootPath: string, key: Buffer): Promise<Manifest> {
+  return readManifest(rootPath, key);
 }
 
 function validateFolderPath(folderPath: string): void {
@@ -597,8 +1029,9 @@ function validateFolderPath(folderPath: string): void {
   }
 }
 
-async function writeManifest(rootPath: string, manifest: Manifest): Promise<void> {
-  await writeFileAtomic(manifestPath(rootPath), JSON.stringify(manifest, null, 2));
+async function writeManifest(rootPath: string, manifest: Manifest, key: Buffer): Promise<void> {
+  const payload = encrypt(Buffer.from(JSON.stringify(manifest, null, 2), "utf-8"), key);
+  await writeFileAtomic(manifestPath(rootPath), packPayload(payload));
 }
 
 export async function createVault(
@@ -611,7 +1044,18 @@ export async function createVault(
   }
 
   const template = getVaultTemplate(templateId);
-  await mkdir(path.join(rootPath, DRIFTLEAF_DIR), { recursive: true });
+  await mkdir(rootPath, { recursive: true });
+  try {
+    // Exclusive directory creation also rejects concurrent initialization and
+    // incomplete branches. Never overwrite an existing salt or manifest.
+    await mkdir(path.join(rootPath, DRIFTLEAF_DIR));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error("This folder already contains a branch. Open it instead, or choose a new folder.", { cause: error });
+    }
+    throw error;
+  }
+  await mkdir(path.join(rootPath, DRIFTLEAF_DIR, "notes"));
 
   const salt = generateSalt();
   const key = await deriveVaultKey(passphrase, salt);
@@ -621,8 +1065,14 @@ export async function createVault(
   const canary = encrypt(Buffer.from(CANARY_TEXT, "utf-8"), key);
   await writeFile(canaryPath(rootPath), packPayload(canary));
 
-  const manifest: Manifest = { notes: [], folders: [], databases: [] };
-  await writeManifest(rootPath, manifest);
+  const manifest: Manifest = {
+    notes: [],
+    folders: [],
+    databases: [],
+    extensions: [],
+    canvasItems: [],
+  };
+  await writeManifest(rootPath, manifest, key);
 
   const vault: Vault = { rootPath, key, manifest };
   const welcomeNote = await createNote(vault, "", "Welcome to Driftleaf");
@@ -675,15 +1125,25 @@ export async function unlockVault(rootPath: string, passphrase: string): Promise
     throw new Error("Incorrect passphrase");
   }
 
-  const manifest = await readManifest(rootPath);
+  const manifest = await readManifest(rootPath, key);
   const vault: Vault = { rootPath, key, manifest };
+  await mkdir(path.join(rootPath, DRIFTLEAF_DIR, "notes"), { recursive: true });
   const recovery = await reconcileVault(vault);
+  await writeManifest(rootPath, manifest, key);
+  await rm(legacyManifestPath(rootPath), { force: true });
   return { vault, recovery };
 }
 
 interface DiskEncFile {
   folderPath: string;
   fileName: string;
+  private?: boolean;
+}
+
+function diskNotePath(rootPath: string, file: DiskEncFile): string {
+  return file.private
+    ? path.join(rootPath, DRIFTLEAF_DIR, "notes", file.fileName)
+    : legacyNotePath(rootPath, file);
 }
 
 // Recursively finds every `*.enc` file under the vault root (skipping the .driftleaf config
@@ -713,11 +1173,22 @@ async function scanEncFiles(
 
 // Cross-checks the manifest against what's actually on disk and self-heals mismatches left
 // by a crash between a file write and its manifest update (see writeNote/moveNote/deleteNote
-// for the operations this covers), and opportunistically migrates any note still using the
-// pre-"title.md.enc" id-based filename. Runs automatically on every unlock.
+// for the operations this covers), and migrates legacy notes from named paths to opaque-ID
+// paths. Runs automatically on every unlock.
 export async function reconcileVault(vault: Vault): Promise<VaultRecoveryReport> {
   const onDisk = new Map<string, DiskEncFile>();
   await scanEncFiles(vault.rootPath, vault.rootPath, onDisk);
+  const privateNotesPath = path.join(vault.rootPath, DRIFTLEAF_DIR, "notes");
+  await mkdir(privateNotesPath, { recursive: true });
+  for (const entry of await readdir(privateNotesPath, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith(".enc")) {
+      onDisk.set(`@private/${entry.name}`, {
+        folderPath: "",
+        fileName: entry.name,
+        private: true,
+      });
+    }
+  }
 
   const report: VaultRecoveryReport = {
     renamedLegacy: [],
@@ -728,58 +1199,77 @@ export async function reconcileVault(vault: Vault): Promise<VaultRecoveryReport>
   const survivors: NoteMeta[] = [];
 
   for (const meta of vault.manifest.notes) {
-    // Backfill fileName for notes written before this field existed, matching the file's
-    // actual (pre-existing) on-disk name so nothing moves until the migration pass below.
-    if (!meta.fileName) {
-      meta.fileName = `${meta.id}.enc`;
+    const privateName = `${meta.id}.enc`;
+    const privateKey = `@private/${privateName}`;
+    const oldName = meta.fileName ?? `${meta.id}.enc`;
+    const legacyKey = `${meta.folderPath}/${oldName}`;
+    const privatePath = notePath(vault.rootPath, meta);
+    if (!onDisk.has(privateKey) && onDisk.has(legacyKey)) {
+      await mkdir(path.dirname(privatePath), { recursive: true });
+      await rename(legacyNotePath(vault.rootPath, { ...meta, fileName: oldName }), privatePath);
+      onDisk.delete(legacyKey);
+      onDisk.set(privateKey, { folderPath: "", fileName: privateName, private: true });
+      await pruneEmptyLegacyFolders(vault.rootPath, meta.folderPath);
+      report.renamedLegacy.push(meta.id);
     }
-    const key = `${meta.folderPath}/${meta.fileName}`;
-    if (!onDisk.has(key)) {
+    if (!onDisk.has(privateKey)) {
       report.removedDangling.push(meta.id);
       continue;
     }
-    claimed.add(key);
+    claimed.add(privateKey);
+    meta.fileName = privateName;
     survivors.push(meta);
   }
 
-  // Migrate legacy id-named files to the readable "title.md.enc" scheme opportunistically,
-  // so vaults created before this feature get browsable filenames without a manual re-save.
-  for (const meta of survivors) {
-    if (/\.md\.enc$/.test(meta.fileName)) continue;
-    const oldPath = notePath(vault.rootPath, meta);
-    const newFileName = uniqueFileName(vault, meta.folderPath, meta.title, meta.id);
-    const newPath = path.join(vault.rootPath, meta.folderPath, newFileName);
-    try {
-      await rename(oldPath, newPath);
-    } catch {
-      continue; // leave it on the legacy name (e.g. permissions issue); still fully readable
-    }
-    claimed.delete(`${meta.folderPath}/${meta.fileName}`);
-    meta.fileName = newFileName;
-    claimed.add(`${meta.folderPath}/${newFileName}`);
-    report.renamedLegacy.push(meta.id);
+  for (const folder of vault.manifest.folders) {
+    await pruneEmptyLegacyFolders(vault.rootPath, folder);
   }
 
-  for (const [key, { folderPath, fileName }] of onDisk) {
+  for (const [key, { folderPath, fileName, private: isPrivate }] of onDisk) {
     if (claimed.has(key)) continue;
-    const id = randomUUID();
+    const id = isPrivate && /^[0-9a-f-]{36}\.enc$/i.test(fileName)
+      ? fileName.slice(0, -".enc".length)
+      : randomUUID();
     survivors.push({
       id,
-      title: titleFromFileName(fileName),
-      folderPath,
-      fileName,
+      title: isPrivate ? "Recovered note" : titleFromFileName(fileName),
+      folderPath: isPrivate ? "" : folderPath,
+      fileName: `${id}.enc`,
       updatedAt: Date.now(),
     });
     report.recoveredOrphans.push(id);
   }
 
   vault.manifest.notes = survivors;
+  const validNoteIds = new Set(survivors.map((note) => note.id));
+  const validDatabaseIds = new Set(databasesFor(vault).map((database) => database.id));
+  const previousCanvas = vault.manifest.canvasItems ?? [];
+  vault.manifest.canvasItems = previousCanvas.filter((item) =>
+    item.kind === "note" ? validNoteIds.has(item.targetId) : validDatabaseIds.has(item.targetId),
+  );
+  const canvasChanged = vault.manifest.canvasItems.length !== previousCanvas.length;
 
-  if (!isEmptyReport(report)) {
-    await writeManifest(vault.rootPath, vault.manifest);
+  if (!isEmptyReport(report) || canvasChanged) {
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
   }
 
   return report;
+}
+
+async function pruneEmptyLegacyFolders(rootPath: string, folderPath: string): Promise<void> {
+  const parts = folderPath.split("/").filter(Boolean);
+  while (parts.length > 0) {
+    const folder = path.join(rootPath, ...parts);
+    try {
+      await rmdir(folder);
+    } catch (err) {
+      if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes((err as NodeJS.ErrnoException).code ?? "")) {
+        throw err;
+      }
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") break;
+    }
+    parts.pop();
+  }
 }
 
 async function scanVaultFiles(rootPath: string): Promise<{
@@ -808,6 +1298,23 @@ async function scanVaultFiles(rootPath: string): Promise<{
   }
 
   await scanDirectory(rootPath);
+  const privateNotesPath = path.join(rootPath, DRIFTLEAF_DIR, "notes");
+  try {
+    const entries = await readdir(privateNotesPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      if (entry.name.includes(".tmp-")) temporaryFiles++;
+      if (entry.name.endsWith(".enc")) {
+        encryptedFiles.set(`@private/${entry.name}`, {
+          folderPath: "",
+          fileName: entry.name,
+          private: true,
+        });
+      }
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
   return { encryptedFiles, temporaryFiles };
 }
 
@@ -868,7 +1375,7 @@ async function inspectVaultData(
       : "Vault configuration or encrypted key check is missing, invalid, or damaged.",
   );
 
-  const manifestValid = await readManifestStrict(rootPath)
+  const manifestValid = await readManifestStrict(rootPath, key)
     .then(
       (onDiskManifest) =>
         onDiskManifest.notes.every(validManifestNote) &&
@@ -907,7 +1414,11 @@ async function inspectVaultData(
       continue;
     }
     const fileName = note.fileName ?? `${note.id}.enc`;
-    if (path.basename(fileName) !== fileName || !fileName.endsWith(".enc")) {
+    if (
+      path.basename(fileName) !== fileName ||
+      !fileName.endsWith(".enc") ||
+      !/^[0-9a-f-]{36}$/i.test(note.id)
+    ) {
       invalidEntries++;
       continue;
     }
@@ -917,7 +1428,9 @@ async function inspectVaultData(
       invalidEntries++;
       continue;
     }
-    const fileKey = `${note.folderPath}/${fileName}`;
+    const privateKey = `@private/${note.id}.enc`;
+    const legacyKey = `${note.folderPath}/${fileName}`;
+    const fileKey = disk.encryptedFiles.has(privateKey) ? privateKey : legacyKey;
     expected.add(fileKey);
     if (!disk.encryptedFiles.has(fileKey)) {
       missingFiles++;
@@ -928,7 +1441,7 @@ async function inspectVaultData(
   let unreadableFiles = 0;
   for (const file of disk.encryptedFiles.values()) {
     try {
-      const bytes = await readFile(notePath(rootPath, file));
+      const bytes = await readFile(diskNotePath(rootPath, file));
       decodeStrictUtf8(decrypt(unpackPayload(bytes), key));
     } catch {
       unreadableFiles++;
@@ -1027,7 +1540,7 @@ async function inspectVaultData(
 }
 
 export async function inspectVault(vault: Vault): Promise<VaultHealthReport> {
-  const manifest = await readManifest(vault.rootPath);
+  const manifest = await readManifest(vault.rootPath, vault.key);
   return inspectVaultData(vault.rootPath, vault.key, manifest);
 }
 
@@ -1065,7 +1578,7 @@ export async function verifyVaultBackup(
   }
 
   try {
-    const manifest = await readManifest(rootPath);
+    const manifest = await readManifest(rootPath, key);
     return await inspectVaultData(rootPath, key, manifest);
   } finally {
     key.fill(0);
@@ -1112,7 +1625,7 @@ export async function writeNote(vault: Vault, id: string, content: string): Prom
   const payload = encrypt(Buffer.from(content, "utf-8"), vault.key);
   await writeFileAtomic(notePath(vault.rootPath, meta), packPayload(payload));
   meta.updatedAt = Date.now();
-  await writeManifest(vault.rootPath, vault.manifest);
+  await writeManifest(vault.rootPath, vault.manifest, vault.key);
 }
 
 export async function createNote(
@@ -1122,14 +1635,14 @@ export async function createNote(
 ): Promise<NoteMeta> {
   validateFolderPath(folderPath);
   const id = randomUUID();
-  const fileName = uniqueFileName(vault, folderPath, title);
+  const fileName = `${id}.enc`;
   const meta: NoteMeta = { id, title, folderPath, fileName, updatedAt: Date.now() };
-  await mkdir(path.join(vault.rootPath, folderPath), { recursive: true });
+  await mkdir(path.dirname(notePath(vault.rootPath, meta)), { recursive: true });
   const payload = encrypt(Buffer.from("", "utf-8"), vault.key);
   await writeFileAtomic(notePath(vault.rootPath, meta), packPayload(payload));
   vault.manifest.notes.push(meta);
   try {
-    await writeManifest(vault.rootPath, vault.manifest);
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
   } catch (err) {
     // Mirror deleteNote()/deleteFolder()'s rollback: don't leave the note visible
     // in-memory for the rest of the session if it was never actually recorded on disk.
@@ -1147,16 +1660,9 @@ export async function createNote(
 export async function renameNote(vault: Vault, id: string, title: string): Promise<void> {
   const meta = vault.manifest.notes.find((n) => n.id === id);
   if (!meta) throw new Error(`Note not found: ${id}`);
-  const oldPath = notePath(vault.rootPath, meta);
-  const newFileName = uniqueFileName(vault, meta.folderPath, title, id);
-  const newPath = path.join(vault.rootPath, meta.folderPath, newFileName);
-  if (newPath !== oldPath) {
-    await rename(oldPath, newPath);
-  }
   meta.title = title;
-  meta.fileName = newFileName;
   meta.updatedAt = Date.now();
-  await writeManifest(vault.rootPath, vault.manifest);
+  await writeManifest(vault.rootPath, vault.manifest, vault.key);
 }
 
 // Manifest is updated before the file is removed: if a crash happens in between, the
@@ -1166,10 +1672,15 @@ export async function deleteNote(vault: Vault, id: string): Promise<void> {
   const index = vault.manifest.notes.findIndex((n) => n.id === id);
   if (index === -1) throw new Error(`Note not found: ${id}`);
   const [meta] = vault.manifest.notes.splice(index, 1);
+  const previousCanvas = vault.manifest.canvasItems;
+  vault.manifest.canvasItems = (previousCanvas ?? []).filter(
+    (item) => item.kind !== "note" || item.targetId !== id,
+  );
   try {
-    await writeManifest(vault.rootPath, vault.manifest);
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
   } catch (err) {
     vault.manifest.notes.splice(index, 0, meta);
+    vault.manifest.canvasItems = previousCanvas;
     throw err;
   }
   await rm(notePath(vault.rootPath, meta), { force: true });
@@ -1177,10 +1688,9 @@ export async function deleteNote(vault: Vault, id: string): Promise<void> {
 
 export async function createFolder(vault: Vault, folderPath: string): Promise<void> {
   validateFolderPath(folderPath);
-  await mkdir(path.join(vault.rootPath, folderPath), { recursive: true });
   if (!vault.manifest.folders.includes(folderPath)) {
     vault.manifest.folders.push(folderPath);
-    await writeManifest(vault.rootPath, vault.manifest);
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
   }
 }
 
@@ -1188,40 +1698,21 @@ export async function moveNote(vault: Vault, id: string, targetFolder: string): 
   validateFolderPath(targetFolder);
   const meta = vault.manifest.notes.find((n) => n.id === id);
   if (!meta) throw new Error(`Note not found: ${id}`);
-  const oldPath = notePath(vault.rootPath, meta);
-  // Recompute the filename in the target folder in case a note with the same title already
-  // lives there — moving "Notes.md.enc" into a folder that already has one shouldn't collide.
-  const newFileName = uniqueFileName(vault, targetFolder, meta.title, id);
-  const newPath = path.join(vault.rootPath, targetFolder, newFileName);
-
-  // Physical move happens before the in-memory mutation (and before the manifest write) so
-  // a failure here — permissions, a collision uniqueFileName didn't foresee — never leaves
-  // `meta` pointing at a folderPath/fileName the file isn't actually at.
-  if (oldPath !== newPath) {
-    await mkdir(path.join(vault.rootPath, targetFolder), { recursive: true });
-    await rename(oldPath, newPath);
-  }
-
   const prevFolderPath = meta.folderPath;
   const prevFileName = meta.fileName;
   const prevUpdatedAt = meta.updatedAt;
   meta.folderPath = targetFolder;
-  meta.fileName = newFileName;
+  meta.fileName = `${meta.id}.enc`;
   meta.updatedAt = Date.now();
   try {
-    await writeManifest(vault.rootPath, vault.manifest);
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
   } catch (err) {
     meta.folderPath = prevFolderPath;
     meta.fileName = prevFileName;
     meta.updatedAt = prevUpdatedAt;
-    if (oldPath !== newPath) {
-      // Best-effort: move the file back so this session's in-memory rollback matches disk.
-      // If this also fails, the next unlock's reconcileVault() will recover the file at
-      // its new location rather than leave it permanently untracked.
-      await rename(newPath, oldPath).catch(() => {});
-    }
     throw err;
   }
+  await pruneEmptyLegacyFolders(vault.rootPath, prevFolderPath);
   return meta;
 }
 
@@ -1236,11 +1727,6 @@ export async function renameFolder(
   if (newFolderPath !== oldFolderPath && listFolders(vault).includes(newFolderPath)) {
     throw new Error(`A folder named "${newFolderPath}" already exists`);
   }
-
-  // Physical rename happens before the in-memory mutation (and before the manifest write)
-  // so a failure here — e.g. the target already exists as a non-empty directory on disk
-  // but wasn't tracked in the manifest — never leaves the manifest disagreeing with disk.
-  await rename(path.join(vault.rootPath, oldFolderPath), path.join(vault.rootPath, newFolderPath));
 
   const prevNotes = vault.manifest.notes;
   const prevFolders = vault.manifest.folders;
@@ -1266,25 +1752,18 @@ export async function renameFolder(
     );
   }
   try {
-    await writeManifest(vault.rootPath, vault.manifest);
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
   } catch (err) {
     vault.manifest.notes = prevNotes;
     vault.manifest.folders = prevFolders;
     vault.manifest.databases = prevDatabases;
-    // Best-effort: move the directory back so this session's in-memory rollback matches
-    // disk. If this also fails, the next unlock's reconcileVault() will recover notes at
-    // their new on-disk location rather than leave them untracked.
-    await rename(
-      path.join(vault.rootPath, newFolderPath),
-      path.join(vault.rootPath, oldFolderPath),
-    ).catch(() => {});
     throw err;
   }
+  await pruneEmptyLegacyFolders(vault.rootPath, oldFolderPath);
 }
 
-// Same ordering rationale as deleteNote(): manifest drops the entries first, directory
-// removal happens after, so a crash mid-operation leaves orphaned files rather than
-// manifest entries for notes that no longer exist.
+// The encrypted manifest drops entries first, then encrypted note/database files are
+// removed. A crash mid-operation leaves orphaned ciphertext rather than missing entries.
 export async function deleteFolder(vault: Vault, folderPath: string): Promise<string[]> {
   if (!folderPath) throw new Error("Cannot delete the vault root");
   validateFolderPath(folderPath);
@@ -1318,6 +1797,9 @@ export async function deleteFolder(vault: Vault, folderPath: string): Promise<st
   const prevNotes = vault.manifest.notes;
   const prevFolders = vault.manifest.folders;
   const prevDatabases = [...databasesFor(vault)];
+  const prevCanvas = vault.manifest.canvasItems;
+  const deletedNoteIds = new Set(deletedIds);
+  const deletedDatabaseIds = new Set(affectedDatabaseIds);
   vault.manifest.notes = vault.manifest.notes.filter((n) => !deletedIds.includes(n.id));
   vault.manifest.databases = prevDatabases.filter(
     (database) =>
@@ -1326,18 +1808,25 @@ export async function deleteFolder(vault: Vault, folderPath: string): Promise<st
   vault.manifest.folders = vault.manifest.folders.filter(
     (f) => f !== folderPath && !f.startsWith(folderPath + "/"),
   );
+  vault.manifest.canvasItems = (prevCanvas ?? []).filter((item) =>
+    item.kind === "note"
+      ? !deletedNoteIds.has(item.targetId)
+      : !deletedDatabaseIds.has(item.targetId),
+  );
   try {
-    await writeManifest(vault.rootPath, vault.manifest);
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
   } catch (err) {
     vault.manifest.notes = prevNotes;
     vault.manifest.folders = prevFolders;
     vault.manifest.databases = prevDatabases;
+    vault.manifest.canvasItems = prevCanvas;
     throw err;
   }
   await Promise.all(
     affectedDatabases.map((database) => rm(databasePath(vault, database.id), { force: true })),
   );
-  await rm(path.join(vault.rootPath, folderPath), { recursive: true, force: true });
+  await Promise.all(affected.map((note) => rm(notePath(vault.rootPath, note), { force: true })));
+  await pruneEmptyLegacyFolders(vault.rootPath, folderPath);
   return deletedIds;
 }
 
@@ -1410,6 +1899,8 @@ export async function importFiles(
           targetFolder,
           parsed.properties,
           parsed.rows,
+          parsed.views,
+          parsed.activeViewId,
         );
         importedDatabases.push(meta);
       } else {
@@ -1437,30 +1928,64 @@ async function importZipArchive(
   zipPath: string,
   targetFolder: string,
 ): Promise<ImportResult> {
-  const imported: NoteMeta[] = [];
-  const importedDatabases: DatabaseMeta[] = [];
-  const skipped: string[] = [];
-
   let entries;
   try {
     entries = new AdmZip(zipPath).getEntries();
   } catch (err) {
     return {
-      imported,
-      importedDatabases,
+      imported: [],
+      importedDatabases: [],
       skipped: [
         `${path.basename(zipPath)} (${err instanceof Error ? err.message : "couldn't read archive"})`,
       ],
     };
   }
 
+  return importZipEntries(vault, entries, path.basename(zipPath), targetFolder);
+}
+
+export async function importTemplateArchive(
+  vault: Vault,
+  archive: Uint8Array,
+  templateName: string,
+): Promise<ImportResult> {
+  if (archive.byteLength > 25 * 1024 * 1024) {
+    throw new Error("Templates must be smaller than 25 MB");
+  }
+  let entries;
+  try {
+    entries = new AdmZip(Buffer.from(archive)).getEntries();
+  } catch (err) {
+    throw new Error(
+      `Could not read template archive: ${err instanceof Error ? err.message : "invalid ZIP file"}`,
+      { cause: err },
+    );
+  }
+  const safeName = templateName.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-").trim();
+  if (!safeName) throw new Error("Template name is invalid");
+  return importZipEntries(
+    vault,
+    entries,
+    `${safeName}.zip`,
+    `Community templates/${safeName}`,
+  );
+}
+
+async function importZipEntries(
+  vault: Vault,
+  entries: ReturnType<AdmZip["getEntries"]>,
+  archiveName: string,
+  targetFolder: string,
+): Promise<ImportResult> {
+  const imported: NoteMeta[] = [];
+  const importedDatabases: DatabaseMeta[] = [];
+  const skipped: string[] = [];
+
   if (entries.length > MAX_IMPORT_ENTRIES) {
     return {
       imported,
       importedDatabases,
-      skipped: [
-        `${path.basename(zipPath)} (archive has too many entries — over ${MAX_IMPORT_ENTRIES})`,
-      ],
+      skipped: [`${archiveName} (archive has too many entries — over ${MAX_IMPORT_ENTRIES})`],
     };
   }
 
@@ -1507,6 +2032,8 @@ async function importZipArchive(
           folderPath,
           parsed.properties,
           parsed.rows,
+          parsed.views,
+          parsed.activeViewId,
         );
         importedDatabases.push(meta);
       }

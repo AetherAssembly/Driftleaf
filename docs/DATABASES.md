@@ -1,9 +1,11 @@
 # Databases
 
 Driftleaf databases can be created directly or imported from CSV and JSON.
-Databases appear in the vault's folder in the sidebar and open in a table view.
-Their rows and property definitions are stored encrypted in the vault; they are
-not converted into Markdown notes.
+Databases appear in the branch's folder in the sidebar and can be explored as
+table, board, calendar, gallery, or list views. Rows, properties, and view
+definitions are stored encrypted in the branch; they are not converted into
+Markdown notes. See the [Database Roadmap](DATABASE_ROADMAP.md) for planned
+database improvements.
 
 ## Create a database
 
@@ -15,8 +17,8 @@ name can be entered when prompted. Add rows and properties in the table view.
 
 Choose **Import** and select a `.csv`, `.json`, or `.zip` file. CSV and JSON
 files can be selected directly or included in a ZIP archive. Import places each
-database in the currently selected vault folder. ZIP paths are preserved as
-vault folders. Markdown files in the same import can be imported alongside
+database in the currently selected branch folder. ZIP paths are preserved as
+branch folders. Markdown files in the same import can be imported alongside
 databases.
 
 - **CSV:** the header row becomes the property names. Driftleaf infers common
@@ -35,11 +37,42 @@ databases.
 If an item cannot be imported, Driftleaf reports it as skipped while continuing
 with other selected files or archive entries.
 
+## Properties
+
+Choose **+ Add property** below the current view to add any number of columns.
+Select a name and type; define select, status, and multi-select choices in the
+editor by separating options with commas or new lines. Use **Manage
+properties** below the current view to delete properties from any view.
+Formula is a calculated property type rather than an
+editable cell: select **Formula (calculated)**, give it a name, and enter its
+expression in the formula editor before adding it. A preview is shown when rows
+exist. Formula cells are read-only; edit the expression from its column header.
+
+Every column header offers **Rename** and **Delete** actions. Renaming updates
+formula references that use `prop("Property name")`. The title property cannot
+be deleted. Deleting a property also removes its row values, saved filters, and
+sort/group/date selections. Properties referenced by formulas or rollups must
+first be removed from those dependent calculations.
+
 ## Edit a table
 
 - Use **+ Row** to add a row. Edit the cells directly in the table; changes are
   saved to the encrypted database.
-- Use **+ Property** to add a property. Supported property types include text,
+- Use the view tabs to switch between named views. Use **Add view** to add a
+  Table, Board, Calendar, Gallery, List, or Timeline view. View settings are
+  encrypted with the database.
+- Sort rows by a property and choose a direction. Search across row values, or
+  add property-specific contains filters. Table and Board views can group by a
+  select, status, or checkbox property. Calendar views use a date property and
+  can be displayed by week or month; navigation follows the selected mode.
+  Use **Today** to return to the current week/month, edit event details in
+  place, and add a row directly on a day.
+  Timeline views use a required start-date
+  property and can optionally use an end-date property; navigate month by
+  month to inspect dates.
+- Board and calendar cards show the title and a few other properties; edit
+  supported cells in place or switch to Table for the full row.
+- Use **+ Add property** to add another property at any time. Supported property types include text,
   title, number, checkbox, date, select, multi-select, URL, email, phone,
   people, files, formula, relation, and rollup.
 - Use **Delete** on a row to remove it. References to that row in relation
@@ -49,26 +82,9 @@ with other selected files or archive entries.
 
 ## Formulas
 
-Create a **formula** property, then choose **Formula** in its cell or **Edit
-formula** in the column header. Reference a property by name with
-`prop("Property name")`. For example:
-
-```text
-if(prop("Done"), "Complete", "Open")
-```
-
-The safe formula evaluator supports arithmetic and comparison operators,
-`&&`, `||`, `!`, property references, and common functions including
-`if`, `ifs`, `and`, `or`, `not`, `empty`, `length`, `contains`, `startsWith`,
-`endsWith`, `replace`, `replaceAll`, `lower`, `upper`, `trim`, `abs`, `ceil`,
-`floor`, `round`, `min`, `max`, `sum`, `average`, `mod`, `pow`, `sqrt`, `sign`,
-`join`, `slice`, `concat`, `toNumber`, `toString`, `format`, `now`, `today`,
-`dateAdd`, `dateSubtract`, `dateBetween`, `dateStart`, `dateEnd`, and
-`formatDate`.
-
-Formula results are calculated in the table and are not written back into row
-cells. Errors appear in the affected formula cell. This is a common-functions
-subset, not full Notion formula-language compatibility.
+Formula properties calculate a read-only value for each row using that row's
+other properties. See [Database Formulas](formula.md) for a short introduction
+and examples.
 
 ## Relations and rollups
 
@@ -83,16 +99,31 @@ definition. Separately imported Notion databases are not connected
 automatically: recreate their relation properties in Driftleaf. Relations are
 not required for importing and browsing the source CSV or JSON data.
 
+## Export
+
+Use **Export CSV** for a spreadsheet-friendly snapshot of current cell values.
+Formula columns export their calculated results, not the formula definitions;
+relations, multi-selects, people, and files are flattened to comma-separated
+text in CSV. CSV cannot preserve Driftleaf property types or saved views.
+
+Use **Export JSON** for a lossless Driftleaf database backup. It includes
+property definitions, formula expressions, row values, and saved views. Import
+that JSON file into Driftleaf to restore those structures as a new database.
+Both formats are written as plaintext files outside the encrypted branch, so
+Driftleaf asks you to confirm before exporting.
+
 ## Privacy and backups
 
-The manifest stores database titles, IDs, folder paths, and timestamps in
-plaintext so Driftleaf can list databases. Property definitions and row values
-are encrypted together in `.driftleaf/<database-id>.db.enc` with the vault key.
-Create backups from **Settings → Diagnostics & Vault Health → Create backup**;
+The manifest stores database titles, IDs, folder paths, and timestamps
+encrypted in `manifest.enc`. Property definitions, saved views, formulas, and
+row values are encrypted together in `.driftleaf/<database-id>.db.enc` with
+the branch key.
+Create backups from **Settings → Diagnostics & Branch Health → Create backup**;
 this includes the hidden `.driftleaf/` directory. Health checks and backup
 verification also validate encrypted database files.
 
-The database index metadata is stored in `manifest.json`. Unlike Markdown notes,
-database files cannot currently be re-indexed automatically if that manifest is
-lost. Restore the manifest or `.driftleaf/` directory from a backup; see
-[Vault Recovery](RECOVERY.md).
+The database index metadata is stored encrypted in `manifest.enc`. Unlike
+Markdown notes, database files cannot currently be re-indexed automatically if
+that manifest is lost. Restore `manifest.enc` or the `.driftleaf/` directory
+from a backup; see
+[Branch Recovery](RECOVERY.md).

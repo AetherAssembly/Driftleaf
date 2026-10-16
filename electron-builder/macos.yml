@@ -12,6 +12,7 @@ asarUnpack:
   - node_modules/better-sqlite3/**/*.node
 artifactName: 'driftleaf-${version}-mac.${ext}'
 mac:
+  identity: null
   target:
     - dmg
     - zip

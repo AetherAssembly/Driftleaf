@@ -8,51 +8,45 @@ same page for testing.
 
 ### Debian, Ubuntu, and Raspberry Pi OS
 
-#### Add the Driftleaf apt repository
+#### Stable APT repository (recommended)
 
-> The APT repo is currently down. We will inform you as soon as it is active again. Until then please follow the manual installation.
+The signing-key fingerprint must be `32B72F22E77E21F510B31849A7B44812A39EEB9C`. Both applications use this key. The repository supports **amd64** and **arm64**, including 64-bit Raspberry Pi OS; 32-bit armhf is not supported.
 
-Import the signing key and add the repository:
-
-```sh
-curl -fsSL https://apt.aetherassembly.org/driftleaf/driftleaf.gpg.pub | \
-	sudo gpg --dearmor -o /usr/share/keyrings/driftleaf.gpg
-
-echo "deb [signed-by=/usr/share/keyrings/driftleaf.gpg] https://apt.aetherassembly.org/driftleaf stable main" | \
-	sudo tee /etc/apt/sources.list.d/driftleaf.list
-```
-
-Update the package index and confirm that apt can see Driftleaf:
+Only stable releases are published to APT. New stable releases may take up to 12 hours to appear. Beta releases are available directly from GitHub; there is no beta APT channel.
 
 ```sh
 sudo apt update
-apt-cache policy driftleaf
-```
+sudo apt install ca-certificates curl gnupg
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://apt.aetherassembly.org/before-its-gone/apt-repo-public.asc -o /tmp/aetherassembly-apt-public.asc
+gpg --show-keys --with-fingerprint /tmp/aetherassembly-apt-public.asc
 
-Install Driftleaf:
-
-```sh
+# Confirm the fingerprint below before continuing.
+sudo install -m 0644 /tmp/aetherassembly-apt-public.asc /etc/apt/keyrings/aetherassembly.asc
+echo "deb [arch=amd64,arm64 signed-by=/etc/apt/keyrings/aetherassembly.asc] https://apt.aetherassembly.org/driftleaf stable main" \
+  | sudo tee /etc/apt/sources.list.d/driftleaf.list >/dev/null
+rm /tmp/aetherassembly-apt-public.asc
+sudo apt update
 sudo apt install driftleaf
 ```
 
-To update an existing installation later:
+To update later:
 
 ```sh
 sudo apt update
-sudo apt upgrade driftleaf
+sudo apt install --only-upgrade driftleaf
 ```
 
-The release workflow currently documents the update command, but does not publish the
-repository URL or signing-key setup. Use the repository setup instructions provided with
-the apt repository before running these commands.
+If you previously configured the old AetherAssembly repository, remove its obsolete source entry (including any beta entry) before adding the new one. Do not remove other applications' source entries.
 
-You can also download the matching `.deb` from the GitHub release and install it with:
+#### Manual Debian package
+
+Download the matching stable `.deb` from GitHub Releases, then install it with:
 
 ```sh
 sudo apt install ./driftleaf-<version>-amd64.deb
+# For ARM64, use the asset ending in arm64.deb instead.
 ```
-
-For ARM64 systems, use the release asset ending in `arm64.deb`.
 
 ### Fedora, RHEL, CentOS Stream, Rocky Linux, and AlmaLinux
 
@@ -101,8 +95,7 @@ chmod +x driftleaf-<version>-x86_64.AppImage
 ./driftleaf-<version>-x86_64.AppImage
 ```
 
-The release workflow also mentions Arch Linux. No Arch package is published by the
-workflow, so use the matching AppImage there.
+The AppImage is also available for Arch Linux.
 
 ### Verify a download
 
@@ -118,17 +111,13 @@ Compare the result with the checksum shown in the release notes.
 ## macOS
 
 Download the DMG from the release page, open it, and drag Driftleaf to Applications.
-The macOS packaging command also creates a ZIP artifact, but the current release workflow
-uploads the DMG to GitHub Releases.
-
-The app is not notarized. If macOS reports that the app is damaged or refuses to open
-it after installation, remove the quarantine flag:
+The published macOS download is a DMG. The app is unsigned and not notarized,
+so macOS may block it from opening. In that case, removing its quarantine flag
+allows it to open:
 
 ```sh
 xattr -d com.apple.quarantine "/Applications/Driftleaf.app"
 ```
-
-Then open Driftleaf from Applications.
 
 ## Windows
 
@@ -142,8 +131,7 @@ download, select **More info**, then **Run anyway**.
 
 ## Beta releases
 
-Beta releases are marked as prereleases on GitHub and use separate beta package names on
-Linux. Install them only when testing a release candidate or reporting a bug. Stable
-releases remain available at the [latest release](https://github.com/AetherAssembly/Driftleaf/releases/latest).
-
-Eventually there will be a Driftleaf Beta COPR/OBS/APT Repo, just as there is for Before It's Gone
+Beta releases are marked as prereleases on GitHub and use separate beta package
+names on Linux. They contain in-progress changes and are intended for
+evaluation before a stable release. Stable releases remain available at the
+[latest release](https://github.com/AetherAssembly/Driftleaf/releases/latest).

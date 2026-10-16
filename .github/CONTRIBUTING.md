@@ -10,7 +10,7 @@ Please read our [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before contributing. We
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 22 (matches CI)
 - npm
 - Git
 - (For releases) A GitHub Personal Access Token with `read:packages` scope to install `@aetherAssembly/ui` from GitHub Packages
@@ -108,6 +108,16 @@ These changes require extra care:
    - Error handling is critical
    - Friendly error messages for user-facing failures
 
+4. **Extensions and external boundaries** (`src/main/ipc.ts`, `src/preload/`)
+   - Keep extension IPC read-only and permission-checked in the main process
+   - Do not expose the regular renderer API to extension windows
+   - Test grant revocation and database allowlists
+
+5. **Updates and packaging** (`src/main/updates.ts`, `electron-builder/`, `.github/workflows/release.yml`)
+   - Preserve updater metadata, blockmaps, and macOS ZIP assets
+   - Do not enable macOS automatic updates until signing and notarization are configured
+   - Keep Linux installation manual; update detection must not replace package-manager workflows
+
 ### Testing
 
 - New features should include tests
@@ -126,6 +136,7 @@ These changes require extra care:
    npm run lint
    npm run build
    scripts/tests/data-loss.js  # if vault-related
+   npm run package:windows     # when changing Windows packaging/update behavior
    ```
 
 4. **Open a PR** using the PR template (it appears automatically)
@@ -138,6 +149,7 @@ These changes require extra care:
 - **Performance** - Does this slow down critical paths?
 - **UX** - Is the user experience clear?
 - **Code clarity** - Is the intent obvious?
+- **Privacy and permission boundaries** - Does this send metadata externally or broaden an extension grant?
 
 ## Code Style
 
@@ -161,6 +173,8 @@ If your change affects users, update:
 
 - [README.md](../README.md) - If it's user-facing
 - [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) - If it changes internals
+- [docs/UPDATES.md](../docs/UPDATES.md) - If it changes update checks, artifacts, or signing
+- [docs/EXTENSIONS.md](../docs/EXTENSIONS.md) - If it changes the extension API or grants
 - JSDoc comments on exported functions
 
 ## Licensing

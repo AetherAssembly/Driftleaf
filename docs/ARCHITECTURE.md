@@ -1,122 +1,80 @@
-# Architecture
+# How Driftleaf Keeps Your Data
 
-## Process Layout
+In the app's interface, this private workspace is called a **branch**. The
+internal API and storage implementation still use **vault** terminology (for
+example, `window.driftleaf.vault`, `vault:*` IPC channels, and the `.driftleaf`
+directory inside it). The API and IPC names refer to the branch; `.driftleaf`
+is its hidden data directory. This does not mean a Git branch.
 
-Standard Electron three-process split:
+Driftleaf stores each branch as a folder on your computer. There is no account
+or cloud service holding your notes. Your branch remains available offline,
+and you choose where its folder lives.
 
-- **`src/main`** — Node-side app logic (window management, vault file access, encryption, search index, IPC handlers). Nothing here talks directly to the renderer — everything goes through IPC and the preload bridge.
-- **`src/preload`** — the `contextBridge` surface exposed to the renderer as `window.driftleaf`, typed by `src/shared/ipc.ts`. The renderer never gets raw Node/fs access.
-- **`src/renderer`** — React UI built with `@aetherAssembly/ui` components (`Button`, `Card`, `Input`, `Modal`, `Badge`) rather than bespoke chrome. See [UI Library](#ui-library) below.
-- **`src/shared`** — types and IPC channel names shared by main and renderer, so the two sides can't drift out of sync.
+## Encryption and privacy
 
-## Vault Layout
+Notes, database contents, and branch organization are encrypted while stored.
+The branch passphrase protects the encryption key; Driftleaf does not keep a
+copy and cannot reset a forgotten passphrase. Note titles, folder names,
+database details, extensions, and canvas layout are encrypted along with the
+content. On disk, encrypted notes use opaque filenames rather than their
+titles.
 
-A **vault** is a folder tree on disk — one directory per Driftleaf workspace. Organization is folder-based (not tags). The on-disk folder structure *is* the note organization the app shows.
+When a branch is unlocked, Driftleaf decrypts the information needed for the
+open session. Search and note-link information are kept in memory and cleared
+when the branch is locked. They are not saved as a separate, unencrypted index.
 
-```bash
-my-vault/
-├── .driftleaf/
-│   ├── vault.json        vault metadata: format version, scrypt salt (not the key)
-│   ├── canary.enc        known-plaintext blob, used to verify a passphrase on unlock
-│   ├── manifest.json     plaintext note, folder, and database metadata
-│   └── <database-id>.db.enc  encrypted database schema and rows
-├── Inbox/
-│   └── Grocery list.md.enc
-├── Projects/
-│   └── Driftleaf/
-│       └── Release checklist.md.enc
-```
+Driftleaf does not send branch contents to an account or cloud service. Optional
+update checks request public release information from GitHub; community
+galleries request public release information and assets when opened or
+refreshed. Those services receive ordinary network request metadata, but not
+your notes or account identity. See [Software Updates](UPDATES.md) and
+[Community extensions and templates](COMMUNITY.md).
 
-Each note's `.enc` filename is derived from its title (`<title>.md.enc`, with a " (2)" suffix on a same-folder title collision). Like any encrypted file, it keeps its name with the extension changed, so the vault folder is browsable in a normal file manager. `fileName` stays in sync with `title` via `renameNote()` / `moveNote()` (see [Vault Resilience](#vault-resilience)). The `id` is purely an internal handle (React keys, search index, IPC references) — decoupled from where the file lives on disk.
+## Branch files and backups
 
-Database titles, IDs, folder placement, and update times are listed in the plaintext manifest. Each database's properties and rows are serialized and encrypted together in `.driftleaf/<database-id>.db.enc` with the vault key. A database is shown as a table in the app; it is not stored as a normal Markdown file.
+A branch is a regular folder with a hidden `.driftleaf` directory containing
+encrypted notes, databases, and the metadata needed to organize them. A backup
+needs the whole branch, including that hidden directory. Copying only visible
+note files does not preserve the complete branch.
 
-The search index is **not** persisted to disk. See [Search](#search) below.
+Driftleaf checks branch files when they are opened and detects encrypted content
+that is damaged or incomplete. Some interrupted changes can be recovered
+automatically, but lost metadata or a forgotten passphrase cannot be
+reconstructed. See [Branch Recovery](RECOVERY.md) for backup and recovery
+details.
 
-## Encryption
+## Notes, links, and search
 
-Notes and database contents are encrypted at rest — this is not a bolt-on. Implemented in `src/main/crypto.ts` and `src/main/vault.ts`:
+Notes use Markdown and include a live preview. Search covers note titles and
+content in the unlocked branch. Links written as
+`[[Note title]]` appear in previews and connect notes in the graph. A folder
+path can distinguish notes with duplicate titles, as in
+`[[Projects/Driftleaf]]`; unresolved or ambiguous links remain ordinary text.
 
-- One key per vault, AES-256-GCM, in one of two modes (`vault.json`'s `kdf` field). Encryption itself is never optional — only the passphrase gate varies:
-  - **`"scrypt"`** — key derived from a user passphrase via scrypt (`N=2^17, r=8, p=1`, `maxmem=256MB`) and a stored salt. Nothing about the key is recoverable without the passphrase.
-  - **Legacy `"none"`** — old vaults can still be opened with an empty passphrase for compatibility, but Driftleaf no longer creates new vaults in this mode. A key stored directly in `vault.json` (`keyHex`) means any attacker with vault access can decrypt the contents, so this path is intentionally disabled for new vault creation.
-- Each note file's markdown content is encrypted individually, framed on disk as `[iv][authTag][ciphertext]` (`<title>.md.enc`), regardless of which kdf mode the vault uses.
-- Database schema and row values are encrypted as a single payload per database (`.driftleaf/<database-id>.db.enc`). The manifest contains only database metadata needed to list and locate it.
-- A canary file (`canary.enc`, a known plaintext string encrypted with the vault key) lets unlock fail fast with "incorrect passphrase" instead of surfacing a raw AES-GCM auth-tag error. Also doubles as a corruption check for `"none"`-mode vaults, which have no passphrase to get wrong.
+The graph and backlinks are derived from the notes currently available in the
+unlocked branch. They are not separate copies of note content.
 
-### Design Decisions
+## Databases, canvas, and extensions
 
-- **Plaintext manifest sidecar:** note titles, database titles, IDs, and folder placement live in `manifest.json`, not inside the encrypted files. This trades some metadata privacy (an attacker with disk access can see titles and the folder tree, but not content) for a sidebar/search UI that doesn't require decrypting the whole vault on every render. Note content and database properties/rows are encrypted; names, IDs, folder placement, and timestamps are plaintext.
-- **No recovery path** (explicit decision, not an oversight): for `"scrypt"`-mode vaults, a lost passphrase means the note content is unrecoverable (the manifest would still list titles, but not content). `UnlockScreen` gates vault creation with a confirmation modal stating this plainly before the vault is created. See [RECOVERY.md](RECOVERY.md) for the full story.
+Databases support rows, properties, formulas, relations, rollups, and saved
+table, board, and calendar views. Database contents and view settings are
+encrypted in the branch. CSV and JSON imports become Driftleaf databases; see
+[Databases](DATABASES.md) for supported formats and their limitations.
 
-## Vault Resilience
+Canvas is a spatial view of references to notes and database views. Its cards
+do not duplicate or replace the underlying content, and removing a card does
+not delete its target.
 
-Vault writes are structured so a crash or power loss mid-operation can't corrupt or silently lose a note. Three mechanisms, all in `src/main/vault.ts`:
+JavaScript extensions run in isolated windows and start without permissions.
+Each permission is explicit, and database access is separately limited to
+selected databases. Extensions can read only the information covered by their
+grants; they cannot write notes or databases through the extension interface.
+Extensions are still code, so installing one means trusting its source. See
+[Extensions](EXTENSIONS.md) for details.
 
-- **Atomic file writes** (`writeFileAtomic`): every write to a `.enc` file or `manifest.json` goes to a sibling temp file first, then lands via `rename()`, which POSIX and NTFS both guarantee is atomic within a directory. A crash mid-write leaves either the old file intact or nothing — never a half-written, unparseable one.
+## Updates
 
-- **Safe operation ordering + self-healing reconciliation**: multi-step operations (write note content → update manifest; rename/move file → update manifest; drop manifest entry → delete file) are ordered so a crash between the two steps only ever produces a *safe* mismatch — a manifest entry pointing at a file that no longer exists, never data loss. `reconcileVault()` runs automatically on every `unlockVault()` call, walks the vault directory building the set of `(folderPath, fileName)` pairs actually on disk, and fixes up three cases:
-  - Manifest entries whose file isn't on disk → dropped (dangling)
-  - `.enc` files on disk not claimed by any manifest entry → re-added with a fresh `id` and a title recovered from the filename
-  - Notes still on the pre-title-filename scheme (`<id>.enc`) → renamed on disk to `<title>.md.enc`
-
-  Because a crash mid-`renameNote()`/`moveNote()` is just an atomic disk rename followed by a manifest write, those two cases are the *only* things that can happen. The report of what it fixed (`VaultRecoveryReport`) is returned through `vault:unlock` and surfaced as a toast in the renderer.
-
-- **Corruption detection on read**: AES-256-GCM's auth tag already fails on any bit-flip or truncation of a `.enc` file, so `readNote()` catches that decrypt failure and reports "Note is corrupted and cannot be decrypted" instead of letting a raw crypto error surface.
-
-### If Your Vault Won't Open at All
-
-If `.driftleaf/vault.json` or `canary.enc` is missing or unreadable, the vault can't be unlocked — these hold key material and aren't self-healing. Restore them from a backup of the `.driftleaf/` directory. Note files can be re-indexed from disk if `manifest.json` is lost, but database metadata cannot: database files are named by internal ID and are not automatically recovered. Restore the manifest (preferably the entire `.driftleaf/` directory) from a backup to retain databases.
-
-## Import
-
-`importFiles()` (`src/main/vault.ts`) imports a batch of Markdown notes and databases into the currently selected folder:
-
-- **`.md` files** become notes titled after the filename (minus extension), with the file's contents as note content.
-- **`.csv` files** become databases. Column names become properties, common types are inferred, and common headers such as tags, status, URL, email, and phone receive type hints.
-- **`.json` files** become databases from an array of objects or a top-level `data`, `results`, or `records` array. Notion-style exported property values and common type hints are normalized where supported.
-- **`.zip` archives** (parsed with `adm-zip`, a pure-JS dependency — no native module rebuild step) are walked for `.md`, `.csv`, and `.json` entries at any depth. The archive's internal folder structure is recreated under the target folder. Other entry types are ignored. Zip paths reject traversal and absolute paths to prevent zip-slip. Archives are limited to 20,000 entries and imported entries to 20 MiB each.
-
-Database tables support editable rows and properties, formula properties, relations to other Driftleaf databases, and basic rollups. Notion CSV exports do not include formula definitions, and formulas/relations are not guaranteed to transfer from JSON exports; formulas can be recreated in Driftleaf and relations between imported databases must be set up manually. Formula evaluation is a safe, limited implementation rather than full Notion formula-language compatibility.
-
-One bad file or archive entry doesn't abort the batch — failures are reported as skipped items so a single malformed file doesn't lose the rest of the import. See [DATABASES.md](DATABASES.md) for user-facing import, editing, formula, and relation details.
-
-## Search
-
-Local full-text search via SQLite FTS5 (`src/main/search.ts`), indexing note content.
-
-The index is `better-sqlite3` opened against `:memory:` and rebuilt from decrypted content each time a vault is unlocked (`buildIndex`), then kept in sync incrementally on every write (`reindexNote`) and delete (`removeFromIndex`). It is never written to disk, so no encrypted-index format was needed.
-
-**Performance (v0.2.0):** the build process uses parallel decryption (via `Promise.all()`) and transaction wrapping for batch inserts, with timing instrumentation available. Enable performance logging with `DEBUG_SEARCH=1` before running `npm run dev`, then open Electron DevTools (Ctrl+Shift+I) to see detailed timing breakdowns. See [PERFORMANCE.md](PERFORMANCE.md) for benchmarking methodology and baseline metrics.
-
-Search queries are tokenized into quoted-prefix terms (`"word"*` per word) before being handed to FTS5's `MATCH`, so free-text user input can't inject FTS5 query syntax (column filters, boolean operators).
-
-## Packaging
-
-Electron packaging config is split by platform rather than one shared `electron-builder.yml`, mirroring [Before-Its-Gone](https://github.com/AetherAssembly/Before-Its-Gone)'s build process:
-
-```bash
-electron-builder/
-├── linux.yml         linux.beta.yml    AppImage + deb + rpm
-├── macos.yml         macos.beta.yml    dmg + zip
-└── windows.yml       windows.beta.yml  nsis installer + portable
-build/                                  electron-builder buildResources
-├── icon.png / icon.svg                 app icon (1024×1024 source; electron-builder
-│                                        derives .icns/.ico from the PNG)
-├── agpl.txt                            full AGPL-3.0 text (copy of repo LICENSE),
-│                                        shown as the second Windows license page
-├── pre-install.txt / post-install.txt  Windows installer welcome/finish page text
-└── installer.nsh                       custom NSIS macros wiring the above into the
-                                         installer flow (welcome/license/finish pages)
-assets/
-├── eula.rtf                            Windows installer EULA (first license page)
-└── installer-sidebar.png / .svg        164×314 NSIS welcome/finish page sidebar image
-```
-
-Each platform has a `:beta` config building under a distinct `appId` / `productName` (`Driftleaf-Beta`), so a beta build can be installed side-by-side with a stable one. `package.json`'s `package:*` / `package:*:beta` scripts run `npm run build` (typecheck + Vite bundle, no packaging) followed by `electron-builder --config electron-builder/<platform>.yml`; `publish:*` scripts are the same with `--publish always`, pushing to the `Driftleaf` GitHub release matching the current version. All of this produces **unsigned** dev builds; code signing and notarization are planned but not yet implemented.
-
-## UI Library
-
-Driftleaf's renderer is built on `@aetherAssembly/ui` (published to GitHub Packages, see `.npmrc`), the shared AetherAssembly component library, instead of bespoke UI primitives. `Button`, `Card`, `Input`, `Modal`, and `Badge` cover the current screens (unlock flow, sidebar, editor toolbar). It requires React 19 as a peer dependency, which is why Driftleaf is on React 19 rather than 18.
-
-App-specific layout (sidebar/editor grid, split-pane preview) is plain CSS in `src/renderer/app.css`, layered on top of `@aetherAssembly/ui`'s `--ae-*` design tokens rather than overriding its components' internals.
+The Updates settings show the installed version and available releases.
+Windows installer builds support in-app downloads and installation. Linux and
+unsigned macOS builds link to releases for manual installation. See
+[Software Updates](UPDATES.md).

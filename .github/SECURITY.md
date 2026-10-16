@@ -25,9 +25,10 @@ We will:
 ### For Users
 
 - **Passphrase is your only security** - Driftleaf derives the encryption key from your passphrase using scrypt. Choose a strong passphrase.
-- **No password reset** - If you forget your passphrase, your vault cannot be recovered. Write it down and store it safely.
+- **No password reset** - If you forget your passphrase, your branch cannot be recovered. Write it down and store it safely.
 - **Local-first by default** - Notes are always encrypted on disk. Sync (when added) will be optional and you control the server.
-- **Keep updated** - Install security updates when available.
+- **Keep updated** - Driftleaf checks GitHub release metadata for updates by default. You can disable startup checks in Settings; install security updates promptly.
+- **Review extensions** - Extensions are executable JavaScript. Read the source before installing and grant only the note, graph, or specifically selected database access required.
 
 ### For Developers
 
@@ -38,21 +39,24 @@ Driftleaf uses:
 - **12-byte IV** per note (GCM recommended)
 - **16-byte authentication tag** for corruption detection
 - **Atomic writes** for crash safety
+- **Isolated extensions** with main-process permission checks and no network access
+- **Platform-aware updates** (Windows installer auto-update; manual installation for Linux and unsigned macOS)
 
 See [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) for full details.
 
 ## Known Limitations
 
-### v0.2.0 (Pre-Release)
+### Releases and updates
 
-- **Unsigned builds** - Binaries are not code-signed (planned for v1.0)
+- **Signing varies by release** - Windows and macOS signing depend on release secrets and platform configuration; do not assume every artifact is signed.
 - **No security audit** - External review is planned for RC phase
 - **No sync** - Sync feature is post-v1.0 stretch work
 - **Passphrase only** - No biometric or hardware key support (future work)
+- **Update checks** - Startup checks contact GitHub for public release metadata; they do not send branch data. Checks can be disabled in Settings.
 
-### Vault Security
+### Branch Storage Security
 
-- Vault writes are **crash-safe** via atomic operations and reconciliation, but **not transactional**
+- Branch writes (called vault operations in the internal API) are **crash-safe** via atomic operations and reconciliation, but **not transactional**
 - On crash between a file write and manifest update, reconciliation may create orphaned files (this is safe and intentional)
 - File permissions are not enforced by Driftleaf (relies on OS file permissions)
 
@@ -69,6 +73,6 @@ None reported yet. If you find one, please report it securely.
 
 ## Additional Resources
 
-- [docs/RECOVERY.md](../docs/RECOVERY.md) - Vault recovery procedures
+- [docs/RECOVERY.md](../docs/RECOVERY.md) - Branch recovery procedures
 - [docs/DATA_LOSS_TESTING.md](../docs/DATA_LOSS_TESTING.md) - Data loss safeguards
 - [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) - Technical architecture

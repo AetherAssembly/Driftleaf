@@ -4,9 +4,10 @@ import type { VaultRecoveryReport, VaultTemplateId } from "../../shared/ipc";
 
 interface UnlockScreenProps {
   onUnlocked: (recovery?: VaultRecoveryReport) => void;
+  version: string;
 }
 
-export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
+export function UnlockScreen({ onUnlocked, version }: UnlockScreenProps) {
   const [rootPath, setRootPath] = useState<string | null>(null);
   const [passphrase, setPassphrase] = useState("");
   const [mode, setMode] = useState<"create" | "unlock" | null>(null);
@@ -28,7 +29,7 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
       const recovery = await window.driftleaf.vault.unlock(path, "");
       onUnlocked(recovery);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to open vault");
+      setError(err instanceof Error ? err.message : "Failed to open branch");
       setRootPath(path);
       setMode("unlock");
     } finally {
@@ -61,7 +62,7 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
     try {
       if (mode === "create") {
         if (!passphrase || passphrase.trim().length === 0) {
-          throw new Error("A passphrase is required to create a vault.");
+          throw new Error("A passphrase is required to create a branch.");
         }
         await window.driftleaf.vault.create(rootPath, passphrase, template);
         onUnlocked();
@@ -70,7 +71,7 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
         onUnlocked(recovery);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to open vault");
+      setError(err instanceof Error ? err.message : "Failed to open branch");
     } finally {
       setBusy(false);
     }
@@ -79,7 +80,7 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
   function submit() {
     if (mode === "create") {
       if (!passphrase || passphrase.trim().length === 0) {
-        setError("A passphrase is required to create a vault.");
+        setError("A passphrase is required to create a branch.");
         return;
       }
       if (!acknowledgedNoRecovery) {
@@ -115,10 +116,10 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
               loading={busy}
               onClick={() => choosePath("create")}
             >
-              Create a new vault
+              Create a new branch
             </Button>
             <Button variant="secondary" loading={busy} onClick={() => choosePath("unlock")}>
-              Open an existing vault
+              Open an existing branch
             </Button>
           </div>
         ) : (
@@ -131,28 +132,21 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
             <p className="unlock-screen__path">{rootPath}</p>
             {mode === "create" && (
               <label className="unlock-screen__template">
-                Vault template
+                Branch template
                 <select
                   value={template}
                   onChange={(event) => setTemplate(event.target.value as VaultTemplateId)}
                 >
-                  <option value="blank">Blank vault</option>
+                  <option value="blank">Blank branch</option>
                   <option value="general">General notes</option>
                   <option value="productivity">To-do / Productivity</option>
                   <option value="journal">Journal</option>
                   <option value="study">Study / School</option>
                 </select>
                 <span className="unlock-screen__template-hint">
-                  Templates create ordinary folders and Markdown notes in your vault.
+                  You can browse and install community templates from the Extensions gallery after
+                  opening your branch.
                 </span>
-                <a
-                  className="unlock-screen__template-link"
-                  href="https://github.com/AetherAssembly/Driftleaf-Templates"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Browse more vault templates
-                </a>
               </label>
             )}
             <Input
@@ -178,7 +172,7 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
             />
             <div className="unlock-screen__actions">
               <Button type="submit" variant="primary" loading={busy}>
-                {mode === "create" ? "Create vault" : "Unlock"}
+                {mode === "create" ? "Create branch" : "Unlock"}
               </Button>
               <Button
                 type="button"
@@ -194,6 +188,7 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
           </form>
         )}
       </Card>
+      <p className="unlock-screen__version">Version {version}</p>
 
       <Modal
         open={confirmingNoRecovery}
@@ -210,7 +205,7 @@ export function UnlockScreen({ onUnlocked }: UnlockScreenProps) {
             Cancel
           </Button>
           <Button variant="primary" size="sm" onClick={confirmNoRecovery}>
-            I understand, create vault
+            I understand, create branch
           </Button>
         </div>
       </Modal>

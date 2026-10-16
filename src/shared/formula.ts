@@ -1,3 +1,4 @@
+// Pure formula evaluator shared by the database renderer and export pipeline.
 export type FormulaValue = string | number | boolean | null | FormulaValue[];
 
 type Token =

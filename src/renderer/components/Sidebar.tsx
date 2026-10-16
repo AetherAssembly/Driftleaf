@@ -4,6 +4,56 @@ import DOMPurify from "dompurify";
 import type { DatabaseMeta, NoteMeta, SearchResult } from "../../shared/ipc";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 
+function SidebarActionIcon({
+  name,
+}: {
+  name: "graph" | "canvas" | "import" | "folder" | "extensions";
+}) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 20 20"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {name === "graph" && (
+        <>
+          <path d="m5 5 10 3M5 15l10-3" />
+          <circle cx="4" cy="4.5" r="2" />
+          <circle cx="16" cy="10" r="2" />
+          <circle cx="4" cy="15.5" r="2" />
+        </>
+      )}
+      {name === "canvas" && (
+        <>
+          <rect x="2.5" y="3" width="7" height="6" rx="1" />
+          <rect x="11.5" y="3" width="6" height="10" rx="1" />
+          <rect x="2.5" y="11" width="7" height="6" rx="1" />
+        </>
+      )}
+      {name === "import" && (
+        <>
+          <path d="M10 2.5v10M6.5 9l3.5 3.5L13.5 9M3 13v3.5A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5V13" />
+        </>
+      )}
+      {name === "folder" && (
+        <>
+          <path d="M2.5 5.5A1.5 1.5 0 0 1 4 4h4l2 2h6A1.5 1.5 0 0 1 17.5 7.5v7A1.5 1.5 0 0 1 16 16H4a1.5 1.5 0 0 1-1.5-1.5z" />
+          <path d="M10 8.5v5M7.5 11h5" />
+        </>
+      )}
+      {name === "extensions" && (
+        <path d="M7 3.5h2a1.5 1.5 0 1 1 3 0h2a2 2 0 0 1 2 2V8h-1a2 2 0 1 0 0 4h1v2.5a2 2 0 0 1-2 2h-2.5v-1a2 2 0 1 0-4 0v1H5a2 2 0 0 1-2-2V12h1a2 2 0 1 0 0-4H3V5.5a2 2 0 0 1 2-2h2z" />
+      )}
+    </svg>
+  );
+}
+
 interface SidebarProps {
   folders: string[];
   notes: NoteMeta[];
@@ -24,6 +74,11 @@ interface SidebarProps {
   onSelectSearchResult: (id: string) => void;
   onLock: () => void;
   onOpenSettings: () => void;
+  onOpenExtensions: () => void;
+  graphOpen: boolean;
+  canvasOpen: boolean;
+  onOpenGraph: () => void;
+  onOpenCanvas: () => void;
   onMoveNote: (id: string) => void;
   onRenameFolder: (oldPath: string, newPath: string) => void;
   onDeleteFolder: (folderPath: string) => void;
@@ -54,10 +109,18 @@ export function Sidebar({
   onSelectSearchResult,
   onLock,
   onOpenSettings,
+  onOpenExtensions,
+  graphOpen,
+  canvasOpen,
+  onOpenGraph,
+  onOpenCanvas,
   onMoveNote,
   onRenameFolder,
   onDeleteFolder,
 }: SidebarProps) {
+  const [collapsed, setCollapsed] = useState(
+    () => window.localStorage.getItem("driftleaf:sidebar-collapsed") === "true",
+  );
   const [newFolderName, setNewFolderName] = useState("");
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
@@ -73,6 +136,14 @@ export function Sidebar({
   const [newDatabaseName, setNewDatabaseName] = useState("");
   const [keyboardFocusedNoteIndex, setKeyboardFocusedNoteIndex] = useState<number | null>(null);
   const isSearching = searchQuery.trim().length > 0;
+
+  function toggleCollapsed() {
+    setCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem("driftleaf:sidebar-collapsed", String(next));
+      return next;
+    });
+  }
 
   const visibleNotes = isSearching
     ? (searchResults.map((r) => notes.find((n) => n.id === r.id)).filter(Boolean) as NoteMeta[])
@@ -173,7 +244,20 @@ export function Sidebar({
     : [];
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${collapsed ? " sidebar--collapsed" : ""}`}>
+      <div className="sidebar__collapse-row">
+        {!collapsed && <strong>Driftleaf</strong>}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? "›" : "‹"}
+        </Button>
+      </div>
+      {!collapsed && <div className="sidebar__content">
       <div className="sidebar__search">
         <Input
           placeholder="Search notes…"
@@ -182,6 +266,47 @@ export function Sidebar({
           onKeyDown={handleSearchKeydown}
           aria-label="Search notes"
         />
+      </div>
+
+      <div className="sidebar__quick-actions" role="group" aria-label="Sidebar actions">
+        <Button
+          variant={graphOpen ? "secondary" : "ghost"}
+          size="sm"
+          onClick={onOpenGraph}
+          aria-label="Open note graph"
+          aria-pressed={graphOpen}
+          title="Graph"
+        >
+          <SidebarActionIcon name="graph" />
+        </Button>
+        <Button
+          variant={canvasOpen ? "secondary" : "ghost"}
+          size="sm"
+          onClick={onOpenCanvas}
+          aria-label="Open workspace canvas"
+          aria-pressed={canvasOpen}
+          title="Canvas"
+        >
+          <SidebarActionIcon name="canvas" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onImport}
+          title="Import Markdown notes and CSV/JSON databases, including from ZIP files"
+          aria-label="Import files"
+        >
+          <SidebarActionIcon name="import" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowNewFolder(true)}
+          aria-label="Create new folder"
+          title="New folder"
+        >
+          <SidebarActionIcon name="folder" />
+        </Button>
       </div>
 
       {isSearching ? (
@@ -215,25 +340,6 @@ export function Sidebar({
         <>
           <div className="sidebar__folders-header">
             <span className="sidebar__section-label">Folders</span>
-            <div className="sidebar__folders-header-actions">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onImport}
-                title="Import Markdown notes and CSV/JSON databases, including from ZIP files"
-                aria-label="Import files"
-              >
-                Import
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowNewFolder(true)}
-                aria-label="Create new folder"
-              >
-                + Folder
-              </Button>
-            </div>
           </div>
 
           <div className="sidebar__folders">
@@ -302,7 +408,7 @@ export function Sidebar({
 
           <div className="sidebar__notes-header">
             <span>{folderLabel(selectedFolder)}</span>
-            <div className="sidebar__folders-header-actions">
+            <div className="sidebar__notes-header-actions">
               <Button
                 size="sm"
                 variant="secondary"
@@ -345,7 +451,7 @@ export function Sidebar({
             {notes.filter((n) => n.folderPath === selectedFolder).length === 0 &&
               (notes.length === 0 && databases.length === 0 ? (
                 <li className="sidebar__empty">
-                  Your vault is empty. Click &ldquo;+ Note&rdquo; to create your first note.
+                  Your branch is empty. Click &ldquo;+ Note&rdquo; to create your first note.
                 </li>
               ) : (
                 <li className="sidebar__empty">This folder is empty.</li>
@@ -373,13 +479,17 @@ export function Sidebar({
           )}
         </>
       )}
+      </div>}
 
-      <div className="sidebar__footer">
-        <Button variant="ghost" size="sm" onClick={onOpenSettings} aria-label="Open settings">
-          Settings
+      <div className="sidebar__footer" aria-label="Sidebar actions">
+        <Button variant="ghost" size="sm" onClick={onOpenExtensions} aria-label="Open extensions" title="Extensions">
+          {collapsed ? <SidebarActionIcon name="extensions" /> : "Extensions"}
         </Button>
-        <Button variant="ghost" size="sm" onClick={onLock} aria-label="Lock vault">
-          Lock vault
+        <Button variant="ghost" size="sm" onClick={onOpenSettings} aria-label="Open settings" title="Settings">
+          {collapsed ? "⚙" : "Settings"}
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onLock} aria-label="Lock branch" title="Lock branch">
+          {collapsed ? "⌑" : "Lock branch"}
         </Button>
       </div>
 

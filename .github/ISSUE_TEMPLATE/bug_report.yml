@@ -43,8 +43,8 @@ body:
     id: version
     attributes:
       label: Driftleaf Version
-      description: "e.g., 0.2.0"
-      placeholder: "0.2.0"
+      description: "Find it in Settings → About, or on the vault unlock screen"
+      placeholder: "e.g., 0.6.0"
     validations:
       required: true
 
@@ -63,7 +63,7 @@ body:
     id: environment
     attributes:
       label: System Details
-      description: Any other relevant system info (distro, desktop environment, etc.)
+      description: Include distro/desktop environment, whether Driftleaf was installed via installer/portable/AppImage, and update channel if relevant
       placeholder: "Ubuntu 22.04 LTS, GNOME 42"
 
   - type: textarea
