@@ -1,0 +1,10 @@
+{
+  "identifier": "default",
+  "description": "Permissions for the main Driftleaf window: core events (close handshake) and the dialog plugin (folder picker). Our own sidecar_call/pick_directory/flush_result commands need no entry here — only plugin/core APIs go through this ACL.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "dialog:default"
+  ]
+}

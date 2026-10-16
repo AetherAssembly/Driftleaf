@@ -1,7 +1,10 @@
 node_modules/
 dist/
 dist-electron/
+dist-tauri-frontend/
 release/
+src-tauri/target/
+src-tauri/gen/
 *.log
 *.tsbuildinfo
 .DS_Store

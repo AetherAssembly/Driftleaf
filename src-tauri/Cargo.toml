@@ -1,0 +1,23 @@
+[package]
+name = "driftleaf"
+version = "0.6.4"
+description = "So your thoughts don't drift. A local-first, encrypted-by-default notes app."
+authors = ["AetherAssembly"]
+edition = "2021"
+
+# Spike dependencies for the Phase 2 first slice (docs/ELECTRON_MIGRATION_REVIEW.md). This
+# Rust shell talks to the existing Node domain service through a sidecar child process, not
+# through its own storage/crypto implementation yet — that's Phase 4.
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["process", "sync", "io-util", "rt-multi-thread", "macros", "time"] }
+
+[[bin]]
+name = "driftleaf"
+path = "src/main.rs"

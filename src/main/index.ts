@@ -14,8 +14,9 @@ if (process.platform === "linux") {
 }
 
 let quitRequested = false;
-// Tracked separately from BrowserWindow.getAllWindows()[0] so the host's dialogs always
-// anchor to whichever window was created or focused most recently.
+// The host's dialogs anchor to whichever window was most recently created (reactivating on
+// macOS after the last window closes calls createWindow() again). Not updated on focus
+// change — same single-window assumption the old currentWindow in ipc.ts made.
 let latestWindow: BrowserWindow | null = null;
 
 // Composition root: the one place that wires the Electron-independent service

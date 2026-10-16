@@ -25,6 +25,21 @@ The format is based on Keep a Changelog and this project uses semantic versionin
 - Added contract tests proving the same command sequence behaves identically
   whether called directly against the new service or through the existing
   Electron-mocked adapter, without launching Electron either way.
+- Added a first Tauri shell (`src-tauri/`, disabled by default, Electron unaffected)
+  proving branch create/unlock, note/database/canvas read-write with live preview,
+  search, lock, and a clean window-close handshake against the unmodified Node domain
+  service, run as a sidecar child process over a private framed stdin/stdout protocol.
+  Pickers that gate on the single-use "only act on what was actually picked" security
+  check (import, backup, verify-backup) are intentionally not wired yet. Verified
+  manually on CachyOS, including against a real existing branch with its real
+  passphrase; Windows, macOS, and installable builds remain.
+- Fixed two Tauri-bridge-only bugs found during that verification, neither touching
+  branch encryption or the unlock procedure: an unhandled rejection in the initial
+  note/folder/database/canvas load that could show a correctly-decrypted branch as
+  empty, and omitted optional arguments (e.g. no folder filter) arriving at the
+  sidecar as `null` instead of absent, which made note listing filter out everything.
+- Confirmed native Wayland rendering works in WebKitGTK with software-rendering
+  environment variables alone — no need to force X11, despite an earlier false start.
 
 ## [0.6.4] - 2026-10-15
 
