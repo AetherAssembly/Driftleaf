@@ -99,12 +99,18 @@ fn spawn_sidecar(
     project_root: std::path::PathBuf,
     node: std::path::PathBuf,
 ) -> std::sync::Arc<Sidecar> {
+    // Node's `--loader` argument is parsed as a URL, not a plain path: on Windows an
+    // absolute path like `D:\a\...\typescript-loader.mjs` is mistaken for a URL with
+    // scheme `d`, failing with ERR_UNSUPPORTED_ESM_URL_SCHEME. `Url::from_file_path`
+    // produces a real `file://` URL on every platform instead.
+    let loader_url = Url::from_file_path(project_root.join("scripts/tests/typescript-loader.mjs"))
+        .expect("typescript-loader.mjs path must be absolute");
     let mut command = Command::new(node);
     command
         .current_dir(&project_root)
         .arg("--experimental-strip-types")
         .arg("--loader")
-        .arg(project_root.join("scripts/tests/typescript-loader.mjs"))
+        .arg(loader_url.as_str())
         .arg(project_root.join("sidecar/index.mjs"))
         .env("DRIFTLEAF_SETTINGS_DIR", &settings_dir)
         .stdin(Stdio::piped())

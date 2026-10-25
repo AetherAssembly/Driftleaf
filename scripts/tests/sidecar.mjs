@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const root = process.env.DRIFTLEAF_TEST_BACKEND || path.resolve(import.meta.dirname, "../..");
 const nodeBinary = process.env.DRIFTLEAF_TEST_BACKEND
@@ -16,7 +17,11 @@ function frame(value) {
 }
 
 async function fixture(run) {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "driftleaf-sidecar-"));
+  // realpath here, not just at comparison time: acquireBranchLock canonicalizes the
+  // branch path it's given (os.tmpdir() resolves through /var on macOS, a symlink to
+  // /private/var), so every path this fixture hands out must already be canonical or
+  // assertions comparing them against what the sidecar reports back would mismatch.
+  const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), "driftleaf-sidecar-")));
   const children = [];
   function start() {
     const child = spawn(
@@ -24,7 +29,9 @@ async function fixture(run) {
       [
         "--experimental-strip-types",
         "--loader",
-        path.join(root, "scripts/tests/typescript-loader.mjs"),
+        // A raw Windows path (D:\...) is parsed as a URL with scheme "d" and rejected;
+        // pathToFileURL produces a real file:// URL on every platform instead.
+        pathToFileURL(path.join(root, "scripts/tests/typescript-loader.mjs")).href,
         path.join(root, "sidecar/index.mjs"),
       ],
       {
