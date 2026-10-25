@@ -8,7 +8,6 @@ Everything you need to build, test, and package Driftleaf locally.
 - [Local Development](#local-development)
 - [Building Packages](#building-packages)
 - [Platform-Specific Requirements](#platform-specific-requirements)
-- [Cross-Architecture Builds](#cross-architecture-builds)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -19,10 +18,10 @@ Everything you need to build, test, and package Driftleaf locally.
 
 | Tool | Version | Required For |
 | ---- | ------- | ------------ |
-| Node.js | v18+ (v20 recommended) | All builds |
+| Node.js | v18+ (v20 recommended) | The bundled sidecar backend and all build scripts |
 | npm | v8+ | All builds |
-| Ruby | v2.7+ | `.deb` / `.rpm` packaging |
-| QEMU (optional) | Latest | ARM64 cross-compilation |
+| Rust toolchain (`cargo`, `rustc`) | stable | Building/running the Tauri shell |
+| WebKitGTK + GTK3 dev packages (Linux) | — | `webkit2gtk-4.1`, `javascriptcoregtk-4.1`, `gtk+-3.0` and their `-devel`/`-dev` packages, by whatever name your distro uses |
 
 ### Important Notice
 
@@ -35,32 +34,30 @@ Everything you need to build, test, and package Driftleaf locally.
 #### **Arch Linux**
 
 ```bash
-sudo pacman -S --needed ruby gcc make fakeroot dpkg rpm-tools qemu-full virt-manager
+sudo pacman -S --needed webkit2gtk-4.1 gtk3 libappindicator-gtk3 librsvg rust
 ```
-
-> **Note:** On Arch-based distros, you need both `dpkg` and `rpm-tools` to generate `.deb` and `.rpm` artifacts respectively, even though you're on an RPM-native system.
->
-> If you use CachyOS, follow [their wiki](https://wiki.cachyos.org/virtualization/qemu_and_vmm_setup/) on QEMU installation/setup.
->
-> If you use Arch Linux, follow [their wiki](https://wiki.archlinux.org/title/QEMU) on QEMU installation/setup.
 
 #### **Debian/Ubuntu**
 
 ```bash
-sudo apt-get install ruby build-essential dpkg-dev rpm qemu-system-arm
+sudo apt-get install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf build-essential
 ```
 
 #### **Fedora/RHEL/CentOS**
 
 ```bash
-sudo dnf install ruby gcc rpm-build dpkg qemu-system-ARM
+sudo dnf install webkit2gtk4.1-devel gtk3-devel libappindicator-gtk3-devel librsvg2-devel rpm-build
 ```
 
 #### **openSUSE**
 
 ```bash
-sudo zypper install ruby patterns-devel-base-devel_basis rpm-build dpkg qemu-system-arm
+sudo zypper install webkit2gtk3-devel gtk3-devel libappindicator3-devel librsvg-devel
 ```
+
+Install Rust itself from [rustup.rs](https://rustup.rs/) on any platform, including Windows and macOS.
+
+> **AppImage Exception:** Most Linux dependencies are bundled inside the AppImage. However, FUSE3 may be required at runtime on some distributions (`sudo apt install libfuse2` for legacy support).
 
 ---
 
@@ -75,8 +72,8 @@ echo "//npm.pkg.github.com/:_authToken=<your-token>" >> ~/.npmrc
 # Install dependencies
 npm install
 
-# Launch in development mode
-npm run dev
+# Launch the Tauri shell in dev mode
+npx tauri dev
 ```
 
 ### Initial Setup for Windows
@@ -84,7 +81,7 @@ npm run dev
 ### 1. Open your User Folder
 
 1. Press **`Windows Key + R`** to open the Run dialog.
-2. Type `%userprofile%` and press **Enter**. 
+2. Type `%userprofile%` and press **Enter**.
    *(This opens your user folder, like `C:\Users\YourName`)*.
 
 ### 2. Create the `.npmrc` file
@@ -128,59 +125,70 @@ npm run dev
 
 | Command | Description |
 | ------- | ----------- |
-| `npm run dev` | Launch app in development mode with hot reload |
-| `npm run build` | Typecheck + build production bundles (no packaging) |
+| `npx tauri dev` | Launch the full app (Rust shell + sidecar backend) in development mode |
+| `npm run dev` | Launch just the renderer's dev server (for quick UI iteration; no backend) |
+| `npm run build` | Typecheck + build the renderer bundle (no packaging) |
 | `npm run lint` | Run ESLint checks |
 | `npm run typecheck` | Run TypeScript compiler without emitting |
+| `npm test` | Run the sidecar/storage/service regression suite |
+| `npm run test:rust-compat` | Run `crates/driftleaf-core`'s Node↔Rust compatibility suite |
 | `node scripts/tests/data-loss.js` | Run vault, database, and recovery integration tests |
 
 ### Debugging Search Performance
 
 ```sh
 export DEBUG_SEARCH=1
-npm run dev
+npx tauri dev
 ```
 
-Open DevTools (**Ctrl+Shift+I**) and search for `[search]` in the console output.
+Open the WebView's devtools (right-click → Inspect, where supported) and search for
+`[search]` in the console output.
 
 ---
 
 ## Building Packages
 
-### Standard Builds
+```sh
+npm run package:tauri                        # this platform's native targets (deb+rpm on Linux)
+npm run package:tauri -- --bundles appimage   # Linux: AppImage only
+npm run package:tauri -- --bundles dmg        # macOS: dmg
+npm run package:tauri -- --bundles nsis       # Windows: installer
+```
+
+Artifacts land under `src-tauri/target/release/bundle/<format>/`. The app's identity for
+these release builds comes from `src-tauri/tauri.release.conf.json` (merged over the base
+`src-tauri/tauri.conf.json`); `npm run stage:tauri` (run automatically as part of the
+release build) downloads a checksum-pinned Node runtime and copies in the sidecar backend
+rather than using your own Node installation at runtime.
+
+See [docs/RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) for what's been verified on which
+platform, and [docs/TAURI_UPDATES.md](TAURI_UPDATES.md) for turning on signed auto-updates
+(off by default — see that doc for why and how).
+
+### Versioning during development
 
 ```sh
-# All Linux formats (x86_64 only)
-npm run package:linux
-
-# Single format
-npm run package:appimage           # Portable AppImage
-npm run package:linux              # AppImage + deb + rpm
-npm run package:macos              # DMG + ZIP
-npm run package:windows            # Installer + portable .exe
-
-# Beta variants
-npm run package:linux:beta         # Beta builds for Linux
-npm run package:linux:arm64:beta   # Beta ARM64 builds
+node scripts/tauri/version.mjs 0.7.1
 ```
 
-macOS builds are intentionally unsigned and do not require signing
-certificates. macOS may warn when opening the app; see
-[INSTALLATION.md](INSTALLATION.md#macos) for the quarantine workaround.
+Syncs `package.json`/`package-lock.json`/`src-tauri/tauri.conf.json`/`Cargo.toml`/
+`Cargo.lock`/the RPM spec to one version number, without invoking `npm version` or
+creating a commit or tag — useful for rolling development checkpoints between releases.
+Add the checkpoint's changes to `[Unreleased]` in `CHANGELOG.md` and the RPM spec's own
+changelog. The tag-triggered `release.yml` workflow uses the same script (with
+`--allow-same`) to set the real release version before packaging.
 
-### Output Locations
+On Linux, if a built app's window opens but stays blank (GBM/DMA-BUF buffer allocation
+failures in the terminal output — a known WebKitGTK compositing gap with some GPU drivers,
+most documented with NVIDIA's proprietary driver), set these before launching:
 
-Artifacts are generated in `release/` and named with the same version as proper releases unless changed.
-
-> If you test locally while the released version of Driftleaf is installed, either change the version before building or uninstall the released copy first. Otherwise, a local build may overwrite or replace the installed application and its system integrations.
-
-```bash
-release/
-├── Driftleaf-0.4.2.AppImage
-├── driftleaf_0.4.2_amd64.deb
-├── driftleaf-0.4.2-1.x86_64.rpm
-└── Driftleaf Setup 0.4.2.exe
+```sh
+WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 LIBGL_ALWAYS_SOFTWARE=1 npx tauri dev
 ```
+
+These variables allowed native Wayland rendering on a tested CachyOS/NVIDIA system without
+forcing X11. They are a workaround to test on affected hardware, not a default for every
+Linux system.
 
 ---
 
@@ -192,49 +200,11 @@ These are automatically added to your package's dependency list but good to know
 
 | Component | Debian/Ubuntu | Fedora/RPM | Arch |
 | --------- | ------------- | ---------- | ---- |
+| WebKitGTK | `libwebkit2gtk-4.1-0` | `webkit2gtk4.1` | `webkit2gtk-4.1` |
 | GTK3 | `libgtk-3-0` | `gtk3` | `gtk3` |
-| Notifications | `libnotify4` | `libnotify` | `libnotify` |
-| NSS | `libnss3` | `nss` | `nss` |
-| Screen Saver | `libxss1` | `libXScrnSaver` | `libxss` |
-| X11 Tests | `libxtst6` | `libxtst` | `libxtst` |
-| Accessibility | `libatspi2.0-0` | `at-spi2-core` | `at-spi2-core` |
-| Secret Storage | `libsecret-1-0` | `libsecret` | `libsecret` |
 | App Indicators | `libappindicator3-1` | `libappindicator-gtk3` | `libappindicator-gtk3` |
 
 > **AppImage Exception:** Most dependencies are bundled inside the AppImage. However, FUSE3 may be required at runtime on some distributions (`sudo apt install libfuse2` for legacy support).
-
----
-
-## Cross-Architecture Builds
-
-### ARM64 Builds from x86_64
-
-Building ARM64 packages without native hardware requires QEMU emulation:
-
-```sh
-# Enable QEMU binfmt support (one-time per host)
-docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-
-# Build ARM64 packages
-npm run package:linux:arm64
-```
-
-### Important Notes
-
-| Architecture | Native Support | QEMU Required |
-| ------------ | ------------- | ------------- |
-| x86_64 | ✅ Yes | ❌ No |
-| ARM64 | ✅ On Apple Silicon / ARM servers | ⚠️ From x86_64 |
-| ARMv7 | ❌ Rare | ✅ Always via QEMU |
-
-### Alternative: OBS/Copr Hosting
-
-For ongoing ARM64 builds without local hardware, we use remote build systems:
-
-- [**OBS (openSUSE Build Service):**](https://build.opensuse.org/package/show/home:aster1630/Driftleaf)
-- [**Copr (Fedora):**](https://copr.fedorainfracloud.org/coprs/aster1630/Driftleaf/)
-
-These handle multi-architecture builds automatically. See [PACKAGING.md](PACKAGING.md) for spec file details.
 
 ---
 
@@ -242,39 +212,16 @@ These handle multi-architecture builds automatically. See [PACKAGING.md](PACKAGI
 
 ### Common Issues
 
-#### **"Command 'dpkg' not found" (on non-Debian systems)**
-
-```bash
-# Arch/Fedora/openSUSE
-sudo <package-manager> install dpkg
-```
-
-#### **"Command 'fpm' not found"**
-
-Don't worry—electron-builder bundles its own `fpm`. Make sure Ruby is installed on your host system.
-
 #### **"Permission denied" on AppImage**
 
 ```bash
-chmod +x dist/Driftleaf-*.AppImage
-./release/Driftleaf-*.AppImage
+chmod +x "Driftleaf_*.AppImage"
+"./Driftleaf_<version>_amd64.AppImage"
 ```
 
-#### **QEMU errors during ARM64 build**
+#### **Window opens but stays blank on Linux**
 
-Make sure binfmt support is active:
-
-```bash
-# Check if QEMU is registered
-cat /proc/sys/fs/binfmt_misc/qemu-aarch64
-
-# Re-register if missing
-docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-```
-
-#### **Deb/RPM build fails on directory ownership**
-
-If you see "directories not owned by package" errors, check your `%files` section includes `%dir` declarations for parent directories. See the OBS build logs for details.
+See the WebKitGTK compositing workaround above.
 
 ---
 
@@ -292,8 +239,7 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for full guidelines.
 
 ## Resources
 
-- [Electron Builder Docs](https://www.electron.build/)
-- [Electron Docs](https://www.electronjs.org/docs)
+- [Tauri Docs](https://v2.tauri.app/)
 - [React Docs](https://react.dev/)
 - [Vite Docs](https://vitejs.dev/)
 - [TypeScript Handbook](https://www.typescriptlang.org/docs/)

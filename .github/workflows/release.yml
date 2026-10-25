@@ -72,13 +72,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            package_script: ${{ needs.create-release.outputs.is_beta == 'true' && 'package:linux:beta' || 'package:linux' }}
+            bundles: deb,rpm,appimage
           - os: ubuntu-24.04-arm
-            package_script: ${{ needs.create-release.outputs.is_beta == 'true' && 'package:linux:beta' || 'package:linux:arm64' }}
+            bundles: deb,rpm,appimage
           - os: macos-latest
-            package_script: ${{ needs.create-release.outputs.is_beta == 'true' && 'package:macos:beta' || 'package:macos' }}
+            bundles: dmg
           - os: windows-latest
-            package_script: ${{ needs.create-release.outputs.is_beta == 'true' && 'package:windows:beta' || 'package:windows' }}
+            bundles: nsis
 
     steps:
       - name: Checkout
@@ -92,6 +92,13 @@ jobs:
           cache-dependency-path: package-lock.json
           registry-url: https://npm.pkg.github.com
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf rpm
+
       - name: Install
         run: npm ci
         env:
@@ -101,39 +108,34 @@ jobs:
         env:
           TAG: ${{ needs.create-release.outputs.tag }}
         shell: bash
-        run: npm version "${TAG#v}" --no-git-tag-version --allow-same-version
-
-      - name: Build
-        run: npm run build
-        env:
-          DRIFTLEAF_MAC_AUTO_UPDATE: ${{ vars.DRIFTLEAF_MAC_AUTO_UPDATE }}
+        run: node scripts/tauri/version.mjs "${TAG#v}" --allow-same
 
       - name: Package
         env:
           DRIFTLEAF_MAC_AUTO_UPDATE: ${{ vars.DRIFTLEAF_MAC_AUTO_UPDATE }}
-        run: npm run ${{ matrix.package_script }}
+          # Empty/unset until an updater signing key and feed are provisioned (see
+          # docs/TAURI_UPDATES.md) — the build then simply reports updates as manual,
+          # same as every build so far.
+          DRIFTLEAF_UPDATER_PUBLIC_KEY: ${{ vars.DRIFTLEAF_UPDATER_PUBLIC_KEY }}
+          DRIFTLEAF_UPDATER_ENDPOINT: ${{ vars.DRIFTLEAF_UPDATER_ENDPOINT }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run package:tauri -- --bundles ${{ matrix.bundles }}
 
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.create-release.outputs.tag }}
-          CHANNEL: ${{ needs.create-release.outputs.is_beta == 'true' && 'beta' || 'stable' }}
         shell: bash
         run: |
-          if [[ "$RUNNER_OS" == "Windows" && ! -f "release/$CHANNEL.yml" ]]; then
-            echo "::error::Missing Windows updater metadata: release/$CHANNEL.yml"
-            exit 1
-          fi
-
-          find release -maxdepth 1 -type f \( \
+          find src-tauri/target/release/bundle -type f \( \
             -name "*.AppImage" -o \
             -name "*.deb" -o \
             -name "*.rpm" -o \
             -name "*.dmg" -o \
-            -name "*.zip" -o \
             -name "*.exe" -o \
-            -name "*.blockmap" -o \
-            -name "*.yml" \
+            -name "*.sig" -o \
+            -name "latest.json" \
           \) | sort | while read -r f; do
             echo "Uploading $f..."
             gh release upload "$TAG" "$f" --clobber
@@ -212,15 +214,14 @@ jobs:
               return f"| {label} | [{path.name}]({url}) | `{sha256(path)}` |"
 
           table_rows = list(filter(None, [
-              row("Linux (x64) AppImage",   find_one("*x86_64.AppImage")),
+              row("Linux (x64) AppImage",   find_one("*amd64.AppImage")),
               row("Linux (x64) .deb",       find_one("*amd64.deb")),
               row("Linux (x64) .rpm",       find_one("*x86_64.rpm")),
-              row("Linux (arm64) AppImage", find_one("*arm64.AppImage")),
+              row("Linux (arm64) AppImage", find_one("*arm64.AppImage", "*aarch64.AppImage")),
               row("Linux (arm64) .deb",     find_one("*arm64.deb")),
               row("Linux (arm64) .rpm",     find_one("*aarch64.rpm")),
               row("macOS DMG",              find_one("*.dmg")),
               row("Windows installer",      find_one("*setup*.exe", "*-installer.exe")),
-              row("Windows portable",       find_one("*portable*.exe", "*Portable*.exe")),
           ]))
 
           compare_link = (
@@ -257,7 +258,7 @@ jobs:
               *table_rows, "",
               "#### Verify a download", "",
               "```bash",
-              f'sha256sum "driftleaf-{ver}-x86_64.AppImage"',
+              f'sha256sum "Driftleaf_{ver}_amd64.AppImage"',
               "```", "",
               "---", "",
               "### Linux notes", "",

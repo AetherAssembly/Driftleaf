@@ -28,8 +28,7 @@ function diagnosticEntries(
     ["Architecture", diagnostics.architecture],
     ["Display server", diagnostics.displayServer],
     ["Desktop / compositor", diagnostics.desktopEnvironment],
-    ["Electron", diagnostics.electron],
-    ["Chromium", diagnostics.chromium],
+    ["Backend runtime", diagnostics.runtime],
     ["Driftleaf theme", activeTheme],
   ];
 }

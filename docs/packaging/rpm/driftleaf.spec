@@ -1,17 +1,5 @@
-%global debug_package %{nil}
-# The packaged app.asar.unpacked tree bundles better-sqlite3's prebuilt native
-# binaries for every OS/arch it supports (darwin/linux/win32 x64/arm64,
-# linuxmusl x64/arm64) — only one of those is ever loaded at runtime on a given
-# install. RPM's automatic post-install strip pass (brp-strip) tries to strip
-# every file under the buildroot regardless, and can't parse a binary for a
-# foreign architecture; on some build systems (e.g. Mageia) that failure is
-# fatal to the whole build rather than a skipped warning. Disabling the
-# automatic post-install processing is standard practice for a spec that's
-# repackaging an already-built binary bundle rather than compiling from source.
-%global __os_install_post %{nil}
-
 Name:           driftleaf
-Version:        0.6.4
+Version:        0.7.0
 Release:        1%{?dist}
 Summary:        A local-first encrypted notes, graph, and database app
 License:        AGPL-3.0-or-later
@@ -22,8 +10,14 @@ BuildRequires:  cpio
 BuildRequires:  rpm
 Requires:       hicolor-icon-theme
 
-Source0:        https://github.com/AetherAssembly/Driftleaf/releases/download/v%{version}/driftleaf-%{version}-x86_64.rpm
-Source1:        https://github.com/AetherAssembly/Driftleaf/releases/download/v%{version}/driftleaf-%{version}-aarch64.rpm
+# Driftleaf's own release RPM (built by `tauri build`, not this spec) installs its Node
+# sidecar backend under the fixed path /usr/lib/Driftleaf/ — not the %{_libdir} macro,
+# since Tauri's Linux resource-path resolution expects that literal location regardless of
+# whether a distro's convention for 64-bit libraries is /usr/lib or /usr/lib64. This spec
+# repackages that same tree unchanged for OBS/Copr's distro-native expectations.
+Source0:        https://github.com/AetherAssembly/Driftleaf/releases/download/v%{version}/Driftleaf-%{version}-1.x86_64.rpm
+Source1:        https://github.com/AetherAssembly/Driftleaf/releases/download/v%{version}/Driftleaf-%{version}-1.aarch64.rpm
+Source2:        https://raw.githubusercontent.com/AetherAssembly/Driftleaf/v%{version}/LICENSE
 
 %description
 Driftleaf is a local-first desktop workspace for encrypted Markdown notes,
@@ -43,33 +37,49 @@ rpm2cpio %{SOURCE0} | cpio -idm --quiet
 %else
 rpm2cpio %{SOURCE1} | cpio -idm --quiet
 %endif
+cp %{SOURCE2} %{_builddir}/LICENSE
 
 %install
 rm -rf %{buildroot}
-mkdir -p %{buildroot}/opt/Driftleaf
 mkdir -p %{buildroot}%{_bindir}
+mkdir -p %{buildroot}/usr/lib/Driftleaf
 mkdir -p %{buildroot}%{_datadir}/applications
-mkdir -p %{buildroot}%{_datadir}/icons/hicolor/1024x1024/apps
+mkdir -p %{buildroot}%{_datadir}/icons/hicolor/32x32/apps
+mkdir -p %{buildroot}%{_datadir}/icons/hicolor/128x128/apps
+mkdir -p %{buildroot}%{_datadir}/icons/hicolor/256x256@2/apps
 
-cp -a extracted/opt/Driftleaf/. %{buildroot}/opt/Driftleaf/
-cp -a extracted/usr/share/applications/driftleaf.desktop \
-    %{buildroot}%{_datadir}/applications/
-cp -a extracted/usr/share/icons/hicolor/1024x1024/apps/driftleaf.png \
-    %{buildroot}%{_datadir}/icons/hicolor/1024x1024/apps/
-ln -s /opt/Driftleaf/driftleaf %{buildroot}%{_bindir}/driftleaf
+cp -a extracted/usr/bin/driftleaf %{buildroot}%{_bindir}/
+cp -a extracted/usr/lib/Driftleaf/. %{buildroot}/usr/lib/Driftleaf/
+cp -a extracted/usr/share/applications/Driftleaf.desktop %{buildroot}%{_datadir}/applications/
+cp -a extracted/usr/share/icons/hicolor/32x32/apps/driftleaf.png \
+    %{buildroot}%{_datadir}/icons/hicolor/32x32/apps/
+cp -a extracted/usr/share/icons/hicolor/128x128/apps/driftleaf.png \
+    %{buildroot}%{_datadir}/icons/hicolor/128x128/apps/
+cp -a extracted/usr/share/icons/hicolor/256x256@2/apps/driftleaf.png \
+    %{buildroot}%{_datadir}/icons/hicolor/256x256@2/apps/
 
 %files
-%license extracted/opt/Driftleaf/LICENSE.electron.txt
-%doc extracted/opt/Driftleaf/LICENSES.chromium.html
-/opt/Driftleaf/
+%license %{_builddir}/LICENSE
 %{_bindir}/driftleaf
-%{_datadir}/applications/driftleaf.desktop
+/usr/lib/Driftleaf/
+%{_datadir}/applications/Driftleaf.desktop
 %dir %{_datadir}/icons/hicolor
-%dir %{_datadir}/icons/hicolor/1024x1024
-%dir %{_datadir}/icons/hicolor/1024x1024/apps
-%{_datadir}/icons/hicolor/1024x1024/apps/driftleaf.png
+%dir %{_datadir}/icons/hicolor/32x32
+%dir %{_datadir}/icons/hicolor/32x32/apps
+%{_datadir}/icons/hicolor/32x32/apps/driftleaf.png
+%dir %{_datadir}/icons/hicolor/128x128
+%dir %{_datadir}/icons/hicolor/128x128/apps
+%{_datadir}/icons/hicolor/128x128/apps/driftleaf.png
+%dir %{_datadir}/icons/hicolor/256x256@2
+%dir %{_datadir}/icons/hicolor/256x256@2/apps
+%{_datadir}/icons/hicolor/256x256@2/apps/driftleaf.png
 
 %changelog
+* Sun Oct 25 2026 AetherAssembly <support@aetherassembly.org> - 0.7.0-1
+- Rebuilt for the Tauri release RPM layout: binary at /usr/bin/driftleaf, backend
+  resources under /usr/lib/Driftleaf/, desktop file and icons unchanged. No longer
+  bundles Electron or better-sqlite3. Unverified on a real OBS/Copr build.
+
 * Thu Oct 15 2026 AetherAssembly <support@aetherassembly.org> - 0.6.4-1
 - Protect existing branches, drain writes before locking or closing, and retain
   failed edits for retry.
@@ -140,7 +150,7 @@ ln -s /opt/Driftleaf/driftleaf %{buildroot}%{_bindir}/driftleaf
   amalgamation and C++ addon source) from the bundled application, which had
   been tripping rpmlint's badness threshold and aborting every openSUSE OBS
   build while passing on Fedora's more permissive profile.
-  
+
 * Fri Aug 28 2026 AetherAssembly <support@aetherassembly.org> - 0.2.1-1
 - Native SQLite packaging: Electron Builder now unpacks the
   `better-sqlite3` native module for stable and beta builds on Linux, macOS, and Windows.

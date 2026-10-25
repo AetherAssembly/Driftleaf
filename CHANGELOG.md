@@ -6,44 +6,34 @@ The format is based on Keep a Changelog and this project uses semantic versionin
 
 ## [Unreleased]
 
-### Tauri migration
+## [0.7.0]
 
-- Added exclusive branch writer locks before creation/unlock and reconciliation,
-  preventing two cooperating Driftleaf processes from modifying one branch.
-  Locks release on branch lock, window close, failed session setup, and process exit.
-- Kept runtime lock files out of backups and flushed pending drafts before backup
-  creation and imports.
-- Retained failed canvas edits in the shared save queue for retry and safe close.
-- Added session, backup, canvas retry, and cross-process crash-recovery regressions.
-- Kept Electron and the existing branch format. Phase 1 will begin only after
-  manual verification of Phase 0.
-- Moved session ownership and every branch/note/database/folder/search/canvas/
-  extension-data command out of the Electron IPC layer into an Electron-independent
-  service, with settings-directory, picker, external-link, and updater behavior
-  injected rather than imported. The Electron adapter keeps only what needs a real
-  window: the extension sandbox window and the update-install close handshake.
-- Added contract tests proving the same command sequence behaves identically
-  whether called directly against the new service or through the existing
-  Electron-mocked adapter, without launching Electron either way.
-- Added a first Tauri shell (`src-tauri/`, disabled by default, Electron unaffected)
-  proving branch create/unlock, note/database/canvas read-write with live preview,
-  search, lock, and a clean window-close handshake against the unmodified Node domain
-  service, run as a sidecar child process over a private framed stdin/stdout protocol.
-  Verified manually on CachyOS, including against a real existing branch with its real
-  passphrase; Windows, macOS, and installable builds remain.
-- Fixed two Tauri-bridge-only bugs found during that verification, neither touching
-  branch encryption or the unlock procedure: an unhandled rejection in the initial
-  note/folder/database/canvas load that could show a correctly-decrypted branch as
-  empty, and omitted optional arguments (e.g. no folder filter) arriving at the
-  sidecar as `null` instead of absent, which made note listing filter out everything.
-- Confirmed native Wayland rendering works in WebKitGTK with software-rendering
-  environment variables alone — no need to force X11, despite an earlier false start.
-- Wired file import, backup creation/verification, extension install, and database
-  export into the Tauri shell. Each needed a native Rust dialog plus a sidecar command
-  that trusts Rust's already-validated input, since the single-use "only act on what
-  was actually picked" allowlist those commands gate on belongs to the picker that
-  shows the dialog — which is now Rust, not the sidecar. Verified manually against a
-  disposable branch.
+Driftleaf now runs on Tauri instead of Electron. See
+[docs/TAURI_MIGRATION.md](docs/TAURI_MIGRATION.md) for the migration's history and
+[docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) for per-platform verification
+status.
+
+### Added
+
+- Global quick-capture shortcut and external-link handling, now implemented natively
+  (`tauri-plugin-global-shortcut`, `tauri-plugin-opener`).
+- `crates/driftleaf-core`: a Rust port of the storage engine — encryption, every branch
+  mutation, backup/import/export, formulas, and search — proven against the Node
+  implementation. Not wired in as the active backend yet; the sidecar stays in place
+  for this release.
+
+### Changed
+
+- Replaced Electron with Tauri 2. Branch storage still runs through a bundled Node
+  sidecar process; the window, dialogs, shortcuts, and updater are now native Rust.
+- Rebuilt packaging and the release workflow around Tauri's own bundler
+  (deb/rpm/AppImage/dmg/nsis) in place of electron-builder.
+- Diagnostics now report a single backend-runtime string instead of separate
+  Electron/Chromium versions.
+
+### Removed
+
+- Electron, electron-builder, electron-updater, and better-sqlite3.
 
 ## [0.6.4] - 2026-10-15
 

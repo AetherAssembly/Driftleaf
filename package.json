@@ -1,8 +1,7 @@
 {
   "name": "driftleaf",
-  "version": "0.6.4",
+  "version": "0.7.0",
   "description": "So your thoughts don't drift. A local-first, encrypted-by-default notes app.",
-  "main": "dist-electron/main/index.js",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "author": {
@@ -10,38 +9,26 @@
     "email": "support@aetherassembly.org",
     "url": "https://github.com/AetherAssembly/Driftleaf"
   },
-  "desktopName": "driftleaf.desktop",
   "scripts": {
     "dev": "vite",
-    "dev:tauri:renderer": "vite --config vite.tauri.config.ts",
-    "build:tauri:renderer": "vite build --config vite.tauri.config.ts",
     "tauri": "tauri",
+    "tauri:dev": "tauri dev",
     "build": "tsc -b && vite build",
-    "package:appimage": "npm run build && electron-builder --config electron-builder/linux.yml --linux AppImage --publish never -c.electronVersion=43.1.0",
-    "package:linux": "npm run build && electron-builder --config electron-builder/linux.yml --linux --publish never -c.electronVersion=43.1.0",
-    "package:linux:rpm": "npm run build && electron-builder --config electron-builder/linux.yml --linux rpm --publish never -c.electronVersion=43.1.0",
-    "package:linux:arm64": "npm run build && electron-builder --config electron-builder/linux.yml --linux --arm64 --publish never -c.electronVersion=43.1.0",
-    "package:linux:beta": "npm run build && electron-builder --config electron-builder/linux.beta.yml --linux --publish never -c.electronVersion=43.1.0",
-    "package:macos": "npm run build && electron-builder --config electron-builder/macos.yml --mac dmg --publish never -c.electronVersion=43.1.0",
-    "package:macos:beta": "npm run build && electron-builder --config electron-builder/macos.beta.yml --mac dmg --publish never -c.electronVersion=43.1.0",
-    "package:windows": "npm run build && electron-builder --config electron-builder/windows.yml --win nsis portable --publish never -c.electronVersion=43.1.0",
-    "package:windows:beta": "npm run build && electron-builder --config electron-builder/windows.beta.yml --win nsis portable --publish never -c.electronVersion=43.1.0",
-    "publish:linux": "npm run build && electron-builder --config electron-builder/linux.yml --linux --publish always -c.electronVersion=43.1.0",
-    "publish:macos": "npm run build && electron-builder --config electron-builder/macos.yml --mac dmg --publish always -c.electronVersion=43.1.0",
-    "publish:windows": "npm run build && electron-builder --config electron-builder/windows.yml --win nsis portable --publish always -c.electronVersion=43.1.0",
     "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc -b --noEmit",
-    "postinstall": "electron-rebuild -f -w better-sqlite3",
-    "test": "node scripts/tests/data-loss.js && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/regressions.mjs"
+    "test:sidecar": "node scripts/tests/sidecar.mjs",
+    "test": "node scripts/tests/data-loss.js && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/regressions.mjs && npm run test:sidecar",
+    "version:checkpoint": "node scripts/tauri/version.mjs",
+    "stage:tauri": "node scripts/tauri/stage.mjs",
+    "package:tauri": "tauri build --config src-tauri/tauri.release.conf.json",
+    "test:rust-compat": "cargo test --manifest-path crates/driftleaf-core/Cargo.toml --release && cargo build --manifest-path crates/driftleaf-core/Cargo.toml --release --examples && node --experimental-strip-types scripts/tests/crypto-interop.mjs && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/branch-interop.mjs && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/mutation-interop.mjs && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/database-interop.mjs && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/backup-interop.mjs && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/database-import-interop.mjs && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/import-interop.mjs && node --experimental-strip-types scripts/tests/formula-interop.mjs && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/database-export-interop.mjs && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/search-interop.mjs && node scripts/tests/lock-interop.mjs"
   },
   "dependencies": {
     "@aetherAssembly/ui": "^1.0.4",
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-dialog": "^2.8.3",
     "adm-zip": "^0.6.0",
-    "better-sqlite3": "^13.0.3",
     "dompurify": "^3.4.14",
-    "electron-updater": "^6.8.9",
     "marked": "^18.1.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
@@ -52,30 +39,20 @@
     "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2.12.3",
     "@types/adm-zip": "^0.5.7",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^26.6.4",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.67.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "electron": "^44.7.0",
-    "electron-builder": "^26.15.3",
     "eslint": "^10.9.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.11.0",
     "prettier": "^3.9.9",
     "typescript": "^6.0.3",
-    "vite": "^8.3.4",
-    "vite-plugin-electron": "^1.1.2",
-    "vite-plugin-electron-renderer": "^1.0.0"
-  },
-  "allowScripts": {
-    "electron@43.1.0": true,
-    "better-sqlite3": true
+    "vite": "^8.3.4"
   },
   "overrides": {
-    "@electron/get": "5.1.0",
     "brace-expansion@^1.1.7": "1.1.21"
   }
 }

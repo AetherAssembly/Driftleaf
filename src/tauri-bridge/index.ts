@@ -34,7 +34,8 @@ function call<T>(method: string, ...args: unknown[]): Promise<T> {
 }
 
 function notSupported(name: string): () => Promise<never> {
-  return () => Promise.reject(new Error(`${name} is not yet available in this Tauri preview build`));
+  return () =>
+    Promise.reject(new Error(`${name} is not yet available in this Tauri preview build`));
 }
 
 export const tauriDriftleafApi: DriftleafApi = {
@@ -44,7 +45,8 @@ export const tauriDriftleafApi: DriftleafApi = {
     pickBackupDestination: () => invoke<string | null>("pick_backup_destination"),
     createBackup: (destinationPath) => invoke<string>("create_backup", { destinationPath }),
     pickImportFiles: () => invoke<string[] | null>("pick_import_files"),
-    create: (rootPath, passphrase, template) => call("vault.create", rootPath, passphrase, template),
+    create: (rootPath, passphrase, template) =>
+      call("vault.create", rootPath, passphrase, template),
     unlock: (rootPath, passphrase) => call("vault.unlock", rootPath, passphrase),
     hasPassphrase: (rootPath) => call("vault.hasPassphrase", rootPath),
     healthCheck: () => call("vault.healthCheck"),
@@ -94,9 +96,7 @@ export const tauriDriftleafApi: DriftleafApi = {
     installCommunityTemplate: (assetId) => call("extensions.installCommunityTemplate", assetId),
     setPermissions: (id, permissions, databaseIds) =>
       call("extensions.setPermissions", id, permissions, databaseIds),
-    // extensions.run opens a sandboxed BrowserWindow-equivalent; Tauri has no extension
-    // window support yet (Phase 3 territory).
-    run: notSupported("extensions.run"),
+    run: (id) => invoke("run_extension", { id }),
     remove: (id) => call("extensions.remove", id),
   },
   canvas: {
@@ -111,10 +111,10 @@ export const tauriDriftleafApi: DriftleafApi = {
     read: () => call("diagnostics.read"),
   },
   updates: {
-    status: () => call("updates.status"),
-    check: notSupported("updates.check"),
-    download: notSupported("updates.download"),
-    install: notSupported("updates.install"),
+    status: () => invoke("update_status"),
+    check: () => invoke("update_check"),
+    download: () => invoke("update_download"),
+    install: () => invoke("update_install"),
     openDownload: notSupported("updates.openDownload"),
   },
   events: {
@@ -135,11 +135,19 @@ export const tauriDriftleafApi: DriftleafApi = {
       });
       return () => void unlistenPromise.then((unlisten) => unlisten());
     },
-    // The global quick-capture shortcut and the updater are both out of scope for this first
-    // slice (window/OS-shortcut and updater work land in later Tauri phases) — these report
-    // "never fires" rather than throwing, since callers only ever register a listener and
-    // expect an unsubscribe function back, not a result they await.
-    onQuickCapture: () => () => {},
-    onUpdateStatus: () => () => {},
+    // Rust registers the OS-level global shortcut (main.rs) and emits this event to the
+    // main window on trigger, the same Ctrl/Cmd+Shift+N behavior the Electron build's
+    // globalShortcut registration provided.
+    onQuickCapture: (callback) => {
+      const unlistenPromise = listen("driftleaf:quickCapture", () => callback());
+      return () => void unlistenPromise.then((unlisten) => unlisten());
+    },
+    onUpdateStatus: (callback) => {
+      const unlisten = listen<import("../shared/ipc").UpdateStatus>(
+        "driftleaf:updateStatus",
+        (event) => callback(event.payload),
+      );
+      return () => void unlisten.then((fn) => fn());
+    },
   },
 };

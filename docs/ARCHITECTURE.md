@@ -78,3 +78,24 @@ The Updates settings show the installed version and available releases.
 Windows installer builds support in-app downloads and installation. Linux and
 unsigned macOS builds link to releases for manual installation. See
 [Software Updates](UPDATES.md).
+
+## Desktop shell and storage backend
+
+As of v0.7.0, Driftleaf ships as a Tauri 2 app — Electron has been fully removed. Rust
+owns native dialogs, window identity, the close/flush handshake, the global quick-capture
+shortcut, external-link handling, and updater routing. Branch storage itself still runs
+through the same Node domain service (`src/main/service.ts` and the modules it composes),
+reached as a sidecar child process over a private framed stdin/stdout protocol — this is
+a deliberate choice for v0.7.0, not a remaining migration step to rush. The branch format
+is unchanged throughout.
+
+A separate `driftleaf-core` Rust crate (`crates/driftleaf-core`) independently proves the
+full storage-logic surface against the real Node implementation — crypto, every branch
+entity's read/write, backup, file/zip/template import, the formula evaluator, database
+export, and FTS5 search with the wikilink note graph — as a complete, tested compatibility
+layer. Swapping it in to replace the Node sidecar as the active backend is **under
+consideration for a future release**, not yet started or scheduled: it would need a new
+session-lifecycle layer in Rust (nothing in `src-tauri` calls into `driftleaf-core` today),
+a full `reconcileVault()` port, and re-verifying every workflow against it. See
+[migration checkpoints](TAURI_MIGRATION.md) for the detailed history of what's been built
+and verified so far.

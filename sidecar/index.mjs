@@ -141,6 +141,10 @@ if (!settingsDir) {
 
 const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 
+const extensionContexts = new Map();
+const extensionModule = loadModule("src/main/extension-access.ts", {
+  "./vault": vaultModule, "./search": search,
+});
 const host = {
   settings: createSettingsStore(settingsDir),
   updates: {
@@ -163,7 +167,7 @@ const host = {
       throw new Error("Update downloads are not yet available in the Tauri build");
     },
   },
-  onSessionReset: () => {},
+  onSessionReset: () => extensionContexts.clear(),
   pickDirectory: unsupportedPicker("pickDirectory"),
   pickBackupDirectory: unsupportedPicker("pickBackupDirectory"),
   pickBackupDestination: unsupportedPicker("pickBackupDestination"),
@@ -175,12 +179,15 @@ const host = {
   },
   diagnosticsExtras: () => ({
     version: packageJson.version,
-    electron: "n/a (Tauri)",
-    chromium: "n/a (Tauri)",
+    runtime: `Node ${process.version} (sidecar)`,
   }),
 };
 
+// stdout is exclusively the wire protocol, including when DEBUG_SEARCH is set.
+console.log = console.info = console.debug = () => {};
 const service = serviceModule.createDriftleafService(host);
+const extensionAccess = extensionModule.createExtensionAccess(service, label => extensionContexts.get(label));
+const publicMethods = new Set(JSON.parse(readFileSync(path.join(root, "sidecar/public-methods.json"), "utf8")));
 
 // Bounded, length-prefixed framing over private stdin/stdout: a 4-byte big-endian length
 // prefix followed by that many bytes of UTF-8 JSON. Never logs request/response bodies —
@@ -189,6 +196,7 @@ const MAX_FRAME_BYTES = 64 * 1024 * 1024;
 
 function writeFrame(payload) {
   const json = Buffer.from(JSON.stringify(payload), "utf8");
+  if (json.length > MAX_FRAME_BYTES) throw new Error("Sidecar response exceeds the frame size limit");
   const header = Buffer.alloc(4);
   header.writeUInt32BE(json.length, 0);
   process.stdout.write(Buffer.concat([header, json]));
@@ -218,6 +226,23 @@ function errorMessage(error) {
 // same serialized op queue and gets the same friendly-error translation as every other
 // command, via service.__internal.
 const trustedCommands = {
+  "lifecycle.trustedDrain": () => service.__internal.runSerializedCommand(() => null),
+  "extensions.trustedOpen": (id, label) => service.__internal.runSerializedCommand(() => {
+    if (typeof label !== "string" || !/^extension-[0-9]+$/.test(label) || extensionContexts.has(label)) {
+      throw new Error("Invalid extension window");
+    }
+    const extension = vaultModule.getExtension(service.__internal.requireVault(), id);
+    if (!extension) throw new Error("Extension not found");
+    extensionContexts.set(label, { extensionId: id, generation: service.__internal.generation() });
+    return { name: extension.name, source: extension.source };
+  }),
+  "extensions.trustedClose": label => { extensionContexts.delete(label); },
+  "extensions.trustedCall": (label, method, args) => {
+    if (!Object.hasOwn(extensionAccess, method) || !Array.isArray(args)) {
+      throw new Error("Unknown extension command");
+    }
+    return extensionAccess[method](label, ...args);
+  },
   "vault.trustedCreateBackup": (destinationPath) =>
     service.__internal.runSerializedCommand(() =>
       vaultModule.createVaultBackup(service.__internal.requireVault(), destinationPath),
@@ -252,28 +277,30 @@ const trustedCommands = {
 };
 
 function resolveCommand(method) {
-  if (typeof method !== "string") throw new Error(`Unknown sidecar command: ${String(method)}`);
+  if (typeof method !== "string") throw new Error("Unknown sidecar command");
   if (Object.hasOwn(trustedCommands, method)) return trustedCommands[method];
-  if (!method.includes(".")) throw new Error(`Unknown sidecar command: ${method}`);
+  if (!publicMethods.has(method)) throw new Error("Unknown sidecar command");
   const [group, action] = method.split(".");
   const target = service[group];
-  const fn = target ? target[action] : undefined;
-  if (typeof fn !== "function") throw new Error(`Unknown sidecar command: ${method}`);
-  return (...args) => fn.apply(target, args);
+  if (!Object.hasOwn(service, group) || !Object.hasOwn(target, action)) {
+    throw new Error("Unknown sidecar command");
+  }
+  return (...args) => target[action](...args);
 }
 
 async function handleRequest(request) {
-  const { id, method, args } = request;
-  if (typeof id !== "number" && typeof id !== "string") {
-    console.error("[sidecar] dropping request with no id");
-    return;
+  if (!request || typeof request !== "object" || !Number.isSafeInteger(request.id) || request.id < 1) {
+    console.error("[sidecar] invalid request envelope; exiting");
+    process.exit(1);
   }
+  const { id, method, args } = request;
   try {
-    const result = await resolveCommand(method)(...(Array.isArray(args) ? args : []));
+    if (!Array.isArray(args)) throw new Error("Sidecar arguments must be an array");
+    const result = await resolveCommand(method)(...args);
     writeFrame({ id, ok: true, result: result === undefined ? null : result });
   } catch (error) {
     const message = errorMessage(error);
-    console.error(`[sidecar] command "${method}" failed: ${message}`);
+    console.error("[sidecar] command failed");
     writeFrame({ id, ok: false, error: message });
   }
 }
@@ -295,8 +322,8 @@ process.stdin.on("data", (chunk) => {
     try {
       request = JSON.parse(frameBytes.toString("utf8"));
     } catch {
-      console.error("[sidecar] dropping malformed (non-JSON) frame");
-      continue;
+      console.error("[sidecar] malformed frame; exiting");
+      process.exit(1);
     }
     void handleRequest(request);
   }
@@ -307,12 +334,13 @@ process.stdin.on("end", () => {
   process.exit(0);
 });
 
-process.on("unhandledRejection", (reason) => {
-  console.error("[sidecar] unhandled rejection:", errorMessage(reason));
+process.on("unhandledRejection", () => {
+  console.error("[sidecar] unhandled rejection");
+  process.exit(1);
 });
 
-process.on("uncaughtException", (error) => {
-  console.error("[sidecar] uncaught exception:", errorMessage(error));
+process.on("uncaughtException", () => {
+  console.error("[sidecar] uncaught exception");
   process.exit(1);
 });
 

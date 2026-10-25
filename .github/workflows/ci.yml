@@ -29,6 +29,9 @@ jobs:
           cache-dependency-path: package-lock.json
           registry-url: https://npm.pkg.github.com
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install
         run: npm ci
         env:
@@ -39,6 +42,12 @@ jobs:
 
       - name: Test
         run: npm test
+
+      # crates/driftleaf-core is a plain Rust crate (no windowing/GTK dependency), so this
+      # runs on every platform in the matrix without the Linux WebKitGTK setup the
+      # src-tauri build (tested separately in tauri-release.yml) needs.
+      - name: Rust storage-compatibility tests
+        run: npm run test:rust-compat
 
       - name: Build
         run: npm run build

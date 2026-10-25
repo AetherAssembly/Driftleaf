@@ -19,8 +19,7 @@ export interface UpdatesHost {
 
 export interface DiagnosticsExtras {
   version: string;
-  electron: string;
-  chromium: string;
+  runtime: string;
 }
 
 export interface PickedExtensionFile {

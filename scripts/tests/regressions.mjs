@@ -6,13 +6,12 @@ import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
 import { createRequire } from "node:module";
-import { EventEmitter, once } from "node:events";
+import { once } from "node:events";
 import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import ts from "typescript";
 import * as vault from "../../src/main/vault.ts";
 import * as links from "../../src/shared/note-links.ts";
-import * as contract from "../../src/shared/ipc.ts";
 import { SerialQueue } from "../../src/shared/serial-queue.ts";
 import * as storage from "../../src/shared/storage.ts";
 import * as databaseExport from "../../src/main/database-export.ts";
@@ -107,6 +106,11 @@ const serviceModule = loadModule("src/main/service.ts", {
   "./community-catalog": communityCatalog,
 });
 
+const extensionAccessModule = loadModule("src/main/extension-access.ts", {
+  "./vault": vault,
+  "./search": search,
+});
+
 async function temporaryBranch(run) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "driftleaf-regression-"));
   try {
@@ -139,41 +143,18 @@ function fakeHost(overrides = {}) {
     pickExtensionFile: async () => null,
     pickExportDestination: async () => null,
     openExternal: async () => {},
-    diagnosticsExtras: () => ({ version: "test", electron: "test", chromium: "test" }),
+    diagnosticsExtras: () => ({ version: "test", runtime: "test" }),
     ...overrides,
   };
 }
 
-// Exercises the production TypeScript service directly — no Electron, no IPC transport.
-// This and ipcHarness() below run the same contract tests against the two adapters
-// described by the Phase 1 gate in docs/ELECTRON_MIGRATION_REVIEW.md.
+// Exercises the production TypeScript service directly — this is the only adapter now
+// that the Electron IPC layer (src/main/ipc.ts) has been removed; the Tauri shell's own
+// command surface is tested separately in src-tauri's Rust tests.
 function serviceHarness(hostOverrides) {
   return serviceModule.createDriftleafService(fakeHost(hostOverrides));
 }
 
-// The existing Electron adapter, with "electron" mocked out — mirrors how ipc.ts actually
-// runs, just without a real ipcMain/BrowserWindow.
-function ipcHarness(settingsOverride) {
-  const handlers = new Map();
-  const service = serviceHarness(settingsOverride ? { settings: settingsOverride } : undefined);
-  const api = loadModule("src/main/ipc.ts", {
-    electron: {
-      ipcMain: { handle: (channel, fn) => handlers.set(channel, fn) },
-      BrowserWindow: class {},
-    },
-    "../shared/ipc": contract,
-    "./window-lifecycle": {},
-    "./vault": vault,
-    "./search": search,
-    "./updates": {},
-  });
-  api.registerIpcHandlers({}, service);
-  return (channel, ...args) => handlers.get(channel)({}, ...args);
-}
-
-// Phase 1 gate (docs/ELECTRON_MIGRATION_REVIEW.md): the same assertions must hold whether
-// commands run through the Electron-mocked adapter or directly against the
-// Electron-independent service, with neither adapter launching real Electron.
 function serviceInvoke(service) {
   return (method, ...args) => {
     switch (method) {
@@ -197,29 +178,6 @@ function serviceInvoke(service) {
   };
 }
 
-function ipcInvoke(invokeChannel) {
-  return (method, ...args) => {
-    switch (method) {
-      case "vault.create":
-        return invokeChannel(contract.IPC_CHANNELS.vaultCreate, ...args);
-      case "vault.unlock":
-        return invokeChannel(contract.IPC_CHANNELS.vaultUnlock, ...args);
-      case "vault.lock":
-        return invokeChannel(contract.IPC_CHANNELS.vaultLock);
-      case "vault.hasPassphrase":
-        return invokeChannel(contract.IPC_CHANNELS.vaultHasPassphrase, ...args);
-      case "notes.create":
-        return invokeChannel(contract.IPC_CHANNELS.notesCreate, ...args);
-      case "notes.write":
-        return invokeChannel(contract.IPC_CHANNELS.notesWrite, ...args);
-      case "notes.read":
-        return invokeChannel(contract.IPC_CHANNELS.notesRead, ...args);
-      default:
-        throw new Error(`Unmapped contract method: ${method}`);
-    }
-  };
-}
-
 // Shared assertions: create, prove the passphrase is recorded, round-trip a note through
 // write/read, lock, then prove the session is really gone (Finding #2's invariant — no
 // command can still see the vault once locked). `call(method, ...args)` is adapter-agnostic.
@@ -233,17 +191,10 @@ async function runCoreCommandContract(call, directory) {
   await assert.rejects(call("notes.read", note.id), /No vault is unlocked/);
 }
 
-test("service contract: core session/note commands work directly against the service, no Electron involved", async () => {
+test("service contract: core session/note commands work directly against the service", async () => {
   await temporaryBranch(async (directory) => {
     const service = serviceHarness();
     await runCoreCommandContract(serviceInvoke(service), directory);
-  });
-});
-
-test("service contract: the same core session/note assertions hold through the Electron-mocked adapter", async () => {
-  await temporaryBranch(async (directory) => {
-    const invoke = ipcHarness();
-    await runCoreCommandContract(ipcInvoke(invoke), directory);
   });
 });
 
@@ -280,19 +231,14 @@ test("only one concurrent creator can reserve a branch", async () => {
   });
 });
 
-test("real IPC lock waits for complete writes and rejects writes queued after lock", async () => {
+test("service op queue waits for complete writes and rejects writes queued after lock", async () => {
   await temporaryBranch(async (directory) => {
-    const invoke = ipcHarness();
-    await invoke(contract.IPC_CHANNELS.vaultCreate, directory, "passphrase", "blank");
-    const note = await invoke(contract.IPC_CHANNELS.notesCreate, "", "Race");
-    const writes = Array.from({ length: 8 }, (_, n) =>
-      invoke(contract.IPC_CHANNELS.notesWrite, note.id, `revision ${n}`),
-    );
-    const locking = invoke(contract.IPC_CHANNELS.vaultLock);
-    const late = assert.rejects(
-      invoke(contract.IPC_CHANNELS.notesWrite, note.id, "too late"),
-      /No vault is unlocked/,
-    );
+    const service = serviceHarness();
+    await service.vault.create(directory, "passphrase", "blank");
+    const note = await service.notes.create("", "Race");
+    const writes = Array.from({ length: 8 }, (_, n) => service.notes.write(note.id, `revision ${n}`));
+    const locking = service.vault.lock();
+    const late = assert.rejects(service.notes.write(note.id, "too late"), /No vault is unlocked/);
     await Promise.all([...writes, locking, late]);
     const reopened = await vault.unlockVault(directory, "passphrase");
     assert.equal(await vault.readNote(reopened.vault, note.id), "revision 7");
@@ -376,65 +322,18 @@ test("close flush waits for in-flight saves and the latest edit", async () => {
   assert.equal(closed, true);
 });
 
-test("close handshake validates sender, drains after acknowledgement, and permits retry after failure", async () => {
-  const ipc = new EventEmitter();
-  const lifecycle = loadModule("src/main/window-lifecycle.ts", {
-    electron: { ipcMain: ipc },
-    "../shared/ipc": contract,
-  });
-  const frame = {};
-  let requestId;
-  const win = {
-    isDestroyed: () => false,
-    webContents: {
-      mainFrame: frame,
-      send: (channel, id) => {
-        if (channel === contract.RENDERER_EVENTS.beforeClose) requestId = id;
-      },
-    },
-  };
-  let drained = 0;
-  const drain = async () => {
-    drained++;
-  };
-  const first = lifecycle.prepareWindowClose(win, drain);
-  ipc.emit(contract.IPC_CHANNELS.flushResult, { sender: {}, senderFrame: frame }, requestId);
-  assert.equal(drained, 0);
-  ipc.emit(
-    contract.IPC_CHANNELS.flushResult,
-    { sender: win.webContents, senderFrame: frame },
-    requestId,
-    "Disk full",
-  );
-  await assert.rejects(first, /Disk full/);
-  assert.equal(lifecycle.isCloseApproved(win), false);
-  assert.equal(drained, 0);
-  const retry = lifecycle.prepareWindowClose(win, drain);
-  ipc.emit(
-    contract.IPC_CHANNELS.flushResult,
-    { sender: win.webContents, senderFrame: frame },
-    requestId,
-  );
-  await retry;
-  assert.equal(lifecycle.isCloseApproved(win), true);
-  assert.equal(drained, 1);
-});
-
 test("independent sessions cannot unlock the same branch until the owner locks it", async () => {
   await temporaryBranch(async (directory) => {
-    const first = ipcHarness();
-    const second = ipcHarness();
+    const first = serviceHarness();
+    const second = serviceHarness();
     try {
-      await first(contract.IPC_CHANNELS.vaultCreate, directory, "passphrase", "blank");
-      await assert.rejects(
-        second(contract.IPC_CHANNELS.vaultUnlock, directory, "passphrase"),
-        /already open/,
-      );
-      await first(contract.IPC_CHANNELS.vaultLock);
-      await second(contract.IPC_CHANNELS.vaultUnlock, directory, "passphrase");
+      await first.vault.create(directory, "passphrase", "blank");
+      await assert.rejects(second.vault.unlock(directory, "passphrase"), /already open/);
+      await first.vault.lock();
+      await second.vault.unlock(directory, "passphrase");
     } finally {
-      await first(contract.IPC_CHANNELS.vaultLock);
-      await second(contract.IPC_CHANNELS.vaultLock);
+      await first.vault.lock();
+      await second.vault.lock();
     }
   });
 });
@@ -442,24 +341,20 @@ test("independent sessions cannot unlock the same branch until the owner locks i
 test("failed unlock and failed session setup release the writer lock", async () => {
   await temporaryBranch(async (directory) => {
     await vault.createVault(directory, "passphrase");
-    const first = ipcHarness();
-    await assert.rejects(
-      first(contract.IPC_CHANNELS.vaultUnlock, directory, "wrong"),
-      /Incorrect passphrase/,
-    );
-    const broken = ipcHarness({
-      patchSettings: async () => {
-        throw new Error("Settings are read-only");
+    const first = serviceHarness();
+    await assert.rejects(first.vault.unlock(directory, "wrong"), /Incorrect passphrase/);
+    const broken = serviceHarness({
+      settings: {
+        patchSettings: async () => {
+          throw new Error("Settings are read-only");
+        },
       },
     });
-    await assert.rejects(
-      broken(contract.IPC_CHANNELS.vaultUnlock, directory, "passphrase"),
-      /read-only/,
-    );
+    await assert.rejects(broken.vault.unlock(directory, "passphrase"), /read-only/);
     try {
-      await first(contract.IPC_CHANNELS.vaultUnlock, directory, "passphrase");
+      await first.vault.unlock(directory, "passphrase");
     } finally {
-      await first(contract.IPC_CHANNELS.vaultLock);
+      await first.vault.lock();
     }
   });
 });
@@ -539,4 +434,66 @@ test("failed canvas writes remain queued and persist the newest revision on retr
   });
   await drafts.flush();
   assert.deepEqual(persisted, [{ id: "card", x: 20, y: 30 }]);
+});
+
+
+test("shared extension access enforces sender, grants, revocation, removal, and session generation", async () => {
+  await temporaryBranch(async directory => {
+    const service = serviceHarness();
+    await service.vault.create(directory, "test-passphrase", "blank");
+    try {
+      const current = service.__internal.requireVault();
+      const extension = await vault.installExtension(current, "Reader", "void 0;");
+      const note = await service.notes.create("", "Private note");
+      await service.notes.write(note.id, "private content");
+      const context = { extensionId: extension.id, generation: service.__internal.generation() };
+      const access = extensionAccessModule.createExtensionAccess(service, sender => sender === "owned-window" ? context : undefined);
+      await assert.rejects(access.readNote("other-window", note.id), /not an active/);
+      await assert.rejects(access.readNote("owned-window", note.id), /not been granted/);
+      await service.extensions.setPermissions(extension.id, ["read_notes"], []);
+      assert.equal(await access.readNote("owned-window", note.id), "private content");
+      await assert.rejects(access.graph("owned-window"), /not been granted/);
+      // Queue revocation before a read: authorization must run when the read executes.
+      const revoke = service.extensions.setPermissions(extension.id, [], []);
+      const denied = assert.rejects(access.readNote("owned-window", note.id), /not been granted/);
+      await Promise.all([revoke, denied]);
+      await service.extensions.setPermissions(extension.id, ["read_notes"], []);
+      await service.vault.lock();
+      await service.vault.unlock(directory, "test-passphrase");
+      await assert.rejects(access.readNote("owned-window", note.id), /not an active/);
+      context.generation = service.__internal.generation();
+      assert.equal(await access.readNote("owned-window", note.id), "private content");
+      await service.extensions.remove(extension.id);
+      await assert.rejects(access.listNotes("owned-window"), /removed/);
+    } finally { await service.vault.lock(); }
+  });
+});
+
+test("shared extension database reads hide ungranted databases and related columns", async () => {
+  await temporaryBranch(async directory => {
+    const service = serviceHarness();
+    await service.vault.create(directory, "test-passphrase", "blank");
+    try {
+      const current = service.__internal.requireVault();
+      const hidden = await vault.createDatabase(current, "Secret", "", [{ id: "hidden-title", name: "Name", type: "title" }], []);
+      const visible = await vault.createDatabase(current, "Shared", "", [
+        { id: "title", name: "Name", type: "title" },
+        { id: "relation", name: "Secret relation", type: "relation", relationDatabaseId: hidden.id },
+        { id: "rollup", name: "Secret rollup", type: "rollup", rollupRelationPropertyId: "relation", rollupTargetPropertyId: "hidden-title", rollupFunction: "count" },
+      ], [{ id: "shared-row", values: { title: "Visible row", relation: [] }, createdAt: 1, updatedAt: 1 }]);
+      const extension = await vault.installExtension(current, "Database reader", "void 0;");
+      await service.extensions.setPermissions(extension.id, ["read_databases"], [visible.id]);
+      const context = { extensionId: extension.id, generation: service.__internal.generation() };
+      const access = extensionAccessModule.createExtensionAccess(service, () => context);
+      const list = await access.listDatabases("owned-window");
+      assert.deepEqual(Array.from(list, item => item.id), [visible.id]);
+      await assert.rejects(access.readDatabase("owned-window", hidden.id), /not been granted/);
+      const filtered = await access.readDatabase("owned-window", visible.id);
+      assert.deepEqual(Array.from(filtered.properties, property => property.id), ["title"]);
+      assert.deepEqual(Object.keys(filtered.rows[0].values), ["title"]);
+      await service.extensions.setPermissions(extension.id, ["read_databases"], [visible.id, hidden.id]);
+      const expanded = await access.readDatabase("owned-window", visible.id);
+      assert.equal(expanded.properties.length, 3);
+    } finally { await service.vault.lock(); }
+  });
 });

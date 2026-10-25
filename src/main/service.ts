@@ -550,8 +550,7 @@ function buildDiagnostics(host: ServiceHost): AppDiagnostics {
     platform: process.platform,
     osRelease: os.release(),
     architecture: process.arch,
-    electron: extras.electron,
-    chromium: extras.chromium,
+    runtime: extras.runtime,
     displayServer: sessionType,
     desktopEnvironment:
       process.env.XDG_CURRENT_DESKTOP ?? process.env.XDG_SESSION_DESKTOP ?? "Not detected",

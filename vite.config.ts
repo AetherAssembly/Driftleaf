@@ -1,44 +1,19 @@
+// Dev/build config for the Tauri shell's renderer — the only frontend build this project
+// has (Electron, and the separate Electron-only vite config it used, were removed once
+// Tauri fully replaced it).
 import { defineConfig } from "vite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
-import electron from "vite-plugin-electron/simple";
-import renderer from "vite-plugin-electron-renderer";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  define: {
-    __DRIFTLEAF_MAC_AUTO_UPDATE__: JSON.stringify(
-      process.env.DRIFTLEAF_MAC_AUTO_UPDATE === "true",
-    ),
+  plugins: [react()],
+  server: {
+    port: 5183,
+    strictPort: true,
   },
-  plugins: [
-    react(),
-    electron({
-      main: {
-        entry: path.resolve(rootDir, "src/main/index.ts"),
-        vite: {
-          build: {
-            outDir: path.resolve(rootDir, "dist-electron/main"),
-            rollupOptions: {
-              external: [/^better-sqlite3(?:\/|$)/],
-            },
-          },
-        },
-      },
-      preload: {
-        input: path.resolve(rootDir, "src/preload/index.ts"),
-        vite: {
-          build: {
-            outDir: path.resolve(rootDir, "dist-electron/preload"),
-          },
-        },
-      },
-      renderer: {},
-    }),
-    renderer(),
-  ],
   build: {
     outDir: path.resolve(rootDir, "dist"),
   },

@@ -114,8 +114,7 @@ export interface AppDiagnostics {
   platform: string;
   osRelease: string;
   architecture: string;
-  electron: string;
-  chromium: string;
+  runtime: string;
   displayServer: string;
   desktopEnvironment: string;
 }
