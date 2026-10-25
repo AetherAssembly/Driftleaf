@@ -26,8 +26,8 @@ A private, local-first notes app for your desktop. Your branch stays on your com
 Get the latest release for your platform:
 
 - **Linux**: [.AppImage, .deb, or .rpm](https://github.com/AetherAssembly/Driftleaf/releases)
-- **macOS**: [.dmg or .zip](https://github.com/AetherAssembly/Driftleaf/releases)
-- **Windows**: [Installer or portable .exe](https://github.com/AetherAssembly/Driftleaf/releases)
+- **macOS**: [.dmg](https://github.com/AetherAssembly/Driftleaf/releases)
+- **Windows**: [Installer](https://github.com/AetherAssembly/Driftleaf/releases)
 
 See [docs/INSTALLATION.md](docs/INSTALLATION.md) for package repository setup,
 architecture-specific downloads, verification, and platform-specific installation notes.
@@ -150,18 +150,21 @@ Open DevTools (Ctrl+Shift+I or Cmd+Opt+I) and search for `[search]` in the conso
 **Packaging for distribution:**
 
 ```sh
-npm run package:appimage      # Linux: AppImage
-npm run package:linux         # Linux: AppImage + deb + rpm
-npm run package:linux:arm64   # Linux: arm64
-npm run package:macos         # macOS: dmg + zip
-npm run package:windows       # Windows: installer + portable
+npm run package:tauri                       # this platform's native bundles (deb+rpm on Linux)
+npm run package:tauri -- --bundles appimage # Linux: AppImage only
+npm run package:tauri -- --bundles dmg      # macOS: dmg
+npm run package:tauri -- --bundles nsis     # Windows: installer
 ```
 
-Each platform has a `:beta` variant for pre-release testing. See the build configs in [`electron-builder/`](electron-builder/).
+See [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) for what's been verified on
+which platform before you rely on a build.
 
 ### Technical Details
 
-- **Stack**: Electron + React 19 + Vite + TypeScript
+- **Stack**: Tauri 2 (Rust shell) + React 19 + Vite + TypeScript, with the existing
+  Node domain service run as a sidecar child process — see
+  [docs/TAURI_MIGRATION.md](docs/TAURI_MIGRATION.md) for how that's wired and why.
+  Electron has been fully removed as of v0.7.0.
 - **Storage**: Encrypted markdown files (scrypt + AES-256-GCM) per folder-based branch
 - **Search**: SQLite FTS5 index, rebuilt on unlock
 - **Safety**: Atomic writes + consistency checks on every unlock

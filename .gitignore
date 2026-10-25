@@ -1,7 +1,10 @@
 node_modules/
 dist/
 dist-electron/
+dist-tauri-frontend/
 release/
+src-tauri/target/
+src-tauri/gen/
 *.log
 *.tsbuildinfo
 .DS_Store
@@ -16,3 +19,12 @@ index.html
 #development files
 DATABASE_ROADMAP.md
 docs/ELECTRON_MIGRATION_REVIEW.md
+docs/TAURI_MIGRATION.md
+docs/RELEASE_CHECKLIST.md
+docs/TAURI_UPDATES.md
+docs/packaging/aur/README.md
+
+# Generated Tauri backend resources and pinned runtime archives
+src-tauri/resources/
+src-tauri/runtime-cache/
+crates/*/target/

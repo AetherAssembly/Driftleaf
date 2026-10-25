@@ -1,3 +1,4 @@
+import { BRANCH_LOCK_FILENAME } from "../shared/storage";
 // Vault = an encrypted workspace on disk (see docs/ARCHITECTURE.md). Note titles,
 // folder placement, and database metadata live in an encrypted manifest; note files
 // use opaque IDs under .driftleaf/notes rather than exposing names in paths.
@@ -721,6 +722,11 @@ export async function createVaultBackup(vault: Vault, destinationParent: string)
       errorOnExist: true,
       force: false,
       preserveTimestamps: true,
+      filter: (source) => {
+        const relative = path.relative(sourcePath, source);
+        return ![BRANCH_LOCK_FILENAME, `${BRANCH_LOCK_FILENAME}-journal`,
+          `${BRANCH_LOCK_FILENAME}-wal`, `${BRANCH_LOCK_FILENAME}-shm`].includes(relative);
+      },
     });
     await rename(temporaryPath, backupPath);
     return backupPath;

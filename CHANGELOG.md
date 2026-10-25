@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
+## [Unreleased]
+
+## [0.7.0]
+
+Driftleaf now runs on Tauri instead of Electron. See
+[docs/TAURI_MIGRATION.md](docs/TAURI_MIGRATION.md) for the migration's history.
+
+### Added
+
+- Global quick-capture shortcut and external-link handling, now implemented natively
+  (`tauri-plugin-global-shortcut`, `tauri-plugin-opener`).
+- `crates/driftleaf-core`: a Rust port of the storage engine — encryption, every branch
+  mutation, backup/import/export, formulas, and search — proven against the Node
+  implementation. Not wired in as the active backend yet; the sidecar stays in place
+  for this release.
+
+### Changed
+
+- Replaced Electron with Tauri 2. Branch storage still runs through a bundled Node
+  sidecar process; the window, dialogs, shortcuts, and updater are now native Rust.
+- Rebuilt packaging and the release workflow around Tauri's own bundler
+  (deb/rpm/AppImage/dmg/nsis) in place of electron-builder.
+- Diagnostics now report a single backend-runtime string instead of separate
+  Electron/Chromium versions.
+
+### Fixed
+
+- Windows: the Node sidecar failed to start at all, since Node's `--loader` flag parses
+  its argument as a URL and mistook an absolute Windows path's drive letter for a URL
+  scheme. The app would not have worked on Windows before this fix.
+
+### Removed
+
+- Electron, electron-builder, electron-updater, and better-sqlite3.
+
 ## [0.6.4] - 2026-10-15
 
 ### Fixed

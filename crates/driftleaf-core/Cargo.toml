@@ -1,0 +1,23 @@
+[package]
+name = "driftleaf-core"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+aes-gcm = { version = "0.10", features = ["zeroize"] }
+aes = { version = "0.8", features = ["zeroize"] }
+scrypt = "0.11"
+zeroize = "1"
+# preserve_order: JSON object iteration must match JS's insertion-order object semantics
+# (observable in database_import.rs's column-discovery order, among other places).
+serde_json = { version = "1", features = ["preserve_order"] }
+hex = "0.4"
+rusqlite = { version = "0.37", features = ["bundled"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+regex = "1"
+
+[dev-dependencies]
+# Only used by the branch_mutate example (importTemplateArchive's byte-array op field),
+# not by the library itself.
+base64 = "0.22"

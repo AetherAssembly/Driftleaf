@@ -37,14 +37,12 @@ sudo apt update
 sudo apt install --only-upgrade driftleaf
 ```
 
-If you previously configured the old AetherAssembly repository, remove its obsolete source entry (including any beta entry) before adding the new one. Do not remove other applications' source entries.
-
 #### Manual Debian package
 
 Download the matching stable `.deb` from GitHub Releases, then install it with:
 
 ```sh
-sudo apt install ./driftleaf-<version>-amd64.deb
+sudo apt install ./Driftleaf_<version>_amd64.deb
 # For ARM64, use the asset ending in arm64.deb instead.
 ```
 
@@ -64,7 +62,7 @@ sudo dnf install driftleaf
 You can alternatively download the matching `.rpm` from the release page and install it:
 
 ```sh
-sudo dnf install ./driftleaf-<version>-x86_64.rpm
+sudo dnf install ./Driftleaf-<version>-1.x86_64.rpm
 ```
 
 For ARM64 systems, use the asset ending in `aarch64.rpm`.
@@ -86,16 +84,28 @@ sudo zypper install driftleaf
 ### AppImage
 
 Download the AppImage for your architecture from the release page. For x64, use the
-asset ending in `x86_64.AppImage`; for ARM64, use `arm64.AppImage`.
+asset ending in `amd64.AppImage`; for ARM64, use the one ending in your architecture's
+AppImage suffix.
 
 Make it executable and launch it:
 
 ```sh
-chmod +x driftleaf-<version>-x86_64.AppImage
-./driftleaf-<version>-x86_64.AppImage
+chmod +x Driftleaf_<version>_amd64.AppImage
+./Driftleaf_<version>_amd64.AppImage
 ```
 
-The AppImage is also available for Arch Linux.
+### Arch Linux and derivatives
+
+A `driftleaf-bin` PKGBUILD is maintained at `docs/packaging/aur/`. Once published to the
+AUR (see that directory's README for the one-time setup and the per-release update
+steps), install it with an AUR helper:
+
+```sh
+paru -S driftleaf-bin
+# or: yay -S driftleaf-bin
+```
+
+The AppImage also works on Arch Linux if you'd rather not use an AUR helper.
 
 ### Verify a download
 
@@ -103,7 +113,7 @@ Release notes include a SHA256 checksum for each uploaded artifact. Verify a dow
 file from its containing directory with:
 
 ```sh
-sha256sum driftleaf-<version>-x86_64.AppImage
+sha256sum Driftleaf_<version>_amd64.AppImage
 ```
 
 Compare the result with the checksum shown in the release notes.
@@ -121,17 +131,13 @@ xattr -d com.apple.quarantine "/Applications/Driftleaf.app"
 
 ## Windows
 
-The release provides two Windows options:
-
-- **Installer:** download the `setup.exe` asset and run it.
-- **Portable:** download the `portable.exe` asset and run it from any folder.
+Download the `-setup.exe` installer asset from the release page and run it.
 
 Windows SmartScreen may warn because the application is not code-signed. If you trust the
 download, select **More info**, then **Run anyway**.
 
 ## Beta releases
 
-Beta releases are marked as prereleases on GitHub and use separate beta package
-names on Linux. They contain in-progress changes and are intended for
-evaluation before a stable release. Stable releases remain available at the
-[latest release](https://github.com/AetherAssembly/Driftleaf/releases/latest).
+Beta releases are marked as prereleases on GitHub. They contain in-progress changes and
+are intended for evaluation before a stable release. Stable releases remain available at
+the [latest release](https://github.com/AetherAssembly/Driftleaf/releases/latest).

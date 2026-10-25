@@ -4,6 +4,18 @@ Extensions add optional features to Driftleaf. Each extension is JavaScript
 that runs in its own isolated window. Installed extensions are stored inside
 the encrypted branch.
 
+## Extension window implementation
+
+Each extension runs in a separate, incognito native window with a restricted read API,
+navigation locked to its own page, and no plugin capabilities. Backend tests cover
+grants, database filtering, stale sessions, and unrelated senders. Native window
+isolation has been verified on Linux; Windows and macOS are not yet confirmed (see
+[docs/RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)). Locking, unlocking, or creating a
+branch closes all open extension windows. Removing an extension revokes its future
+reads immediately, but doesn't yet close that extension's window if it's still open —
+it keeps running with no further access until closed manually or the branch is
+locked/reopened.
+
 ## Installing and managing extensions
 
 JavaScript extensions can be installed from a `.js` file smaller than 512 KB
@@ -32,7 +44,8 @@ Extensions are still executable code from a source you choose. A granted
 extension can read and process the data covered by its permissions while it is
 running. Review unfamiliar source and consider its permissions before
 installation. Isolation reduces access to the rest of the app and device, but
-cannot protect against vulnerabilities in Electron or the operating system.
+cannot protect against vulnerabilities in the Tauri shell, its WebView, or the
+operating system.
 
 Extensions and their permissions are stored in the encrypted branch. Community
 gallery behavior and network requests are described in
