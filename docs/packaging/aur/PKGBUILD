@@ -1,11 +1,8 @@
-# Maintainer: Aster <support@aetherassembly.org>
+# Maintainer: Aster1630 <support@aetherassembly.org>
 
-# This repackages the official release .deb rather than building from source. Driftleaf's
-# own build needs an authenticated GitHub Packages token for the private @aetherAssembly/ui
-# npm dependency, which a clean makepkg chroot has no way to provide — so a from-source
-# PKGBUILD isn't workable here. The .deb's own layout (binary, bundled Node sidecar backend,
-# desktop file, icons) is reused unchanged; see docs/packaging/rpm/driftleaf.spec for the
-# same approach applied to Fedora/openSUSE.
+# Repackages the official release .deb rather than building from source: Driftleaf's
+# build needs an authenticated GitHub Packages token for a private npm dependency,
+# which a clean makepkg chroot has no way to provide.
 pkgname=driftleaf-bin
 pkgver=0.7.0
 pkgrel=1
@@ -19,10 +16,6 @@ conflicts=('driftleaf')
 source_x86_64=("https://github.com/AetherAssembly/Driftleaf/releases/download/v${pkgver}/Driftleaf_${pkgver}_amd64.deb")
 source_aarch64=("https://github.com/AetherAssembly/Driftleaf/releases/download/v${pkgver}/Driftleaf_${pkgver}_arm64.deb")
 source=("LICENSE-${pkgver}::https://raw.githubusercontent.com/AetherAssembly/Driftleaf/v${pkgver}/LICENSE")
-# Placeholder — these describe the locally-built v0.7.0 artifacts used to develop and test
-# this PKGBUILD, not the official release (which doesn't exist yet). Regenerate for the real
-# asset with `updpkgsums` (pacman-contrib) before every release; never submit to the AUR with
-# unverified checksums.
 sha256sums_x86_64=('SKIP')
 sha256sums_aarch64=('SKIP')
 sha256sums=('SKIP')
