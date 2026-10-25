@@ -4,7 +4,7 @@
 
 Name:           driftleaf
 Version:        0.7.0
-Release:        3%{?dist}
+Release:        4%{?dist}
 Summary:        A local-first encrypted notes, graph, and database app
 License:        AGPL-3.0-or-later
 URL:            https://github.com/AetherAssembly/Driftleaf
@@ -65,6 +65,7 @@ cp -a extracted/usr/share/icons/hicolor/256x256@2/apps/driftleaf.png \
 install -Dm644 %{_builddir}/LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LICENSE
 
 %files
+%dir %{_datadir}/licenses/%{name}
 %license %{_datadir}/licenses/%{name}/LICENSE
 %{_bindir}/driftleaf
 /usr/lib/Driftleaf/
@@ -81,6 +82,10 @@ install -Dm644 %{_builddir}/LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LIC
 %{_datadir}/icons/hicolor/256x256@2/apps/driftleaf.png
 
 %changelog
+* Sun Oct 25 2026 AetherAssembly <support@aetherassembly.org> - 0.7.0-4
+- Own the application license directory explicitly so openSUSE's post-build
+  file-list check does not reject it as an unowned directory.
+
 * Sun Oct 25 2026 AetherAssembly <support@aetherassembly.org> - 0.7.0-3
 - Disable automatic debug packages for the prebuilt release RPM payload. There
   are no build sources to collect, so debugsource generation fails with an empty
