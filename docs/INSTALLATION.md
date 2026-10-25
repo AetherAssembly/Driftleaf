@@ -96,16 +96,15 @@ chmod +x Driftleaf_<version>_amd64.AppImage
 
 ### Arch Linux and derivatives
 
-A `driftleaf-bin` PKGBUILD is maintained at `docs/packaging/aur/`. Once published to the
-AUR (see that directory's README for the one-time setup and the per-release update
-steps), install it with an AUR helper:
+Install `driftleaf-bin` from the AUR with your preferred helper:
 
 ```sh
 paru -S driftleaf-bin
 # or: yay -S driftleaf-bin
 ```
 
-The AppImage also works on Arch Linux if you'd rather not use an AUR helper.
+Its `PKGBUILD` is maintained at `docs/packaging/aur/` in this repository. The AppImage
+also works on Arch Linux if you'd rather not use an AUR helper.
 
 ### Verify a download
 

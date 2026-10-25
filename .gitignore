@@ -28,3 +28,10 @@ docs/packaging/aur/README.md
 src-tauri/resources/
 src-tauri/runtime-cache/
 crates/*/target/
+
+# makepkg build byproducts from testing docs/packaging/aur/PKGBUILD locally
+docs/packaging/aur/pkg/
+docs/packaging/aur/src/
+docs/packaging/aur/*.pkg.tar.*
+docs/packaging/aur/Driftleaf_*.deb
+docs/packaging/aur/LICENSE-*

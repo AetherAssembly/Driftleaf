@@ -6,8 +6,7 @@ The format is based on Keep a Changelog and this project uses semantic versionin
 
 ## [0.7.0] - 2026-10-25
 
-Driftleaf now runs on Tauri instead of Electron. See
-[docs/TAURI_MIGRATION.md](docs/TAURI_MIGRATION.md) for the migration's history.
+Driftleaf now runs on Tauri instead of Electron.
 
 ### Added
 

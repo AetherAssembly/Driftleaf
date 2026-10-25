@@ -14,8 +14,7 @@
 // which forwards to the Node domain service (src/main/service.ts, unmodified) over a private
 // stdin/stdout pipe. Commands that are still genuinely unresolved (extensions.run needs a
 // sandboxed window Tauri doesn't have yet; the updater is a separate later phase) throw a
-// clear "not yet available" error instead of silently doing nothing — see the Phase 2 section
-// of docs/TAURI_MIGRATION.md for exactly what's wired versus stubbed.
+// clear "not yet available" error instead of silently doing nothing.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { DriftleafApi } from "../shared/ipc";

@@ -96,6 +96,4 @@ export, and FTS5 search with the wikilink note graph — as a complete, tested c
 layer. Swapping it in to replace the Node sidecar as the active backend is **under
 consideration for a future release**, not yet started or scheduled: it would need a new
 session-lifecycle layer in Rust (nothing in `src-tauri` calls into `driftleaf-core` today),
-a full `reconcileVault()` port, and re-verifying every workflow against it. See
-[migration checkpoints](TAURI_MIGRATION.md) for the detailed history of what's been built
-and verified so far.
+a full `reconcileVault()` port, and re-verifying every workflow against it.
