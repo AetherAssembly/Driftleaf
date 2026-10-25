@@ -1,6 +1,6 @@
 Name:           driftleaf
 Version:        0.7.0
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        A local-first encrypted notes, graph, and database app
 License:        AGPL-3.0-or-later
 URL:            https://github.com/AetherAssembly/Driftleaf
@@ -11,7 +11,7 @@ BuildRequires:  rpm
 Requires:       hicolor-icon-theme
 
 # Driftleaf's own release RPM (built by `tauri build`, not this spec) installs its Node
-# sidecar backend under the fixed path /usr/lib/Driftleaf/ — not the %{_libdir} macro,
+# sidecar backend under the fixed path /usr/lib/Driftleaf/ — not the %%{_libdir} macro,
 # since Tauri's Linux resource-path resolution expects that literal location regardless of
 # whether a distro's convention for 64-bit libraries is /usr/lib or /usr/lib64. This spec
 # repackages that same tree unchanged for OBS/Copr's distro-native expectations.
@@ -47,6 +47,7 @@ mkdir -p %{buildroot}%{_datadir}/applications
 mkdir -p %{buildroot}%{_datadir}/icons/hicolor/32x32/apps
 mkdir -p %{buildroot}%{_datadir}/icons/hicolor/128x128/apps
 mkdir -p %{buildroot}%{_datadir}/icons/hicolor/256x256@2/apps
+mkdir -p %{buildroot}%{_datadir}/licenses/%{name}
 
 cp -a extracted/usr/bin/driftleaf %{buildroot}%{_bindir}/
 cp -a extracted/usr/lib/Driftleaf/. %{buildroot}/usr/lib/Driftleaf/
@@ -57,9 +58,10 @@ cp -a extracted/usr/share/icons/hicolor/128x128/apps/driftleaf.png \
     %{buildroot}%{_datadir}/icons/hicolor/128x128/apps/
 cp -a extracted/usr/share/icons/hicolor/256x256@2/apps/driftleaf.png \
     %{buildroot}%{_datadir}/icons/hicolor/256x256@2/apps/
+install -Dm644 %{_builddir}/LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LICENSE
 
 %files
-%license %{_builddir}/LICENSE
+%license %{_datadir}/licenses/%{name}/LICENSE
 %{_bindir}/driftleaf
 /usr/lib/Driftleaf/
 %{_datadir}/applications/Driftleaf.desktop
@@ -75,6 +77,14 @@ cp -a extracted/usr/share/icons/hicolor/256x256@2/apps/driftleaf.png \
 %{_datadir}/icons/hicolor/256x256@2/apps/driftleaf.png
 
 %changelog
+* Sun Oct 25 2026 AetherAssembly <support@aetherassembly.org> - 0.7.0-2
+- Fix the build: %%license pointed at %%{_builddir}/LICENSE, a path outside the
+  buildroot, so RPM looked for it (wrongly, prefixed under the buildroot) and
+  failed every build with "File not found". The %%prep copy was already correct;
+  %%install now actually installs it into the buildroot at
+  %%{_datadir}/licenses/%%{name}/LICENSE, which %%files references instead.
+  Verified with a local rpmbuild. Confirmed broken via a real Copr aarch64 build.
+
 * Sun Oct 25 2026 AetherAssembly <support@aetherassembly.org> - 0.7.0-1
 - Rebuilt for the Tauri release RPM layout: binary at /usr/bin/driftleaf, backend
   resources under /usr/lib/Driftleaf/, desktop file and icons unchanged. No longer
