@@ -1,6 +1,10 @@
+# This spec repackages prebuilt release binaries without their build sources.
+# Automatic debuginfo/debugsource generation would produce an empty source list.
+%global debug_package %{nil}
+
 Name:           driftleaf
 Version:        0.7.0
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        A local-first encrypted notes, graph, and database app
 License:        AGPL-3.0-or-later
 URL:            https://github.com/AetherAssembly/Driftleaf
@@ -77,6 +81,11 @@ install -Dm644 %{_builddir}/LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LIC
 %{_datadir}/icons/hicolor/256x256@2/apps/driftleaf.png
 
 %changelog
+* Sun Oct 25 2026 AetherAssembly <support@aetherassembly.org> - 0.7.0-3
+- Disable automatic debug packages for the prebuilt release RPM payload. There
+  are no build sources to collect, so debugsource generation fails with an empty
+  debugsourcefiles.list on Fedora.
+
 * Sun Oct 25 2026 AetherAssembly <support@aetherassembly.org> - 0.7.0-2
 - Fix the build: %%license pointed at %%{_builddir}/LICENSE, a path outside the
   buildroot, so RPM looked for it (wrongly, prefixed under the buildroot) and
