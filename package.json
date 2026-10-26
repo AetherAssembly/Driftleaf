@@ -37,20 +37,20 @@
     "@eslint/compat": "^2.1.1",
     "@eslint/eslintrc": "^3.3.7",
     "@eslint/js": "^10.0.1",
-    "@tauri-apps/cli": "^2.12.3",
-    "@types/adm-zip": "^0.5.7",
+    "@tauri-apps/cli": "^2.12.4",
+    "@types/adm-zip": "^0.6.0",
     "@types/node": "^26.6.4",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
-    "@typescript-eslint/eslint-plugin": "^8.67.0",
-    "@typescript-eslint/parser": "^8.67.0",
+    "@typescript-eslint/eslint-plugin": "^8.72.0",
+    "@typescript-eslint/parser": "^8.72.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "eslint": "^10.9.0",
+    "eslint": "^10.13.0",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^17.11.0",
+    "globals": "^17.13.0",
     "prettier": "^3.9.9",
-    "typescript": "^6.0.3",
-    "vite": "^8.3.4"
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
   },
   "overrides": {
     "brace-expansion@^1.1.7": "1.1.21"
