@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
+## [0.7.2] - [Unreleased]
+
+### Added
+
+- An announcement banner that fetches Driftleaf's own site RSS feed once per launch and
+  shows only its single most recent item (title, description, and link) — a one-way,
+  read-only check, never polled or written back to. Dismissal persists across restarts.
+
+### Fixed
+
+- `reqwest::Client::new()` panicked on first use with "No rustls crypto provider is
+  configured" in debug and other unsigned builds, since nothing installed a default
+  provider — this silently broke the unsigned-build release check (B10) in addition to
+  the new announcement fetch above. Now installed (`ring`) at startup.
+
 ## [0.7.1] - 2026-10-26
 
 ### Added

@@ -3,7 +3,7 @@
 %global debug_package %{nil}
 
 Name:           driftleaf
-Version:        0.7.1
+Version:        0.7.2
 Release:        1%{?dist}
 Summary:        A local-first encrypted notes, graph, and database app
 License:        AGPL-3.0-or-later
@@ -82,6 +82,12 @@ install -Dm644 %{_builddir}/LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LIC
 %{_datadir}/icons/hicolor/256x256@2/apps/driftleaf.png
 
 %changelog
+* Tue Oct 27 2026 AetherAssembly <support@aetherassembly.org> - 0.7.2-1
+- Added an announcement banner that checks Driftleaf's own site RSS feed once per
+  launch, showing only its single most recent item; dismissal persists across restarts.
+- Fixed a missing rustls crypto provider that panicked on first network release/
+  announcement check in debug and other unsigned builds.
+
 * Mon Oct 26 2026 AetherAssembly <support@aetherassembly.org> - 0.7.1-1
 - Added a "View license" button to Settings -> About.
 - Release builds now produce signed auto-update manifests, merged into one latest.json

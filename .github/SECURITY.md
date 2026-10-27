@@ -71,7 +71,7 @@ See [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) for full details.
 No vulnerabilities have been publicly reported. Confirmed vulnerabilities and any related public advisories will be listed here. CVE identifiers will be included when assigned.
 
 ## Additional Resources
-here
+
 - [docs/RECOVERY.md](../docs/RECOVERY.md) - Branch recovery procedures
 - [docs/DATA_LOSS_TESTING.md](../docs/DATA_LOSS_TESTING.md) - Data loss safeguards
 - [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) - Technical architecture

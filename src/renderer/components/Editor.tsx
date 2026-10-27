@@ -39,13 +39,15 @@ export function Editor({
       <div className="editor__toolbar">
         <input
           className="editor__title"
+          aria-label="Note title"
           value={note.title}
           onChange={(e) => onRenameTitle(e.target.value)}
           placeholder="Untitled"
         />
         <div className="editor__toolbar-actions">
-          {saveStatus === "saving" && <span className="editor__save-status">Saving…</span>}
-          {saveStatus === "saved" && <span className="editor__save-status">Saved</span>}
+          <span className="editor__save-status" aria-live="polite">
+            {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "Saved" : null}
+          </span>
           <Button variant="ghost" size="sm" onClick={() => setShowPreview((v) => !v)}>
             {showPreview ? "Hide preview" : "Show preview"}
           </Button>
@@ -110,6 +112,7 @@ export function Editor({
       <div className={`editor__panes${showPreview ? "" : " editor__panes--single"}`}>
         <textarea
           className="editor__textarea"
+          aria-label="Note body"
           value={content}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Start writing…"

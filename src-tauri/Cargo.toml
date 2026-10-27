@@ -1,6 +1,6 @@
 [package]
 name = "driftleaf"
-version = "0.7.1"
+version = "0.7.2"
 description = "So your thoughts don't drift. A local-first, encrypted-by-default notes app."
 authors = ["AetherAssembly"]
 edition = "2021"
@@ -20,6 +20,15 @@ serde_json = "1"
 tokio = { version = "1", features = ["process", "sync", "io-util", "rt-multi-thread", "macros", "time"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-opener = "2"
+# For unsigned-build release discovery (B10): a plain GitHub releases lookup, independent of
+# the signed/auto-install path above, which tauri-plugin-updater already pulls in — these
+# pin to the versions it already resolves in Cargo.lock.
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+# reqwest's "rustls-no-provider" means nothing installs a default crypto provider on its
+# own — every reqwest::Client (release discovery, announcement fetch) panics on first TLS
+# use without this. "ring" is already in the dependency tree via rustls itself.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+semver = "1"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

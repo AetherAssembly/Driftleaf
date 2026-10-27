@@ -44,7 +44,7 @@ interface Session {
   generation: number;
 }
 
-export type DriftleafService = Omit<DriftleafApi, "events" | "extensions" | "updates"> & {
+export type DriftleafService = Omit<DriftleafApi, "events" | "extensions" | "updates" | "announcements"> & {
   extensions: Omit<DriftleafApi["extensions"], "run">;
   // Installing an update is window-bound (flush renderer, drain queue, relaunch) and stays
   // a special case in the Electron adapter; see UpdatesHost in service-host.ts.

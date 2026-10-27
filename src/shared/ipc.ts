@@ -139,6 +139,18 @@ export interface UpdateStatus {
   automaticInstall: boolean;
 }
 
+// The single most recent <item> from Driftleaf's own site RSS feed — a one-way, read-only
+// scan, fetched once per launch and never written back to or polled for older entries. `null`
+// means nothing has been fetched successfully yet.
+export interface AnnouncementItem {
+  guid: string;
+  title: string;
+  link: string | null;
+  pubDate: string | null;
+  description: string | null;
+  checkedAt: number;
+}
+
 export interface VaultHealthCheck {
   name: string;
   status: "ok" | "warning" | "error";
@@ -311,12 +323,17 @@ export interface DriftleafApi {
     install(): Promise<void>;
     openDownload(): Promise<void>;
   };
+  announcements: {
+    status(): Promise<AnnouncementItem | null>;
+    check(): Promise<AnnouncementItem | null>;
+  };
   events: {
     // Lifecycle listeners return unsubscribe functions.
     onCloseCancelled(callback: () => void): () => void;
     onBeforeClose(callback: () => Promise<void>): () => void;
     onQuickCapture(callback: () => void): () => void;
     onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
+    onAnnouncementStatus(callback: (item: AnnouncementItem | null) => void): () => void;
   };
 }
 

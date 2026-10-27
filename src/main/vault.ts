@@ -1666,9 +1666,19 @@ export async function createNote(
 export async function renameNote(vault: Vault, id: string, title: string): Promise<void> {
   const meta = vault.manifest.notes.find((n) => n.id === id);
   if (!meta) throw new Error(`Note not found: ${id}`);
+  const prevTitle = meta.title;
+  const prevUpdatedAt = meta.updatedAt;
   meta.title = title;
   meta.updatedAt = Date.now();
-  await writeManifest(vault.rootPath, vault.manifest, vault.key);
+  try {
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
+  } catch (err) {
+    // Mirror moveNote()'s rollback: a rejected rename must not remain visible in memory
+    // (listNotes()/search would then disagree with what's actually on disk).
+    meta.title = prevTitle;
+    meta.updatedAt = prevUpdatedAt;
+    throw err;
+  }
 }
 
 // Manifest is updated before the file is removed: if a crash happens in between, the
@@ -1696,7 +1706,16 @@ export async function createFolder(vault: Vault, folderPath: string): Promise<vo
   validateFolderPath(folderPath);
   if (!vault.manifest.folders.includes(folderPath)) {
     vault.manifest.folders.push(folderPath);
-    await writeManifest(vault.rootPath, vault.manifest, vault.key);
+    try {
+      await writeManifest(vault.rootPath, vault.manifest, vault.key);
+    } catch (err) {
+      // Mirror createNote()'s rollback: don't leave the folder visible in-memory for the
+      // rest of the session if it was never actually recorded on disk, or a retry would
+      // see it via `includes` above and skip the write entirely, falsely reporting success.
+      const index = vault.manifest.folders.indexOf(folderPath);
+      if (index !== -1) vault.manifest.folders.splice(index, 1);
+      throw err;
+    }
   }
 }
 

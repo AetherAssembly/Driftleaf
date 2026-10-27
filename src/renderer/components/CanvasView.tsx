@@ -11,6 +11,19 @@ interface CanvasViewProps {
   onOpenDatabase: (id: string) => void;
 }
 
+// Visually hidden but still reachable by screen readers — there's no shared "sr-only"
+// utility class in this codebase yet, so this stays self-contained to the component.
+const visuallyHiddenStyle: React.CSSProperties = {
+  position: "absolute",
+  width: 1,
+  height: 1,
+  overflow: "hidden",
+  clip: "rect(0 0 0 0)",
+  whiteSpace: "nowrap",
+};
+
+const KEYBOARD_MOVE_STEP = 24;
+
 export function CanvasView({
   items,
   notes,
@@ -21,6 +34,7 @@ export function CanvasView({
 }: CanvasViewProps) {
   const [selectedNoteId, setSelectedNoteId] = useState("");
   const [selectedDatabaseId, setSelectedDatabaseId] = useState("");
+  const [announcement, setAnnouncement] = useState("");
 
   function add(kind: CanvasItem["kind"], targetId: string) {
     if (!targetId || items.some((item) => item.kind === kind && item.targetId === targetId)) return;
@@ -45,6 +59,46 @@ export function CanvasView({
     onUpdate(items.map((item) => (item.id === id ? { ...item, x, y } : item)));
   }
 
+  // Keyboard-only alternative to the drag handlers above (B11) — arrow keys nudge the card,
+  // Shift+arrow moves it further. The handle button stays mounted at the same position in
+  // the DOM across a move, so focus naturally stays on it without any extra bookkeeping.
+  function moveItemByKeyboard(id: string, label: string, dx: number, dy: number) {
+    const item = items.find((entry) => entry.id === id);
+    if (!item) return;
+    const x = Math.max(0, Math.min(10_000, item.x + dx));
+    const y = Math.max(0, Math.min(10_000, item.y + dy));
+    onUpdate(items.map((entry) => (entry.id === id ? { ...entry, x, y } : entry)));
+    setAnnouncement(`${label} moved to ${x}, ${y}`);
+  }
+
+  function handleHandleKeyDown(
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    id: string,
+    label: string,
+  ) {
+    const step = event.shiftKey ? KEYBOARD_MOVE_STEP * 4 : KEYBOARD_MOVE_STEP;
+    switch (event.key) {
+      case "ArrowUp":
+        event.preventDefault();
+        moveItemByKeyboard(id, label, 0, -step);
+        break;
+      case "ArrowDown":
+        event.preventDefault();
+        moveItemByKeyboard(id, label, 0, step);
+        break;
+      case "ArrowLeft":
+        event.preventDefault();
+        moveItemByKeyboard(id, label, -step, 0);
+        break;
+      case "ArrowRight":
+        event.preventDefault();
+        moveItemByKeyboard(id, label, step, 0);
+        break;
+      default:
+        break;
+    }
+  }
+
   const draggedItem = (event: React.DragEvent<HTMLDivElement>) =>
     event.dataTransfer.getData("application/driftleaf-canvas-item");
   const stageWidth = Math.max(1400, ...items.map((item) => item.x + 350));
@@ -52,6 +106,9 @@ export function CanvasView({
 
   return (
     <section className="canvas-view" aria-label="Workspace canvas">
+      <div role="status" aria-live="polite" style={visuallyHiddenStyle}>
+        {announcement}
+      </div>
       <header className="canvas-view__header">
         <div>
           <span className="settings__eyebrow">YOUR WORKSPACE</span>
@@ -135,6 +192,7 @@ export function CanvasView({
                 ? databases.find((entry) => entry.id === item.targetId)
                 : null;
             if (!note && !database) return null;
+            const label = note?.title || database?.title || "Untitled";
             return (
               <article
                 key={item.id}
@@ -145,10 +203,15 @@ export function CanvasView({
                   event.dataTransfer.setData("application/driftleaf-canvas-item", item.id)
                 }
               >
-                <div className="canvas-card__handle" aria-label="Drag to reposition">
+                <button
+                  type="button"
+                  className="canvas-card__handle"
+                  aria-label={`Reposition ${label}. Use arrow keys to move, Shift+arrow to move further.`}
+                  onKeyDown={(event) => handleHandleKeyDown(event, item.id, label)}
+                >
                   <span aria-hidden="true">⠿</span>
                   {item.kind === "note" ? "NOTE" : "DATABASE VIEW"}
-                </div>
+                </button>
                 <div className="canvas-card__body">
                   <strong>{note?.title ?? database?.title}</strong>
                   <small>{note ? note.folderPath || "All notes" : "Saved database view"}</small>

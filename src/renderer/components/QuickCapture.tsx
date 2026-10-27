@@ -4,7 +4,7 @@ import { useFocusTrap } from "../lib/focusTrap";
 
 interface QuickCaptureProps {
   open: boolean;
-  onCapture: (content: string) => void;
+  onCapture: (content: string) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -12,6 +12,7 @@ interface QuickCaptureProps {
 // text in and Ctrl+Enter to save — friction is the enemy of "jot this down before I forget."
 export function QuickCapture({ open, onCapture, onClose }: QuickCaptureProps) {
   const [text, setText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   // Plain positioned <div> overlay, not a native <dialog> — without a trap, Tab can move
@@ -21,6 +22,7 @@ export function QuickCapture({ open, onCapture, onClose }: QuickCaptureProps) {
   useEffect(() => {
     if (open) {
       setText("");
+      setSubmitting(false);
       requestAnimationFrame(() => textareaRef.current?.focus());
     }
   }, [open]);
@@ -32,21 +34,27 @@ export function QuickCapture({ open, onCapture, onClose }: QuickCaptureProps) {
         onClose();
       } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        submit();
+        void submit();
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, text]);
+  }, [open, text, submitting]);
 
-  function submit() {
+  // Stays open with the draft intact until the save actually succeeds — closing (and so
+  // clearing `text` via the effect above) on a failed save would discard the only copy of
+  // what the user typed, with no retry path.
+  async function submit() {
+    if (submitting) return;
     if (!text.trim()) {
       onClose();
       return;
     }
-    onCapture(text);
-    onClose();
+    setSubmitting(true);
+    const saved = await onCapture(text);
+    setSubmitting(false);
+    if (saved) onClose();
   }
 
   if (!open) return null;
@@ -57,13 +65,17 @@ export function QuickCapture({ open, onCapture, onClose }: QuickCaptureProps) {
         <textarea
           ref={textareaRef}
           className="quick-capture__textarea"
+          aria-label="Quick capture"
           placeholder="Jot something down…"
           value={text}
           onChange={(e) => setText(e.target.value)}
+          disabled={submitting}
         />
         <div className="quick-capture__footer">
-          <span className="quick-capture__hint">Ctrl/Cmd+Enter to save · Esc to cancel</span>
-          <Button variant="primary" size="sm" onClick={submit}>
+          <span className="quick-capture__hint" aria-live="polite">
+            {submitting ? "Saving…" : "Ctrl/Cmd+Enter to save · Esc to cancel"}
+          </span>
+          <Button variant="primary" size="sm" onClick={() => void submit()} disabled={submitting}>
             Save note
           </Button>
         </div>

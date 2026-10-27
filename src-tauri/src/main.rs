@@ -1,3 +1,4 @@
+mod announcements;
 mod extensions;
 mod settings_migration;
 mod updates;
@@ -708,6 +709,11 @@ fn create_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
 }
 
 fn main() {
+    // reqwest is built with "rustls-no-provider", so every reqwest::Client (release
+    // discovery in updates.rs, the announcement fetch in announcements.rs) panics on first
+    // TLS use unless a default crypto provider is installed before either ever runs.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     // This remains a source-tree preview. Resolve from the build manifest rather
     // than the launch directory; packaged resources are a separate Phase 3 step.
     let project_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -772,6 +778,7 @@ fn main() {
             });
             app.manage(sidecar);
             app.manage(updates::setup(app.handle())?);
+            app.manage(announcements::setup());
             app.manage(std::sync::Arc::new(extensions::ExtensionWindows::default()));
             app.manage(std::sync::Arc::new(FlushState {
                 pending: StdMutex::new(HashMap::new()),
@@ -796,6 +803,13 @@ fn main() {
                         let _ = handle.state::<updates::Updates>().check(&handle).await;
                     }
                 }
+            });
+            let announcements_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = announcements_handle
+                    .state::<announcements::Announcements>()
+                    .check(&announcements_handle)
+                    .await;
             });
             Ok(())
         })
@@ -861,6 +875,9 @@ fn main() {
             updates::update_check,
             updates::update_download,
             updates::update_install,
+            updates::update_open_download,
+            announcements::announcement_status,
+            announcements::announcement_check,
             extensions::run_extension,
             extensions::extension_bootstrap,
             extensions::extension_call,

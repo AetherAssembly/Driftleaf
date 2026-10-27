@@ -852,8 +852,11 @@ dependencies = [
 
 [[package]]
 name = "driftleaf"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
+ "reqwest",
+ "rustls",
+ "semver",
  "serde",
  "serde_json",
  "tauri",

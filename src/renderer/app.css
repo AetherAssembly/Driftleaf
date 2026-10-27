@@ -461,13 +461,22 @@ body {
   gap: var(--ae-space-2, 8px);
 }
 
-.update-banner {
+/* Fixed container both UpdateBanner and AnnouncementBanner render into — stacking here
+   (instead of each banner positioning itself) keeps them from overlapping when both are
+   visible at once. */
+.app-banner-stack {
   position: fixed;
   z-index: 1000;
   top: 16px;
   left: 50%;
   transform: translateX(-50%);
   width: min(680px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.update-banner {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -505,6 +514,10 @@ body {
   min-width: 28px;
   padding-right: 6px;
   padding-left: 6px;
+}
+
+.announcement-banner__icon {
+  background: var(--ae-color-info, #3a6ea5);
 }
 
 .settings {
@@ -1136,7 +1149,8 @@ body {
     grid-template-columns: repeat(3, minmax(80px, 1fr));
   }
 
-  .update-banner {
+  .update-banner,
+  .announcement-banner {
     flex-wrap: wrap;
   }
 

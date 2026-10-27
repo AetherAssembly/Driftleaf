@@ -154,6 +154,51 @@ await test('Folder creation persists in manifest', async () => {
   return freshVault.manifest.folders.includes('TestFolder');
 });
 
+// Test 9b: B03 regression — a createFolder() whose manifest write fails must not leave the
+// folder visible in memory, or a retry would see it via `includes` and skip the write,
+// falsely reporting success while the folder never actually lands on disk.
+await test('Failed folder creation rolls back in-memory state (B03)', async () => {
+  const vault = await vaultModule.unlockVault(testVaultPath, 'test-passphrase').then(r => r.vault);
+  const driftleafPath = path.join(testVaultPath, '.driftleaf');
+  const movedAway = `${driftleafPath}-away-b03`;
+  await fs.rename(driftleafPath, movedAway);
+  let threw = false;
+  try {
+    await vaultModule.createFolder(vault, 'RollbackFolder');
+  } catch {
+    threw = true;
+  } finally {
+    await fs.rename(movedAway, driftleafPath);
+  }
+  const rolledBack = !vault.manifest.folders.includes('RollbackFolder');
+  await vaultModule.createFolder(vault, 'RollbackFolder'); // retry, now that writes succeed again
+  const freshVault = await vaultModule.unlockVault(testVaultPath, 'test-passphrase').then(r => r.vault);
+  return threw && rolledBack && freshVault.manifest.folders.includes('RollbackFolder');
+});
+
+// Test 9c: B04 regression — a renameNote() whose manifest write fails must not leave the new
+// title visible in memory; listNotes()/search would otherwise disagree with what's on disk.
+await test('Failed note rename rolls back in-memory state (B04)', async () => {
+  const vault = await vaultModule.unlockVault(testVaultPath, 'test-passphrase').then(r => r.vault);
+  const note = await vaultModule.createNote(vault, '', 'Original Title');
+  const driftleafPath = path.join(testVaultPath, '.driftleaf');
+  const movedAway = `${driftleafPath}-away-b04`;
+  await fs.rename(driftleafPath, movedAway);
+  let threw = false;
+  try {
+    await vaultModule.renameNote(vault, note.id, 'New Title');
+  } catch {
+    threw = true;
+  } finally {
+    await fs.rename(movedAway, driftleafPath);
+  }
+  const rolledBack = vault.manifest.notes.find(n => n.id === note.id)?.title === 'Original Title';
+  await vaultModule.renameNote(vault, note.id, 'New Title'); // retry, now that writes succeed again
+  const freshVault = await vaultModule.unlockVault(testVaultPath, 'test-passphrase').then(r => r.vault);
+  const persisted = freshVault.manifest.notes.find(n => n.id === note.id);
+  return threw && rolledBack && persisted?.title === 'New Title';
+});
+
 // Test 10: AES-GCM auth tag detects corruption
 await test('Corrupted note detected on read', async () => {
   const vault = await vaultModule.unlockVault(testVaultPath, 'test-passphrase').then(r => r.vault);
