@@ -726,6 +726,11 @@ body {
   max-width: 380px;
 }
 
+.settings__about-actions {
+  display: flex;
+  gap: var(--ae-space-2, 8px);
+}
+
 .extensions-modal__install {
   margin: var(--ae-space-3, 12px) 0;
 }

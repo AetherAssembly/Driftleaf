@@ -1,5 +1,5 @@
 Name:           driftleaf
-Version:        0.7.0
+Version:        0.7.1
 Release:        1%{?dist}
 Summary:        A local-first encrypted notes, graph, and database app
 License:        AGPL-3.0-or-later
@@ -75,6 +75,13 @@ cp -a extracted/usr/share/icons/hicolor/256x256@2/apps/driftleaf.png \
 %{_datadir}/icons/hicolor/256x256@2/apps/driftleaf.png
 
 %changelog
+* Mon Oct 26 2026 AetherAssembly <support@aetherassembly.org> - 0.7.1-1
+- Added a "View license" button to Settings -> About.
+- Release builds now produce signed auto-update manifests, merged into one latest.json
+  for the updater to verify.
+- Updated dependencies: React 19.3.1, ESLint 10.13, typescript-eslint 8.72, Vite 8.3.5,
+  and others; held TypeScript at 6.x since typescript-eslint does not yet support 7.0.
+
 * Sun Oct 25 2026 AetherAssembly <support@aetherassembly.org> - 0.7.0-1
 - Rebuilt for the Tauri release RPM layout: binary at /usr/bin/driftleaf, backend
   resources under /usr/lib/Driftleaf/, desktop file and icons unchanged. No longer

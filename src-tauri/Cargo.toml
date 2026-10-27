@@ -1,6 +1,6 @@
 [package]
 name = "driftleaf"
-version = "0.7.0"
+version = "0.7.1"
 description = "So your thoughts don't drift. A local-first, encrypted-by-default notes app."
 authors = ["AetherAssembly"]
 edition = "2021"
