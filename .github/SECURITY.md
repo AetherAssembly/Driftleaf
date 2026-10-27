@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-**Do not** open a public issue for security vulnerabilities. Instead, please email security concerns to the maintainers privately.
+**Do not** open a public issue for security vulnerabilities. Instead, please email security concerns to the [maintainers](mailto:support@aetherassembly.org) privately.
 
 For Driftleaf, security issues are especially critical because they may affect user data encryption or note storage safety. Please report vulnerabilities responsibly.
 
@@ -15,7 +15,7 @@ When reporting a vulnerability, include:
 
 We will:
 
-1. Confirm receipt within 48 hours
+1. Confirm receipt within 72 hours
 2. Assess the severity
 3. Work on a fix privately
 4. Credit you in the security advisory (unless you prefer anonymity)
@@ -49,7 +49,6 @@ See [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) for full details.
 ### Releases and updates
 
 - **Signing varies by release** - Windows and macOS signing depend on release secrets and platform configuration; do not assume every artifact is signed.
-- **No security audit** - External review is planned for RC phase
 - **No sync** - Sync feature is post-v1.0 stretch work
 - **Passphrase only** - No biometric or hardware key support (future work)
 - **Update checks** - Startup checks contact GitHub for public release metadata; they do not send branch data. Checks can be disabled in Settings.
@@ -63,17 +62,17 @@ See [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) for full details.
 
 ## Security Roadmap
 
-- **Milestone 13 (RC phase)** - Self-review of crypto module for key derivation, IV/nonce reuse, memory hygiene
-- **Future** - External security audit if the vault format becomes widely used
+- **Future** - Self-review of crypto module for key derivation, IV/nonce reuse, memory hygiene
 - **Future** - Hardware key support (FIDO2, TPM, etc.)
 - **Future** - Post-quantum crypto options (when standard)
 
 ## Vulnerability History
 
-None reported yet. If you find one, please report it securely.
+No vulnerabilities have been publicly reported. Confirmed vulnerabilities and any related public advisories will be listed here. CVE identifiers will be included when assigned.
 
 ## Additional Resources
-
+here
 - [docs/RECOVERY.md](../docs/RECOVERY.md) - Branch recovery procedures
 - [docs/DATA_LOSS_TESTING.md](../docs/DATA_LOSS_TESTING.md) - Data loss safeguards
 - [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) - Technical architecture
+- [General Support Email](mailto:support@aetherassembly.org)
