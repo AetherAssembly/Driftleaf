@@ -265,9 +265,20 @@ export function SettingsModal({
                 A calm, private place for notes, connected ideas, and flexible databases.
                 Everything stays in your encrypted branch.
               </p>
-              <Button variant="ghost" size="sm" onClick={onCheckUpdates} loading={busy}>
-                Check for updates
-              </Button>
+              <div className="settings__about-actions">
+                <Button variant="ghost" size="sm" onClick={onCheckUpdates} loading={busy}>
+                  Check for updates
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    window.open("https://github.com/AetherAssembly/Driftleaf/blob/main/LICENSE", "_blank")
+                  }
+                >
+                  View license
+                </Button>
+              </div>
             </section>
           )}
         </div>

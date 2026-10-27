@@ -3,8 +3,8 @@
 %global debug_package %{nil}
 
 Name:           driftleaf
-Version:        0.7.0
-Release:        4%{?dist}
+Version:        0.7.1
+Release:        1%{?dist}
 Summary:        A local-first encrypted notes, graph, and database app
 License:        AGPL-3.0-or-later
 URL:            https://github.com/AetherAssembly/Driftleaf
@@ -82,22 +82,12 @@ install -Dm644 %{_builddir}/LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LIC
 %{_datadir}/icons/hicolor/256x256@2/apps/driftleaf.png
 
 %changelog
-* Sun Oct 25 2026 AetherAssembly <support@aetherassembly.org> - 0.7.0-4
-- Own the application license directory explicitly so openSUSE's post-build
-  file-list check does not reject it as an unowned directory.
-
-* Sun Oct 25 2026 AetherAssembly <support@aetherassembly.org> - 0.7.0-3
-- Disable automatic debug packages for the prebuilt release RPM payload. There
-  are no build sources to collect, so debugsource generation fails with an empty
-  debugsourcefiles.list on Fedora.
-
-* Sun Oct 25 2026 AetherAssembly <support@aetherassembly.org> - 0.7.0-2
-- Fix the build: %%license pointed at %%{_builddir}/LICENSE, a path outside the
-  buildroot, so RPM looked for it (wrongly, prefixed under the buildroot) and
-  failed every build with "File not found". The %%prep copy was already correct;
-  %%install now actually installs it into the buildroot at
-  %%{_datadir}/licenses/%%{name}/LICENSE, which %%files references instead.
-  Verified with a local rpmbuild. Confirmed broken via a real Copr aarch64 build.
+* Mon Oct 26 2026 AetherAssembly <support@aetherassembly.org> - 0.7.1-1
+- Added a "View license" button to Settings -> About.
+- Release builds now produce signed auto-update manifests, merged into one latest.json
+  for the updater to verify.
+- Updated dependencies: React 19.3.1, ESLint 10.13, typescript-eslint 8.72, Vite 8.3.5,
+  and others; held TypeScript at 6.x since typescript-eslint does not yet support 7.0.
 
 * Sun Oct 25 2026 AetherAssembly <support@aetherassembly.org> - 0.7.0-1
 - Rebuilt for the Tauri release RPM layout: binary at /usr/bin/driftleaf, backend

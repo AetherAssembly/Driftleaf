@@ -4,9 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
-## [0.7.0] - 2026-10-25
+## [0.7.1] - 2026-10-26
 
-Driftleaf now runs on Tauri instead of Electron.
+### Added
+
+- Settings → About: a "View license" button linking to the project's AGPLv3 license.
+- Signed auto-update manifests: each release build now produces a per-platform manifest
+  fragment, merged into one `latest.json` that `tauri-plugin-updater` can verify. See
+  [docs/TAURI_UPDATES.md](docs/TAURI_UPDATES.md).
+- A search/indexing performance benchmark script
+  ([scripts/perf/search-benchmark.mjs](scripts/perf/search-benchmark.mjs)).
+
+### Changed
+
+- Removed the Electron-to-Tauri migration notice; the migration completed in 0.7.0.
+- Updated dependencies: React 19.3.1, `@tauri-apps/cli` 2.12.4, ESLint 10.13,
+  `@typescript-eslint` 8.72, `globals` 17.13, Vite 8.3.5, `@types/adm-zip` 0.6.0.
+  TypeScript was held at 6.x: `typescript-eslint` does not yet support TypeScript 7.0.
+
+### Fixed
+
+- `crates/driftleaf-core`: replaced two hardcoded test-only cryptographic salts with
+  values generated via `OsRng`, resolving two CodeQL `hard-coded-cryptographic-value`
+  findings. Both were false positives in test fixtures, not reachable from production
+  code (which already derives every real salt/nonce from `OsRng`).
+
+## [0.7.0]
 
 ### Added
 

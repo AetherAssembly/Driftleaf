@@ -5,6 +5,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": [
       "deb",
       "rpm"
@@ -20,6 +21,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkwRDc5NDkzQ0I4MjE3NEQKUldSTkY0TExrNVRYa1B1QU5UK1lwU2RYUUFkWXFzL3RtWjQ1MFlPY1hrNEpNN3hrYlR4eXdmeEkK",
+      "endpoints": ["https://github.com/AetherAssembly/Driftleaf/releases/latest/download/latest.json"]
+    }
   },
   "mainBinaryName": "driftleaf"
 }

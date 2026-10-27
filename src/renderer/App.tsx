@@ -1,5 +1,4 @@
 import { draftWrites } from "./lib/draft-writes";
-import { MigrationNotice } from "./components/MigrationNotice";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { UnlockScreen } from "./components/UnlockScreen";
 import { Sidebar } from "./components/Sidebar";
@@ -727,7 +726,6 @@ export default function App() {
   if (!unlocked) {
     return (
       <>
-        <MigrationNotice />
         <UpdateBanner
           status={updateStatus}
           onDownload={() => void downloadUpdate()}
@@ -780,7 +778,6 @@ export default function App() {
 
   return (
     <div className="app">
-      <MigrationNotice />
       <UpdateBanner
         status={updateStatus}
         onDownload={() => void downloadUpdate()}
