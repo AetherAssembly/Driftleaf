@@ -9,8 +9,8 @@ the encrypted branch.
 Each extension runs in a separate, incognito native window with a restricted read API,
 navigation locked to its own page, and no plugin capabilities. Backend tests cover
 grants, database filtering, stale sessions, and unrelated senders. Native window
-isolation has been verified on Linux; Windows and macOS are not yet confirmed (see
-[docs/RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)). Locking, unlocking, or creating a
+isolation has been verified on Linux; Windows and macOS are not yet confirmed.
+Locking, unlocking, or creating a
 branch closes all open extension windows. Removing an extension revokes its future
 reads immediately, but doesn't yet close that extension's window if it's still open —
 it keeps running with no further access until closed manually or the branch is

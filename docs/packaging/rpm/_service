@@ -9,4 +9,9 @@
     <param name="host">github.com</param>
     <param name="path">/AetherAssembly/Driftleaf/releases/download/v0.7.1/Driftleaf-0.7.1-1.aarch64.rpm</param>
   </service>
+  <service name="download_url">
+    <param name="protocol">https</param>
+    <param name="host">raw.githubusercontent.com</param>
+    <param name="path">/AetherAssembly/Driftleaf/v0.7.0/LICENSE</param>
+  </service>
 </services>

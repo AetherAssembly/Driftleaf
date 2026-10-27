@@ -1,3 +1,7 @@
+# This spec repackages prebuilt release binaries without their build sources.
+# Automatic debuginfo/debugsource generation would produce an empty source list.
+%global debug_package %{nil}
+
 Name:           driftleaf
 Version:        0.7.1
 Release:        1%{?dist}
@@ -11,7 +15,7 @@ BuildRequires:  rpm
 Requires:       hicolor-icon-theme
 
 # Driftleaf's own release RPM (built by `tauri build`, not this spec) installs its Node
-# sidecar backend under the fixed path /usr/lib/Driftleaf/ — not the %{_libdir} macro,
+# sidecar backend under the fixed path /usr/lib/Driftleaf/ — not the %%{_libdir} macro,
 # since Tauri's Linux resource-path resolution expects that literal location regardless of
 # whether a distro's convention for 64-bit libraries is /usr/lib or /usr/lib64. This spec
 # repackages that same tree unchanged for OBS/Copr's distro-native expectations.
@@ -47,6 +51,7 @@ mkdir -p %{buildroot}%{_datadir}/applications
 mkdir -p %{buildroot}%{_datadir}/icons/hicolor/32x32/apps
 mkdir -p %{buildroot}%{_datadir}/icons/hicolor/128x128/apps
 mkdir -p %{buildroot}%{_datadir}/icons/hicolor/256x256@2/apps
+mkdir -p %{buildroot}%{_datadir}/licenses/%{name}
 
 cp -a extracted/usr/bin/driftleaf %{buildroot}%{_bindir}/
 cp -a extracted/usr/lib/Driftleaf/. %{buildroot}/usr/lib/Driftleaf/
@@ -57,9 +62,11 @@ cp -a extracted/usr/share/icons/hicolor/128x128/apps/driftleaf.png \
     %{buildroot}%{_datadir}/icons/hicolor/128x128/apps/
 cp -a extracted/usr/share/icons/hicolor/256x256@2/apps/driftleaf.png \
     %{buildroot}%{_datadir}/icons/hicolor/256x256@2/apps/
+install -Dm644 %{_builddir}/LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LICENSE
 
 %files
-%license %{_builddir}/LICENSE
+%dir %{_datadir}/licenses/%{name}
+%license %{_datadir}/licenses/%{name}/LICENSE
 %{_bindir}/driftleaf
 /usr/lib/Driftleaf/
 %{_datadir}/applications/Driftleaf.desktop

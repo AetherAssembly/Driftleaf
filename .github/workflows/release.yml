@@ -113,9 +113,8 @@ jobs:
       - name: Package
         env:
           DRIFTLEAF_MAC_AUTO_UPDATE: ${{ vars.DRIFTLEAF_MAC_AUTO_UPDATE }}
-          # Empty/unset until an updater signing key and feed are provisioned (see
-          # docs/TAURI_UPDATES.md) — the build then simply reports updates as manual,
-          # same as every build so far.
+          # Empty/unset until an updater signing key and feed are provisioned — the
+          # build then simply reports updates as manual, same as every build so far.
           DRIFTLEAF_UPDATER_PUBLIC_KEY: ${{ vars.DRIFTLEAF_UPDATER_PUBLIC_KEY }}
           DRIFTLEAF_UPDATER_ENDPOINT: ${{ vars.DRIFTLEAF_UPDATER_ENDPOINT }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -362,7 +361,8 @@ jobs:
               "- **Debian / Ubuntu / Raspberry Pi OS (apt):** `sudo apt update && sudo apt upgrade driftleaf`",
               "- **Fedora / RHEL / CentOS Stream / Rocky / Alma (COPR):** `sudo dnf upgrade driftleaf`",
               "- **openSUSE (OBS):** `sudo zypper update driftleaf`",
-              "- **Arch:** download the appropriate `.AppImage` attached below",
+              "- **Arch (AUR):** `paru -S driftleaf-bin` or `yay -S driftleaf-bin`",
+              "- **Arch (AppImage):** download the appropriate `.AppImage` attached below, make it executable, and run it directly.",
               "",
               "**First install or using AppImage?** Grab your build from the table above.",
               "Repo setup instructions are in the [README](https://github.com/AetherAssembly/Driftleaf#download).", "",

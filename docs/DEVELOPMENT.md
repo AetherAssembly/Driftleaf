@@ -161,9 +161,8 @@ these release builds comes from `src-tauri/tauri.release.conf.json` (merged over
 release build) downloads a checksum-pinned Node runtime and copies in the sidecar backend
 rather than using your own Node installation at runtime.
 
-See [docs/RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) for what's been verified on which
-platform, and [docs/TAURI_UPDATES.md](TAURI_UPDATES.md) for turning on signed auto-updates
-(off by default — see that doc for why and how).
+Signed auto-updates are off by default for this release — see
+[docs/UPDATES.md](UPDATES.md) for current status.
 
 ### Versioning during development
 

@@ -1,11 +1,9 @@
-// Node sidecar entry point for the Tauri shell (see docs/ELECTRON_MIGRATION_REVIEW.md,
-// Phase 2). Rust spawns this script as a child process and talks to it over a private,
+// Node sidecar entry point for the Tauri shell. Rust spawns this script as a child process and talks to it over a private,
 // length-prefixed JSON request/response protocol on stdin/stdout — nothing here is reachable
 // from the renderer directly. Rust is the sole caller and owns every OS dialog, so the
 // single-use picked-path allowlist in src/main/service.ts's notes.import/vault.createBackup/
 // vault.verifyBackup is intentionally left unused by this first slice rather than re-derived
-// on this side; see the "Phase 2 first slice" section of docs/TAURI_MIGRATION.md for what's
-// deliberately not wired yet.
+// on this side.
 //
 // This process is transitional: it lets the stabilized Node domain service (src/main/
 // service.ts) run unmodified behind a real desktop shell before Phase 4 ports storage to

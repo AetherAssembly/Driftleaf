@@ -12,8 +12,7 @@ build — Windows, macOS, and Linux — reports updates as manual: Driftleaf sho
 newer release is available and links to it, but doesn't download or install it
 automatically. Signed, in-app automatic updates are implemented and ready in the Rust
 shell for Windows (and, once code-signed and notarized, macOS), but need a key and
-hosted manifest before they turn on. See [Tauri update deployment](TAURI_UPDATES.md)
-for exactly what that takes.
+hosted manifest before they turn on.
 
 ## Installing an update
 

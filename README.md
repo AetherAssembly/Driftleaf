@@ -25,7 +25,7 @@ A private, local-first notes app for your desktop. Your branch stays on your com
 
 Get the latest release for your platform:
 
-- **Linux**: [.AppImage, .deb, or .rpm](https://github.com/AetherAssembly/Driftleaf/releases)
+- **Linux**: [.AppImage, .deb, or .rpm](https://github.com/AetherAssembly/Driftleaf/releases), or `driftleaf-bin` on the AUR for Arch Linux
 - **macOS**: [.dmg](https://github.com/AetherAssembly/Driftleaf/releases)
 - **Windows**: [Installer](https://github.com/AetherAssembly/Driftleaf/releases)
 
@@ -156,15 +156,12 @@ npm run package:tauri -- --bundles dmg      # macOS: dmg
 npm run package:tauri -- --bundles nsis     # Windows: installer
 ```
 
-See [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) for what's been verified on
-which platform before you rely on a build.
-
 ### Technical Details
 
 - **Stack**: Tauri 2 (Rust shell) + React 19 + Vite + TypeScript, with the existing
-  Node domain service run as a sidecar child process — see
-  [docs/TAURI_MIGRATION.md](docs/TAURI_MIGRATION.md) for how that's wired and why.
-  Electron has been fully removed as of v0.7.0.
+  Node domain service run as a sidecar child process. Electron has been fully removed
+  as of v0.7.0 — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#desktop-shell-and-storage-backend)
+  for how that's wired and why.
 - **Storage**: Encrypted markdown files (scrypt + AES-256-GCM) per folder-based branch
 - **Search**: SQLite FTS5 index, rebuilt on unlock
 - **Safety**: Atomic writes + consistency checks on every unlock
