@@ -122,6 +122,66 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run package:tauri -- --bundles ${{ matrix.bundles }}
 
+      - name: Build update-manifest fragment
+        # `createUpdaterArtifacts` signs every bundle format this job built (.deb.sig,
+        # .rpm.sig, ...), not just one — Tauri's CLI never assembles a latest.json itself
+        # (confirmed by inspecting a real build's output). The updater only ever fetches
+        # one artifact per OS: the AppImage on Linux, the NSIS installer on Windows, the
+        # app.tar.gz on macOS. Pick that one signed artifact and write this job's single
+        # platform entry; publish-release merges every job's fragment into one real
+        # latest.json once all of them have finished. A no-op if createUpdaterArtifacts
+        # is off (no .sig files exist yet).
+        shell: bash
+        env:
+          TAG: ${{ needs.create-release.outputs.tag }}
+        run: |
+          python3 << 'PYEOF'
+          import glob, json, os, subprocess
+          from datetime import datetime, timezone
+
+          priority = [".AppImage", ".app.tar.gz", ".exe", ".msi"]
+          sigs = glob.glob("src-tauri/target/release/bundle/**/*.sig", recursive=True)
+          chosen = None
+          for suffix in priority:
+              for sig in sigs:
+                  if sig[: -len(".sig")].endswith(suffix):
+                      chosen = sig
+                      break
+              if chosen:
+                  break
+
+          if not chosen:
+              print("No updater-relevant signed artifact found; skipping manifest fragment.")
+          else:
+              artifact = chosen[: -len(".sig")]
+              signature = open(chosen).read().strip()
+              host = next(
+                  line for line in subprocess.run(
+                      ["rustc", "-vV"], capture_output=True, text=True
+                  ).stdout.splitlines()
+                  if line.startswith("host:")
+              ).split()[1]
+              arch = host.split("-")[0]
+              os_name = "darwin" if "apple" in host else "windows" if "windows" in host else "linux"
+              platform = f"{os_name}-{arch}"
+              tag = os.environ["TAG"]
+              manifest = {
+                  "version": tag.lstrip("v"),
+                  "notes": "",
+                  "pub_date": datetime.now(timezone.utc).isoformat(),
+                  "platforms": {
+                      platform: {
+                          "signature": signature,
+                          "url": f"https://github.com/AetherAssembly/Driftleaf/releases/download/{tag}/{os.path.basename(artifact)}",
+                      }
+                  },
+              }
+              out = f"src-tauri/target/release/bundle/latest-{platform}.json"
+              with open(out, "w") as f:
+                  json.dump(manifest, f, indent=2)
+              print(f"Wrote {out} for platform {platform} from {artifact}")
+          PYEOF
+
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -135,7 +195,7 @@ jobs:
             -name "*.dmg" -o \
             -name "*.exe" -o \
             -name "*.sig" -o \
-            -name "latest.json" \
+            -name "latest-*.json" \
           \) | sort | while read -r f; do
             echo "Uploading $f..."
             gh release upload "$TAG" "$f" --clobber
@@ -158,6 +218,42 @@ jobs:
           TAG: ${{ needs.create-release.outputs.tag }}
         run: |
           gh release download "$TAG" --dir ./artifacts
+
+      - name: Merge per-platform update manifests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+        run: |
+          python3 << 'PYEOF'
+          import glob, json
+
+          parts = sorted(glob.glob("./artifacts/latest-*.json"))
+          if parts:
+              merged = None
+              for path in parts:
+                  with open(path) as f:
+                      data = json.load(f)
+                  if merged is None:
+                      merged = {
+                          "version": data["version"],
+                          "notes": data.get("notes", ""),
+                          "pub_date": data["pub_date"],
+                          "platforms": {},
+                      }
+                  merged["platforms"].update(data.get("platforms", {}))
+              with open("./artifacts/latest.json", "w") as f:
+                  json.dump(merged, f, indent=2)
+              print(f"Merged {len(parts)} platform manifest(s) into latest.json")
+          else:
+              print("No per-platform latest.json files found — updater artifacts weren't built this release.")
+          PYEOF
+
+          if [[ -f ./artifacts/latest.json ]]; then
+            gh release upload "$TAG" ./artifacts/latest.json --clobber
+            for f in ./artifacts/latest-*.json; do
+              gh release delete-asset "$TAG" "$(basename "$f")" --yes || true
+            done
+          fi
 
       - name: Build release notes
         run: |

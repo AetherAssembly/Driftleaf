@@ -2323,9 +2323,3 @@ body {
   opacity: 0.6;
   font-size: 0.9em;
 }
-
-/* Keep the planned migration notice separate from available-update controls. */
-.migration-notice {
-  top: auto;
-  bottom: 16px;
-}
