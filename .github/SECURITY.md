@@ -40,7 +40,7 @@ Driftleaf uses:
 - **16-byte authentication tag** for corruption detection
 - **Atomic writes** for crash safety
 - **Isolated extensions** with main-process permission checks and no network access
-- **Platform-aware updates** (Windows installer auto-update; manual installation for Linux and unsigned macOS)
+- **Platform-aware updates** (Windows installer auto-updates in-app; Linux and unsigned macOS check public GitHub release metadata and link to the release for manual installation, rather than skipping the check)
 
 See [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) for full details.
 
@@ -58,6 +58,7 @@ See [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) for full details.
 
 - Branch writes (called vault operations in the internal API) are **crash-safe** via atomic operations and reconciliation, but **not transactional**
 - On crash between a file write and manifest update, reconciliation may create orphaned files (this is safe and intentional)
+- A manifest write that fails without crashing (disk full, permission denied) is rolled back in memory rather than left applied only in the live session — folder creation and note renaming roll back this way
 - File permissions are not enforced by Driftleaf (relies on OS file permissions)
 
 ## Security Roadmap

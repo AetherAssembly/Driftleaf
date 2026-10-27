@@ -96,7 +96,13 @@ chmod +x Driftleaf_<version>_amd64.AppImage
 
 ### Arch Linux and derivatives
 
-Install `driftleaf-bin` from the AUR with your preferred helper:
+The installer script detects Arch Linux and installs `driftleaf-bin` with `yay` or `paru` when available:
+
+```sh
+curl -fsSL https://aetherassembly.org/install.sh | bash
+```
+
+You can also install `driftleaf-bin` directly from the AUR with either helper:
 
 ```sh
 paru -S driftleaf-bin
