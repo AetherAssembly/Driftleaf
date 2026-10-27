@@ -1,3 +1,4 @@
+use aes_gcm::aead::{rand_core::RngCore, OsRng};
 use driftleaf_core::{decrypt, derive_key, encrypt};
 #[test]
 fn node_vectors_and_faults() {
@@ -24,5 +25,9 @@ fn node_vectors_and_faults() {
         let wrong = zeroize::Zeroizing::new([0u8; 32]);
         assert!(decrypt(&packed, &wrong).is_err());
     }
-    assert!(derive_key("test", &[0u8; 15]).is_err());
+    // A random (not fixed) too-short salt: derive_key must reject it on length alone,
+    // regardless of content.
+    let mut short_salt = [0u8; 15];
+    OsRng.fill_bytes(&mut short_salt);
+    assert!(derive_key("test", &short_salt).is_err());
 }

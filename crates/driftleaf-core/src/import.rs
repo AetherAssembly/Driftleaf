@@ -215,9 +215,11 @@ mod tests {
     // just enough of vault.json/canary.enc/manifest.enc for Branch::open() to succeed.
     fn open_branch(root: &Path, passphrase: &str) -> Branch {
         use crate::{derive_key, encrypt};
+        use aes_gcm::aead::{rand_core::RngCore, OsRng};
         let private = root.join(crate::DRIFTLEAF_DIR);
         std::fs::create_dir_all(private.join("notes")).unwrap();
-        let salt = [7u8; 16];
+        let mut salt = [0u8; 16];
+        OsRng.fill_bytes(&mut salt);
         let key = derive_key(passphrase, &salt).unwrap();
         std::fs::write(
             private.join("vault.json"),
