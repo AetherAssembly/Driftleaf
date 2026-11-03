@@ -14,7 +14,7 @@ zeroize = "1"
 serde_json = { version = "1", features = ["preserve_order"] }
 hex = "0.4"
 rusqlite = { version = "0.37", features = ["bundled"] }
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 regex = "1"
 
 [dev-dependencies]
