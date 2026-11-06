@@ -82,7 +82,7 @@ install -Dm644 %{_builddir}/LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LIC
 %{_datadir}/icons/hicolor/256x256@2/apps/driftleaf.png
 
 %changelog
-* Tue Oct 27 2026 AetherAssembly <support@aetherassembly.org> - 0.7.2-1
+* Fri Nov 06 2026 AetherAssembly <support@aetherassembly.org> - 0.7.2-1
 - Added an announcement banner that checks Driftleaf's own site RSS feed once per
   launch, showing only its single most recent item; dismissal persists across restarts.
 - Fixed a missing rustls crypto provider that panicked on first network release/

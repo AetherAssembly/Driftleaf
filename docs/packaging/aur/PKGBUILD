@@ -4,7 +4,7 @@
 # build needs an authenticated GitHub Packages token for a private npm dependency,
 # which a clean makepkg chroot has no way to provide.
 pkgname=driftleaf-bin
-pkgver=0.7.1
+pkgver=0.7.2
 pkgrel=1
 pkgdesc="A local-first encrypted notes, graph, and database app"
 arch=('x86_64' 'aarch64')
