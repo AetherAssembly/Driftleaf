@@ -1,14 +1,24 @@
-"area: electron":
+"area: tauri":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src-tauri/**"
+
+"area: sidecar":
   - changed-files:
       - any-glob-to-any-file:
           - "src/main/**"
-          - "src/preload/**"
-          - "electron-builder/**"
+          - "sidecar/**"
+
+"area: core":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "crates/driftleaf-core/**"
 
 "area: renderer":
   - changed-files:
       - any-glob-to-any-file:
           - "src/renderer/**"
+          - "src/tauri-bridge/**"
           - "vite.config.ts"
 
 "area: vault":
@@ -16,38 +26,51 @@
       - any-glob-to-any-file:
           - "src/main/vault.ts"
           - "src/main/crypto.ts"
-          - "src/main/settings.ts"
+          - "src/main/settings-store.ts"
+          - "crates/driftleaf-core/src/mutation.rs"
+          - "crates/driftleaf-core/src/snapshot.rs"
+          - "crates/driftleaf-core/src/locking.rs"
 
 "area: editor":
   - changed-files:
       - any-glob-to-any-file:
           - "src/renderer/components/Editor.tsx"
+          - "src/renderer/components/MarkdownEditor.tsx"
+          - "src/renderer/lib/live-markdown.ts"
           - "src/renderer/components/QuickCapture.tsx"
 
 "area: search":
   - changed-files:
       - any-glob-to-any-file:
           - "src/main/search.ts"
+          - "crates/driftleaf-core/src/search.rs"
           - "src/renderer/components/**/*Search*"
 
 "area: settings":
   - changed-files:
       - any-glob-to-any-file:
           - "src/renderer/components/SettingsModal.tsx"
-          - "src/main/settings.ts"
+          - "src/main/settings-store.ts"
+          - "src-tauri/src/settings_migration.rs"
 
 "area: ipc":
   - changed-files:
       - any-glob-to-any-file:
           - "src/shared/ipc.ts"
-          - "src/main/ipc.ts"
+          - "src/tauri-bridge/**"
+          - "src-tauri/src/main.rs"
+          - "sidecar/**"
 
 "area: packaging":
   - changed-files:
       - any-glob-to-any-file:
-          - "electron-builder/**"
           - "build/**"
+          - "src-tauri/tauri.conf.json"
+          - "src-tauri/tauri.release.conf.json"
+          - "docs/packaging/**"
+          - "scripts/tauri/**"
           - ".github/workflows/release.yml"
+          - ".github/workflows/tauri-release.yml"
 
 documentation:
   - changed-files:
@@ -60,9 +83,14 @@ dependencies:
       - any-glob-to-any-file:
           - "package.json"
           - "package-lock.json"
+          - "src-tauri/Cargo.toml"
+          - "src-tauri/Cargo.lock"
+          - "crates/driftleaf-core/Cargo.toml"
+          - "crates/driftleaf-core/Cargo.lock"
 
 security:
   - changed-files:
       - any-glob-to-any-file:
           - "src/main/crypto.ts"
+          - "crates/driftleaf-core/src/lib.rs"
           - ".github/workflows/security-audit.yml"

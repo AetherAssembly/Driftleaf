@@ -8,6 +8,7 @@ import {
   access,
   cp,
   mkdir,
+  open,
   readFile,
   realpath,
   writeFile,
@@ -71,13 +72,15 @@ right-click a note to move it.
 
 ## Markdown
 
-The editor supports standard markdown with a live preview toggle:
+The editor renders standard markdown inline as you type — the line you're
+editing shows raw markdown, everything else shows formatted. Toggle **Source
+mode** in the toolbar to see the raw markdown everywhere instead:
 
-- \`**bold**\`, \`*italic*\`, \`[links](url)\`
+- \`**bold**\`, \`*italic*\`, \`~~strikethrough~~\`, \`[links](url)\`
 - \`[[Note title]]\` links, with backlinks and a note graph
 - \`# Heading\`, \`## Subheading\`
 - Inline code and fenced code blocks (wrap text in backticks)
-- \`- bullet\` or \`1. numbered\` lists
+- \`- bullet\` or \`1. numbered\` lists, and \`- [ ] checkboxes\`
 
 Changes autosave a moment after you stop typing.
 
@@ -812,14 +815,37 @@ function legacyNotePath(
 
 // Writes go to a sibling temp file and land via rename(), which POSIX/NTFS guarantee is
 // atomic within the same directory — a crash mid-write leaves the old file (or nothing
-// where there was nothing before) rather than a half-written one.
+// where there was nothing before) rather than a half-written one. Atomicity alone doesn't
+// imply durability, though: without an explicit fsync, the temp file's bytes (and, on
+// POSIX, the rename's new directory entry) can still be sitting in the OS page cache when
+// the machine loses power, so the "atomic" replacement never actually reaches disk. Any
+// failure along the way removes the temp file instead of leaving it behind permanently.
 async function writeFileAtomic(filePath: string, data: Buffer | string): Promise<void> {
-  const tmpPath = path.join(
-    path.dirname(filePath),
-    `.${path.basename(filePath)}.tmp-${randomUUID()}`,
-  );
-  await writeFile(tmpPath, data);
-  await rename(tmpPath, filePath);
+  const dir = path.dirname(filePath);
+  const tmpPath = path.join(dir, `.${path.basename(filePath)}.tmp-${randomUUID()}`);
+  try {
+    const handle = await open(tmpPath, "w");
+    try {
+      await handle.writeFile(data);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await rename(tmpPath, filePath);
+  } catch (err) {
+    await rm(tmpPath, { force: true });
+    throw err;
+  }
+  // Windows can't open a directory as a file handle (EPERM/EISDIR), so this is POSIX-only;
+  // NTFS's own transactional journaling covers the rename's durability there instead.
+  if (process.platform !== "win32") {
+    const dirHandle = await open(dir, "r");
+    try {
+      await dirHandle.sync();
+    } finally {
+      await dirHandle.close();
+    }
+  }
 }
 
 function parseManifest(value: unknown): Manifest {

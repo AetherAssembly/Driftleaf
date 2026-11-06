@@ -141,7 +141,7 @@ export default function App() {
     selectedNoteRef.current = selectedNote;
   }, [selectedNote]);
   // Bumped on every openNote() call; a read that resolves after a newer navigation has
-  // already started is stale and must not overwrite what the user has since selected (B02).
+  // already started is stale and must not overwrite what the user has since selected.
   const navigationId = useRef(0);
 
   const refreshNoteGraph = useCallback(async () => {
@@ -456,7 +456,7 @@ export default function App() {
 
   // Staged in the durable draft queue (same one note content/title writes use) rather than
   // fired-and-forgotten: a failed create/write stays queued for retry on the next flush
-  // instead of silently discarding the only copy of what the user typed (B01).
+  // instead of silently discarding the only copy of what the user typed.
   async function handleQuickCapture(text: string): Promise<boolean> {
     const firstLine = text.split("\n")[0].trim();
     const title = firstLine ? firstLine.slice(0, 60) : "Untitled";
@@ -706,7 +706,7 @@ export default function App() {
       await refreshNoteGraph();
       // Mirror the backend's exact-or-descendant prefix remap (vault.ts renameFolder) here too
       // — otherwise a note/selection nested under the renamed folder (not the folder itself)
-      // keeps pointing at the old, now-nonexistent path (B06).
+      // keeps pointing at the old, now-nonexistent path.
       const remap = (folderPath: string) =>
         folderPath === oldPath || folderPath.startsWith(oldPath + "/")
           ? newPath + folderPath.slice(oldPath.length)
@@ -749,7 +749,7 @@ export default function App() {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     // Invalidate at input time, not dispatch time — a request already in flight for an older
     // query must lose even during the debounce window before the next query actually
-    // dispatches, so a stale result can never overwrite results for text already changed (B09).
+    // dispatches, so a stale result can never overwrite results for text already changed.
     const requestId = ++searchRequestId.current;
     if (!text.trim()) {
       setSearchResults([]);
@@ -780,7 +780,7 @@ export default function App() {
       await window.driftleaf.vault.lock();
       // Invalidate every session-bound async request in flight — a navigation, search, or
       // extension-catalog response delivered after this point belongs to the locked branch
-      // and must never repopulate state once unlocked, possibly on a different branch (B07).
+      // and must never repopulate state once unlocked, possibly on a different branch.
       ++navigationId.current;
       if (searchTimer.current) clearTimeout(searchTimer.current);
       searchRequestId.current += 1;

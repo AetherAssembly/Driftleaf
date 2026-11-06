@@ -48,7 +48,7 @@ AES-GCM authenticates ciphertext, so any bit-flip or truncation of a `.enc` file
 
 Driftleaf writes are structured to avoid this class of problem:
 
-- Every file write (note content, manifest) goes to a temp file and lands via an atomic rename, so a crash mid-write can't leave a half-written file.
+- Every file write (note content, manifest) goes to a temp file and lands via an atomic rename, so a crash mid-write can't leave a half-written file. The temp file (and, on Linux/macOS, its directory) is also fsynced before the rename, so the write isn't just atomic but actually reaches disk before it's considered done — not left sitting in the OS page cache for a power loss to erase.
 - Every unlock runs a reconciliation pass that cross-checks the manifest against what's actually on disk and repairs mismatches automatically: orphaned files (on disk, not in the manifest) get re-added using their filename as the title, and stale manifest entries (pointing at a file that no longer exists — e.g. from a crash mid-rename or mid-move) get dropped. You'll see a toast summarizing what, if anything, it fixed.
 
 Most interrupted saves are handled automatically when the branch is next

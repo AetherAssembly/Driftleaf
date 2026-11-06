@@ -6,6 +6,10 @@ on:
       - main
       - development
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   lint:
     name: ESLint
@@ -17,11 +21,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
-
-      - name: Configure GitHub Packages auth
-        run: echo "//npm.pkg.github.com/:_authToken=${{ secrets.PACKAGES_TOKEN }}" >> .npmrc
+          registry-url: https://npm.pkg.github.com
 
       - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - run: npm run lint
 
@@ -35,11 +39,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
-
-      - name: Configure GitHub Packages auth
-        run: echo "//npm.pkg.github.com/:_authToken=${{ secrets.PACKAGES_TOKEN }}" >> .npmrc
+          registry-url: https://npm.pkg.github.com
 
       - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - run: npm run typecheck
 
@@ -53,10 +57,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
-
-      - name: Configure GitHub Packages auth
-        run: echo "//npm.pkg.github.com/:_authToken=${{ secrets.PACKAGES_TOKEN }}" >> .npmrc
+          registry-url: https://npm.pkg.github.com
 
       - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - run: npm run build

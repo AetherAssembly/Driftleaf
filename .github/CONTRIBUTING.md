@@ -12,8 +12,10 @@ Please read our [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before contributing. We
 
 - Node.js 22 (matches CI)
 - npm
+- Rust (stable toolchain) and platform build dependencies for Tauri — see the
+  [Tauri prerequisites guide](https://v2.tauri.app/start/prerequisites/)
 - Git
-- (For releases) A GitHub Personal Access Token with `read:packages` scope to install `@aetherAssembly/ui` from GitHub Packages
+- (For `npm install`) A GitHub Personal Access Token with `read:packages` scope to install `@aetherAssembly/ui` from GitHub Packages
 
 ### Local Setup
 
@@ -28,18 +30,19 @@ echo "//npm.pkg.github.com/:_authToken=<your-token>" >> ~/.npmrc
 # Install dependencies
 npm install
 
-# Start dev mode
-npm run dev
+# Start dev mode (full Tauri app; requires the Rust toolchain)
+npm run tauri:dev
 ```
 
 ### Development Commands
 
 ```bash
-npm run dev          # Launch Electron app in dev mode
-npm run build        # Typecheck + build bundles (no packaging)
+npm run dev          # Vite dev server only, renderer in a regular browser tab
+npm run tauri:dev    # Launch the full Tauri app (native shell + renderer) in dev mode
+npm run build        # Typecheck + build the renderer bundle (no native packaging)
 npm run typecheck    # Run tsc --noEmit
 npm run lint         # Run eslint
-npm run package:*    # Package for a specific platform (see package.json)
+npm run package:tauri -- --bundles <deb,rpm,appimage,dmg,nsis>  # Package for a platform
 ```
 
 ## What Can You Contribute?
@@ -95,28 +98,33 @@ refactor: Simplify XYZ
 
 These changes require extra care:
 
-1. **Vault encryption, decryption, or storage** (`src/main/vault.ts`, `src/main/crypto.ts`)
+1. **Branch encryption, decryption, or storage** (`src/main/vault.ts`, `src/main/crypto.ts`,
+   and the Rust storage-engine port in `crates/driftleaf-core/src/`)
    - Run `scripts/tests/data-loss.js` before submitting
    - Include test coverage for any new file operations
-   - Explain crash-safety guarantees in your PR
+   - Explain crash-safety guarantees in your PR; writes must be atomic *and* fsynced, not
+     just atomic — see `writeFileAtomic` in `src/main/vault.ts`
 
-2. **Search index** (`src/main/search.ts`)
-   - Ensure index stays in sync with vault state
-   - Test with large vaults (use `scripts/generateTestVault.ts`)
+2. **Search index** (`src/main/search.ts`, `crates/driftleaf-core/src/search.rs`)
+   - Ensure the index stays in sync with branch state
+   - Test with large branches (use `scripts/generateTestVault.ts`)
 
-3. **IPC handlers** (`src/main/ipc.ts`)
+3. **Command contract between the renderer, the Tauri shell, and the sidecar**
+   (`src/shared/ipc.ts`, `src/tauri-bridge/`, `src-tauri/src/main.rs`, `sidecar/`)
    - Error handling is critical
    - Friendly error messages for user-facing failures
 
-4. **Extensions and external boundaries** (`src/main/ipc.ts`, `src/preload/`)
-   - Keep extension IPC read-only and permission-checked in the main process
+4. **Extensions and external boundaries** (`src/main/extension-access.ts`,
+   `src-tauri/src/extensions.rs`)
+   - Keep extension command access read-only and permission-checked
    - Do not expose the regular renderer API to extension windows
    - Test grant revocation and database allowlists
 
-5. **Updates and packaging** (`src/main/updates.ts`, `electron-builder/`, `.github/workflows/release.yml`)
-   - Preserve updater metadata, blockmaps, and macOS ZIP assets
-   - Do not enable macOS automatic updates until signing and notarization are configured
-   - Keep Linux installation manual; update detection must not replace package-manager workflows
+5. **Updates and packaging** (`src-tauri/src/updates.rs`, `src-tauri/tauri*.conf.json`,
+   `build/`, `.github/workflows/release.yml`, `.github/workflows/tauri-release.yml`)
+   - Preserve updater manifest generation (see `docs/TAURI_UPDATES.md`)
+   - Do not enable automatic updates for a platform until signing is configured for it
+   - Linux and unsigned macOS stay manual-download-only; see `docs/UPDATES.md`
 
 ### Testing
 
@@ -135,8 +143,10 @@ These changes require extra care:
    npm run typecheck
    npm run lint
    npm run build
-   scripts/tests/data-loss.js  # if vault-related
-   npm run package:windows     # when changing Windows packaging/update behavior
+   npm test                                   # data-loss, service/lock regressions, sidecar
+   cargo test --manifest-path src-tauri/Cargo.toml --offline          # Tauri shell
+   cargo test --manifest-path crates/driftleaf-core/Cargo.toml --offline  # storage-engine port
+   npm run package:tauri -- --bundles nsis    # when changing Windows packaging/update behavior
    ```
 
 4. **Open a PR** using the PR template (it appears automatically)
@@ -163,7 +173,7 @@ Driftleaf uses:
 Key patterns:
 
 - Error handling is explicit (no silent failures)
-- Filesystem operations are atomic or recoverable
+- Filesystem operations are atomic, fsynced, and recoverable
 - Crypto operations are logged only on DEBUG_SEARCH=1
 - IPC handlers translate raw fs errors to friendly messages
 

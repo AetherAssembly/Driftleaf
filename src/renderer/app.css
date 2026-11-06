@@ -2215,29 +2215,138 @@ body {
 
 .editor__panes {
   flex: 1;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
   min-height: 0;
 }
 
-.editor__panes--single {
-  grid-template-columns: 1fr;
+.editor__codemirror {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
-.editor__textarea {
-  border: none;
-  outline: none;
-  resize: none;
+.editor__codemirror .cm-editor {
+  height: 100%;
+}
+
+.editor__codemirror .cm-scroller {
+  overflow: auto;
   padding: var(--ae-space-4, 16px);
   font-family: var(--ae-font-mono, ui-monospace, monospace);
-  font-size: 0.95em;
   line-height: 1.6;
 }
 
-.editor__preview {
-  padding: var(--ae-space-4, 16px);
-  overflow-y: auto;
-  border-left: 1px solid var(--ae-color-border, #ddd);
+.editor__codemirror .cm-content {
+  font-size: 0.95em;
+}
+
+.editor__codemirror .cm-focused {
+  outline: none;
+}
+
+.editor__codemirror .cm-line {
+  padding: 0;
+}
+
+.editor__codemirror .cm-content {
+  caret-color: var(--ae-color-text, currentColor);
+}
+
+.editor__codemirror .cm-cursor {
+  border-left-color: var(--ae-color-text, currentColor);
+}
+
+.editor__codemirror .cm-placeholder {
+  color: var(--ae-color-text-placeholder, #999);
+}
+
+/* Live-preview rendering: headings, inline marks, links, lists, quotes */
+
+.cm-header {
+  font-family: var(--ae-font-sans, inherit);
+  font-weight: 700;
+}
+
+.cm-header-1 {
+  font-size: 1.8em;
+}
+.cm-header-2 {
+  font-size: 1.5em;
+}
+.cm-header-3 {
+  font-size: 1.3em;
+}
+.cm-header-4 {
+  font-size: 1.15em;
+}
+.cm-header-5,
+.cm-header-6 {
+  font-size: 1.05em;
+}
+
+.cm-strong {
+  font-weight: 700;
+}
+
+.cm-em {
+  font-style: italic;
+}
+
+.cm-strike {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.cm-inline-code {
+  font-family: var(--ae-font-mono, ui-monospace, monospace);
+  background: var(--ae-color-surface-hover, rgba(127, 127, 127, 0.15));
+  border-radius: var(--ae-radius-sm, 4px);
+  padding: 0 0.25em;
+}
+
+.cm-link-label,
+.cm-wikilink {
+  color: var(--ae-color-primary, #3366cc);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.cm-wikilink-broken {
+  color: var(--ae-color-text-muted, #888);
+  text-decoration: underline dashed;
+}
+
+.cm-quote-mark {
+  color: var(--ae-color-text-muted, #888);
+}
+
+.cm-quote-line {
+  border-left: 3px solid var(--ae-color-border, #ddd);
+  padding-left: var(--ae-space-2, 8px);
+  color: var(--ae-color-text-muted, #888);
+}
+
+.cm-list-mark {
+  color: var(--ae-color-text-muted, #888);
+}
+
+.cm-task-checkbox {
+  vertical-align: middle;
+  margin: 0 0.3em 0 0;
+}
+
+.cm-hr-line {
+  position: relative;
+  height: 1em;
+}
+
+.cm-hr-line::before {
+  content: "";
+  position: absolute;
+  top: 0.5em;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--ae-color-border, #ddd);
 }
 
 .quick-capture__overlay,

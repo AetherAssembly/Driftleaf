@@ -45,11 +45,12 @@ details.
 
 ## Notes, links, and search
 
-Notes use Markdown and include a live preview. Search covers note titles and
-content in the unlocked branch. Links written as
-`[[Note title]]` appear in previews and connect notes in the graph. A folder
-path can distinguish notes with duplicate titles, as in
-`[[Projects/Driftleaf]]`; unresolved or ambiguous links remain ordinary text.
+Notes use Markdown, rendered inline as you type (a Source mode is available
+for editing the raw Markdown directly). Search covers note titles and content
+in the unlocked branch. Links written as `[[Note title]]` render as clickable
+links in the editor and connect notes in the graph. A folder path can
+distinguish notes with duplicate titles, as in `[[Projects/Driftleaf]]`;
+unresolved or ambiguous links remain ordinary text.
 
 The graph and backlinks are derived from the notes currently available in the
 unlocked branch. They are not separate copies of note content.
@@ -84,10 +85,9 @@ unsigned macOS builds link to releases for manual installation. See
 As of v0.7.0, Driftleaf ships as a Tauri 2 app — Electron has been fully removed. Rust
 owns native dialogs, window identity, the close/flush handshake, the global quick-capture
 shortcut, external-link handling, and updater routing. Branch storage itself still runs
-through the same Node domain service (`src/main/service.ts` and the modules it composes),
+through the same Node domain service ([`src/main/service.ts`](../src/main/service.ts) and the modules it composes),
 reached as a sidecar child process over a private framed stdin/stdout protocol — this is
-a deliberate choice for v0.7.0, not a remaining migration step to rush. The branch format
-is unchanged throughout.
+a deliberate choice for v0.7.0. The branch format is unchanged throughout.
 
 A separate `driftleaf-core` Rust crate (`crates/driftleaf-core`) independently proves the
 full storage-logic surface against the real Node implementation — crypto, every branch

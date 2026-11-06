@@ -15,7 +15,7 @@ A private, local-first notes app for your desktop. Your branch stays on your com
 - **Truly private** - All notes are encrypted on your disk. Driftleaf developers never see your data.
 - **You own it** - No accounts to create, no cloud lock-in. Your branch is just a folder on your computer.
 - **Fast & responsive** - Everything runs locally. No waiting for the cloud or dealing with sync conflicts.
-- **Write anywhere** - Markdown support with a live preview so you can format as you write.
+- **Write anywhere** - Headings, bold, links, and more render inline as you type, with raw Markdown a toggle away in Source mode.
 - **Keyboard first** - Power users can do everything with keyboard shortcuts. Tab through everything, search instantly, capture thoughts without reaching for the mouse.
 - **Accessible** - Built for everyone, with screen reader support and clear keyboard navigation.
 
@@ -36,7 +36,7 @@ architecture-specific downloads, verification, and platform-specific installatio
 
 1. **Create a branch** - This is where all your notes live. Choose a starting template or a blank branch, then set a strong passphrase you'll remember (there's no password reset).
 2. **Create folders** - Organize your notes however you like.
-3. **Start writing** - Create notes in markdown. Use the live preview to see formatting as you type.
+3. **Start writing** - Create notes in Markdown. Formatting renders inline as you type; switch to Source mode anytime to see the raw Markdown.
 4. **Search** - Use **Ctrl+K** to quickly find notes by title or content.
 
 ### Essential Keyboard Shortcuts
@@ -53,7 +53,7 @@ architecture-specific downloads, verification, and platform-specific installatio
 
 Type `[[Note title]]` in a note to link to another note. Add an alias with
 `[[Note title|display text]]`, or use a folder-qualified target such as
-`[[Projects/Driftleaf]]` when titles aren't unique. Links work in the preview;
+`[[Projects/Driftleaf]]` when titles aren't unique. Links are clickable in the editor;
 open **Graph** in the sidebar to explore connections, and linked notes show
 their backlinks above the editor. Link data is derived from decrypted note
 content in memory while the branch is unlocked; graph data is not persisted.
@@ -164,7 +164,7 @@ npm run package:tauri -- --bundles nsis     # Windows: installer
   for how that's wired and why.
 - **Storage**: Encrypted markdown files (scrypt + AES-256-GCM) per folder-based branch
 - **Search**: SQLite FTS5 index, rebuilt on unlock
-- **Safety**: Atomic writes + consistency checks on every unlock
+- **Safety**: Atomic, fsynced writes + consistency checks on every unlock
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for an overview of branch storage, encryption, privacy, and the internal API terminology.
 

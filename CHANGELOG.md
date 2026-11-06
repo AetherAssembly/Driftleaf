@@ -4,20 +4,44 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
-## [0.7.2] - [Unreleased]
+## [0.7.2] - 2026-11-06
 
 ### Added
 
-- An announcement banner that fetches Driftleaf's own site RSS feed once per launch and
-  shows only its single most recent item (title, description, and link) — a one-way,
-  read-only check, never polled or written back to. Dismissal persists across restarts.
+- An announcement banner that checks Driftleaf's own site RSS feed once per launch and
+  shows the latest post; dismissible, and stays dismissed across restarts.
+- Live-preview Markdown editing: headings, bold/italic/strikethrough, inline code, links,
+  `[[wikilinks]]`, blockquotes, task checkboxes, and horizontal rules now render inline as
+  you type, with a Source-mode toggle for raw Markdown. Built on CodeMirror 6.
+- Canvas cards can be repositioned with arrow keys (Shift+arrow for bigger steps),
+  announced for screen readers.
 
 ### Fixed
 
-- `reqwest::Client::new()` panicked on first use with "No rustls crypto provider is
-  configured" in debug and other unsigned builds, since nothing installed a default
-  provider — this silently broke the unsigned-build release check (B10) in addition to
-  the new announcement fetch above. Now installed (`ring`) at startup.
+- A missing rustls crypto provider crashed the first network request in unsigned/debug
+  builds.
+- Quick capture no longer discards its draft if the save fails.
+- A stale navigation response could overwrite newer edits or selection; navigation is now
+  generation-tracked.
+- Failed folder creation and note renames could desync the in-memory manifest from disk;
+  both now roll back on failure.
+- Creating a note, database, or the daily note from Graph/Canvas view now switches back
+  to the editor instead of leaving it hidden.
+- Renaming an ancestor folder no longer leaves a nested selection pointing at the old
+  path.
+- Locking the branch now invalidates in-flight search/navigation and resets branch state.
+- Ctrl/Cmd+K no longer stacks the command palette on the Extensions dialog.
+- Search failures now show a toast instead of an unhandled rejection, and stale results
+  can no longer overwrite newer ones.
+- Linux and unsigned-macOS builds now check real release metadata and can open the
+  release page, instead of always reporting updates as unsupported.
+- The note title and quick-capture fields have explicit accessible labels.
+- Writes are now fsynced for real crash durability, and a failed atomic write cleans up
+  its temp file instead of leaving it behind.
+- The in-window navigation guard now uses an explicit origin allowlist instead of an
+  overly broad scheme check and a spoofable string-prefix match on the dev server URL.
+- A Calendar-view row add could silently revert a concurrent database edit; it now always
+  merges onto the latest state.
 
 ## [0.7.1] - 2026-10-26
 
@@ -195,7 +219,7 @@ The format is based on Keep a Changelog and this project uses semantic versionin
 - Added CSV and JSON database import, both as standalone files and inside ZIP
   archives. Imported databases are encrypted in the vault and support an
   editable table, rows, properties, formulas, relations, and basic rollups.
-- Added Notion-style JSON property normalization and common formula functions.
+- Added JSON property normalization and common formula functions.
 
 ### Changed
 

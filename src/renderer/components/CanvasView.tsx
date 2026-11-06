@@ -59,7 +59,7 @@ export function CanvasView({
     onUpdate(items.map((item) => (item.id === id ? { ...item, x, y } : item)));
   }
 
-  // Keyboard-only alternative to the drag handlers above (B11) — arrow keys nudge the card,
+  // Keyboard-only alternative to the drag handlers above — arrow keys nudge the card,
   // Shift+arrow moves it further. The handle button stays mounted at the same position in
   // the DOM across a move, so focus naturally stays on it without any extra bookkeeping.
   function moveItemByKeyboard(id: string, label: string, dx: number, dy: number) {

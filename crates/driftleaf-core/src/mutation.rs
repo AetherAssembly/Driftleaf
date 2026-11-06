@@ -13,6 +13,7 @@ use crate::{decrypt, encrypt, open_branch, random_hex, random_uuid_v4, valid_id,
 use serde_json::{json, Value};
 use std::{
     fs,
+    io::Write,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -31,7 +32,11 @@ pub(crate) fn now_ms() -> u64 {
 }
 
 // Writes go to a sibling temp file and land via rename(), same atomicity guarantee (and
-// reasoning) as writeFileAtomic() in src/main/vault.ts.
+// reasoning) as writeFileAtomic() in src/main/vault.ts. Also matches its durability and
+// cleanup behavior: fsync the temp file before the rename (atomicity alone doesn't mean
+// the bytes survive a power loss while still sitting in the OS page cache), fsync the
+// containing directory afterward so the rename's new entry is durable too, and remove the
+// temp file instead of leaving it behind if anything along the way fails.
 fn write_file_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
     let dir = path.parent().ok_or("Invalid path")?;
     let name = path
@@ -39,8 +44,27 @@ fn write_file_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
         .and_then(|n| n.to_str())
         .ok_or("Invalid path")?;
     let tmp = dir.join(format!(".{name}.tmp-{}", random_hex(16)));
-    fs::write(&tmp, data).map_err(|e| e.to_string())?;
-    fs::rename(&tmp, path).map_err(|e| e.to_string())
+    let result = (|| -> Result<(), String> {
+        let mut file = fs::File::create(&tmp).map_err(|e| e.to_string())?;
+        file.write_all(data).map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+        drop(file);
+        fs::rename(&tmp, path).map_err(|e| e.to_string())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+        return result;
+    }
+    // Windows can't open a directory with File::open (it refuses directory handles the same
+    // way Node's `open()` does), so this is POSIX-only; NTFS's own journaling covers the
+    // rename's durability there instead.
+    #[cfg(unix)]
+    {
+        if let Ok(dir_file) = fs::File::open(dir) {
+            let _ = dir_file.sync_all();
+        }
+    }
+    result
 }
 
 // Same traversal and reserved-name checks as validateFolderPath() in src/main/vault.ts.

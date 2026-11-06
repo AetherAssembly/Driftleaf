@@ -673,18 +673,30 @@ where
 }
 
 // True for the app's own pages/resources: the Vite dev server in debug builds, or the
-// production asset origin (a non-http(s) scheme on Windows/Linux, "tauri.localhost" on
-// macOS/iOS). Mirrors the same-origin check Electron's will-navigate handler used to make;
-// anything else is an external link that should open in the system browser instead of
-// navigating this window away from the app.
+// production asset origin. Mirrors the same-origin check Electron's will-navigate handler
+// used to make; anything else is an external link that should open in the system browser
+// instead of navigating this window away from the app.
+//
+// Matches Tauri's own asset origin exactly (see the upstream `protocol::origin()` helper):
+// `http(s)://tauri.localhost` on Windows/Android, `tauri://localhost` everywhere else
+// (macOS/Linux here) — rather than the previous blanket "any non-http(s) scheme is
+// internal", which also waved through `file:`, `data:`, and any other custom scheme. The
+// dev-server check compares scheme/host/port structurally instead of a string prefix on
+// the whole URL, so a lookalike like `http://localhost:5183.evil.example` or
+// `http://localhost:5183@evil.example` (a valid URL whose userinfo, not host, is
+// "localhost:5183") can't be mistaken for it.
 fn is_internal_navigation(url: &Url) -> bool {
-    if url.scheme() != "http" && url.scheme() != "https" {
+    if cfg!(windows) || cfg!(target_os = "android") {
+        if url.host_str() == Some("tauri.localhost") && matches!(url.scheme(), "http" | "https") {
+            return true;
+        }
+    } else if url.scheme() == "tauri" && url.host_str() == Some("localhost") {
         return true;
     }
-    if cfg!(debug_assertions) && url.as_str().starts_with("http://localhost:5183") {
-        return true;
-    }
-    url.host_str() == Some("tauri.localhost")
+    cfg!(debug_assertions)
+        && url.scheme() == "http"
+        && url.host_str() == Some("localhost")
+        && url.port() == Some(5183)
 }
 
 fn create_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
@@ -974,6 +986,51 @@ mod tests {
         });
         let (_, result) = tokio::join!(flush, close);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn internal_navigation_matches_tauris_real_asset_origin_only() {
+        let internal = if cfg!(windows) || cfg!(target_os = "android") {
+            vec!["http://tauri.localhost/", "https://tauri.localhost/index.html"]
+        } else {
+            vec!["tauri://localhost/", "tauri://localhost/index.html"]
+        };
+        for raw in internal {
+            assert!(is_internal_navigation(&Url::parse(raw).unwrap()), "{raw}");
+        }
+
+        // Everything else is external, including schemes the old "any non-http(s) scheme is
+        // internal" check used to wave through, and URLs crafted to look like the dev server
+        // or the real asset origin without actually being them.
+        let external = [
+            "https://example.com/",
+            "http://example.com/",
+            "file:///etc/passwd",
+            "data:text/html,<script>alert(1)</script>",
+            "javascript:alert(1)",
+            "ftp://example.com/",
+            "http://localhost.5183.evil.example/",
+            "http://evil.example/?x=localhost:5183",
+            "http://evil.example/?x=tauri.localhost",
+            "http://tauri.localhost.evil.example/",
+        ];
+        for raw in external {
+            assert!(!is_internal_navigation(&Url::parse(raw).unwrap()), "{raw}");
+        }
+    }
+
+    #[test]
+    fn dev_server_origin_is_internal_only_in_debug_builds_and_only_exactly() {
+        let dev = Url::parse("http://localhost:5183/").unwrap();
+        assert_eq!(is_internal_navigation(&dev), cfg!(debug_assertions));
+
+        // A different port, or https instead of http, must never match even in debug builds.
+        assert!(!is_internal_navigation(
+            &Url::parse("http://localhost:5184/").unwrap()
+        ));
+        assert!(!is_internal_navigation(
+            &Url::parse("https://localhost:5183/").unwrap()
+        ));
     }
 
     #[test]

@@ -154,13 +154,13 @@ await test('Folder creation persists in manifest', async () => {
   return freshVault.manifest.folders.includes('TestFolder');
 });
 
-// Test 9b: B03 regression — a createFolder() whose manifest write fails must not leave the
-// folder visible in memory, or a retry would see it via `includes` and skip the write,
-// falsely reporting success while the folder never actually lands on disk.
-await test('Failed folder creation rolls back in-memory state (B03)', async () => {
+// Test 9b: a createFolder() whose manifest write fails must not leave the folder visible
+// in memory, or a retry would see it via `includes` and skip the write, falsely reporting
+// success while the folder never actually lands on disk.
+await test('Failed folder creation rolls back in-memory state', async () => {
   const vault = await vaultModule.unlockVault(testVaultPath, 'test-passphrase').then(r => r.vault);
   const driftleafPath = path.join(testVaultPath, '.driftleaf');
-  const movedAway = `${driftleafPath}-away-b03`;
+  const movedAway = `${driftleafPath}-away-folder-rollback`;
   await fs.rename(driftleafPath, movedAway);
   let threw = false;
   try {
@@ -176,13 +176,13 @@ await test('Failed folder creation rolls back in-memory state (B03)', async () =
   return threw && rolledBack && freshVault.manifest.folders.includes('RollbackFolder');
 });
 
-// Test 9c: B04 regression — a renameNote() whose manifest write fails must not leave the new
-// title visible in memory; listNotes()/search would otherwise disagree with what's on disk.
-await test('Failed note rename rolls back in-memory state (B04)', async () => {
+// Test 9c: a renameNote() whose manifest write fails must not leave the new title visible
+// in memory; listNotes()/search would otherwise disagree with what's on disk.
+await test('Failed note rename rolls back in-memory state', async () => {
   const vault = await vaultModule.unlockVault(testVaultPath, 'test-passphrase').then(r => r.vault);
   const note = await vaultModule.createNote(vault, '', 'Original Title');
   const driftleafPath = path.join(testVaultPath, '.driftleaf');
-  const movedAway = `${driftleafPath}-away-b04`;
+  const movedAway = `${driftleafPath}-away-rename-rollback`;
   await fs.rename(driftleafPath, movedAway);
   let threw = false;
   try {
@@ -197,6 +197,28 @@ await test('Failed note rename rolls back in-memory state (B04)', async () => {
   const freshVault = await vaultModule.unlockVault(testVaultPath, 'test-passphrase').then(r => r.vault);
   const persisted = freshVault.manifest.notes.find(n => n.id === note.id);
   return threw && rolledBack && persisted?.title === 'New Title';
+});
+
+// Test 9d: writeFileAtomic's temp file must not survive a failed write. Force the failure
+// at the rename step (after the temp file has already been written) by replacing the
+// destination with a directory, so a rename onto it is guaranteed to fail.
+await test('A failed atomic write cleans up its temp file', async () => {
+  const vault = await vaultModule.unlockVault(testVaultPath, 'test-passphrase').then(r => r.vault);
+  const note = await vaultModule.createNote(vault, '', 'Temp Cleanup Test');
+  const notesDir = path.join(testVaultPath, '.driftleaf', 'notes');
+  const notePath = path.join(notesDir, `${note.id}.enc`);
+  await fs.rm(notePath, { force: true });
+  await fs.mkdir(notePath);
+  let threw = false;
+  try {
+    await vaultModule.writeNote(vault, note.id, 'new content');
+  } catch {
+    threw = true;
+  }
+  const remaining = await fs.readdir(notesDir);
+  const leftoverTmp = remaining.some(f => f.includes('.tmp-'));
+  await fs.rm(notePath, { recursive: true, force: true });
+  return threw && !leftoverTmp;
 });
 
 // Test 10: AES-GCM auth tag detects corruption

@@ -10,7 +10,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 // Release discovery for builds ineligible for the signed auto-updater (Linux, unsigned
 // macOS) — independent of `eligible()` below, which only gates signed in-app installation.
-// Without this, those builds never checked public release metadata at all (B10).
+// Without this, those builds never checked public release metadata at all.
 const RELEASES_OWNER: &str = "AetherAssembly";
 const RELEASES_REPO: &str = "Driftleaf";
 
@@ -309,8 +309,9 @@ pub async fn update_install(
 }
 
 // Opens the release page discovered by check_unsigned() (or the signed path, if it ever sets
-// downloadUrl) in the system browser — the manual-download half of B10's fix. Available
-// regardless of `enabled`, unlike download/install above, which stay signed-path-only.
+// downloadUrl) in the system browser — the manual-download path for platforms the signed
+// auto-updater doesn't cover. Available regardless of `enabled`, unlike download/install
+// above, which stay signed-path-only.
 #[tauri::command]
 pub async fn update_open_download(
     window: WebviewWindow,
@@ -402,8 +403,8 @@ mod tests {
         ));
     }
 
-    // B10 regression: ineligible builds must still compare real release metadata against the
-    // current version rather than reporting "unsupported" without checking anything.
+    // Regression coverage: ineligible builds must still compare real release metadata against
+    // the current version rather than reporting "unsupported" without checking anything.
     #[test]
     fn parses_tags_with_and_without_a_leading_v() {
         assert_eq!(

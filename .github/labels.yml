@@ -53,9 +53,17 @@
   description: Exempt from stale closing
 
 # ── Area ──────────────────────────────────────────────────────────────────────
-- name: 'area: electron'
+- name: 'area: tauri'
   color: 'E6F1FB'
-  description: Electron main process, preload, IPC, or window management
+  description: Tauri shell - native Rust window, commands, updater, and lifecycle
+
+- name: 'area: sidecar'
+  color: 'E6F1FB'
+  description: Bundled Node sidecar process - branch storage and command handlers
+
+- name: 'area: core'
+  color: 'E6F1FB'
+  description: 'crates/driftleaf-core: the Rust storage-engine port'
 
 - name: 'area: renderer'
   color: 'EEEDFE'
@@ -71,7 +79,7 @@
 
 - name: 'area: packaging'
   color: 'F1EFE8'
-  description: Electron-builder and platform packages
+  description: Tauri bundler config and platform packages
 
 - name: 'area: search'
   color: 'E6F1FB'
@@ -83,7 +91,7 @@
 
 - name: 'area: ipc'
   color: 'EAF3DE'
-  description: Main, preload, IPC, and process boundaries
+  description: Renderer/sidecar/Tauri command contract and process boundaries
 
 # ── Platform ──────────────────────────────────────────────────────────────────
 - name: 'platform: linux'

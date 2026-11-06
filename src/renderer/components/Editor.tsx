@@ -1,7 +1,12 @@
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Button, Modal } from "@aetherAssembly/ui";
 import type { NoteMeta } from "../../shared/ipc";
-import { renderMarkdown } from "../lib/markdown";
+
+// CodeMirror and its language/markdown packages are sizeable; split them into their
+// own chunk so the rest of the app doesn't pay for the editor until a note is opened.
+const MarkdownEditor = lazy(() =>
+  import("./MarkdownEditor").then((module) => ({ default: module.MarkdownEditor })),
+);
 
 interface EditorProps {
   note: NoteMeta;
@@ -30,9 +35,8 @@ export function Editor({
   onDelete,
   onNavigate,
 }: EditorProps) {
-  const [showPreview, setShowPreview] = useState(true);
+  const [sourceMode, setSourceMode] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const html = useMemo(() => renderMarkdown(content, notes), [content, notes]);
 
   return (
     <div className="editor">
@@ -48,8 +52,8 @@ export function Editor({
           <span className="editor__save-status" aria-live="polite">
             {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "Saved" : null}
           </span>
-          <Button variant="ghost" size="sm" onClick={() => setShowPreview((v) => !v)}>
-            {showPreview ? "Hide preview" : "Show preview"}
+          <Button variant="ghost" size="sm" onClick={() => setSourceMode((v) => !v)}>
+            {sourceMode ? "Live preview" : "Source mode"}
           </Button>
           <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
             Delete
@@ -109,32 +113,18 @@ export function Editor({
           </Button>
         </div>
       </Modal>
-      <div className={`editor__panes${showPreview ? "" : " editor__panes--single"}`}>
-        <textarea
-          className="editor__textarea"
-          aria-label="Note body"
-          value={content}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="Start writing…"
-          spellCheck
-          style={{ fontSize: fontSizePx }}
-        />
-        {showPreview ? (
-          <div
-            className="editor__preview"
-            onClick={(event) => {
-              const target = event.target;
-              if (!(target instanceof Element)) return;
-              const link = target.closest("a");
-              const match = link?.getAttribute("href")?.match(/^#driftleaf-note=(.+)$/);
-              if (match) {
-                event.preventDefault();
-                onNavigate(decodeURIComponent(match[1]));
-              }
-            }}
-            dangerouslySetInnerHTML={{ __html: html }}
+      <div className="editor__panes" style={{ fontSize: fontSizePx }}>
+        <Suspense fallback={<div className="editor__codemirror" />}>
+          <MarkdownEditor
+            noteId={note.id}
+            value={content}
+            notes={notes}
+            sourceMode={sourceMode}
+            placeholder="Start writing…"
+            onChange={onChange}
+            onNavigate={onNavigate}
           />
-        ) : null}
+        </Suspense>
       </div>
     </div>
   );
