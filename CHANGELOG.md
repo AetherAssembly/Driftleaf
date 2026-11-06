@@ -43,6 +43,13 @@ The format is based on Keep a Changelog and this project uses semantic versionin
 - A Calendar-view row add could silently revert a concurrent database edit; it now always
   merges onto the latest state.
 
+### Security
+
+- Updated the `zip` crate (archive/template import) from 2.6.1 to 9.0.5, which carries
+  fixes for several upstream advisories, including a critical parser-differential issue
+  (dual-header "zip cloaking") and a high-severity unbounded symlink-target handling bug
+  during extraction.
+
 ## [0.7.1] - 2026-10-26
 
 ### Added
