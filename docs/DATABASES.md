@@ -4,8 +4,7 @@ Driftleaf databases can be created directly or imported from CSV and JSON.
 Databases appear in the branch's folder in the sidebar and can be explored as
 table, board, calendar, gallery, or list views. Rows, properties, and view
 definitions are stored encrypted in the branch; they are not converted into
-Markdown notes. See the [Database Roadmap](DATABASE_ROADMAP.md) for planned
-database improvements.
+Markdown notes.
 
 ## Create a database
 

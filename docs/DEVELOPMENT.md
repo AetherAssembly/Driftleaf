@@ -18,9 +18,9 @@ Everything you need to build, test, and package Driftleaf locally.
 
 | Tool | Version | Required For |
 | ---- | ------- | ------------ |
-| Node.js | v18+ (v20 recommended) | The bundled sidecar backend and all build scripts |
+| Node.js | v24.22.1 | Frontend build tools and Node-based reference/test scripts; not needed by installed apps |
 | npm | v8+ | All builds |
-| Rust toolchain (`cargo`, `rustc`) | stable | Building/running the Tauri shell |
+| Rust toolchain (`cargo`, `rustc`) | stable | Building/running the Tauri shell and storage backend |
 | WebKitGTK + GTK3 dev packages (Linux) | — | `webkit2gtk-4.1`, `javascriptcoregtk-4.1`, `gtk+-3.0` and their `-devel`/`-dev` packages, by whatever name your distro uses |
 
 ### Important Notice
@@ -125,24 +125,43 @@ npx tauri dev
 
 | Command | Description |
 | ------- | ----------- |
-| `npx tauri dev` | Launch the full app (Rust shell + sidecar backend) in development mode |
+| `npx tauri dev` | Launch the full app (Rust shell and in-process Rust storage backend) |
 | `npm run dev` | Launch just the renderer's dev server (for quick UI iteration; no backend) |
 | `npm run build` | Typecheck + build the renderer bundle (no packaging) |
 | `npm run lint` | Run ESLint checks |
 | `npm run typecheck` | Run TypeScript compiler without emitting |
-| `npm test` | Run the sidecar/storage/service regression suite |
-| `npm run test:rust-compat` | Run `crates/driftleaf-core`'s Node↔Rust compatibility suite |
+| `npm test` | Run Node reference-service, storage, and compatibility regression scripts |
+| `cargo test --manifest-path crates/driftleaf-core/Cargo.toml` | Test the Rust storage backend |
+| `cargo test --manifest-path src-tauri/Cargo.toml` | Test the Tauri host and its Rust integration |
+| `npm run test:rust-compat` | Run cross-language storage-format and behavior compatibility tests |
 | `node scripts/tests/data-loss.js` | Run vault, database, and recovery integration tests |
 
-### Debugging Search Performance
+### Running the UI in a browser
+
+`npm run dev:web` starts the renderer against the Node reference backend with no Tauri
+shell, and prints a URL to open in any browser. Native dialogs are replaced by fixed paths
+inside a temporary directory that is deleted on exit, and extensions and updates are
+stubbed. This harness is for browser-only UI work; it does not exercise the production Rust
+backend. Never point it at a real branch. See the comment at the top of
+[scripts/dev/web-harness.mjs](../scripts/dev/web-harness.mjs).
+
+`npm run test:ui` drives that same setup in headless Firefox from "create a branch" through
+writing, attaching, deleting, and restoring, and fails if any step misbehaves. It also
+writes the product screenshots used by the README and website to `docs/screenshots/`
+(pass another directory as an argument to leave those untouched). It needs Firefox on
+`PATH`, or `FIREFOX=/path/to/firefox`. Because it renders with Firefox's engine rather
+than the WebKit/WebView2 engine a release build uses, it complements a click-through of a
+packaged build; it does not replace one.
+
+### Debugging the Node Reference Search
 
 ```sh
 export DEBUG_SEARCH=1
 npx tauri dev
 ```
 
-Open the WebView's devtools (right-click → Inspect, where supported) and search for
-`[search]` in the console output.
+This enables timing output in the Node reference implementation used by its scripts; it
+does not instrument the Rust backend used by the desktop app.
 
 ---
 
@@ -157,9 +176,8 @@ npm run package:tauri -- --bundles nsis       # Windows: installer
 
 Artifacts land under `src-tauri/target/release/bundle/<format>/`. The app's identity for
 these release builds comes from `src-tauri/tauri.release.conf.json` (merged over the base
-`src-tauri/tauri.conf.json`); `npm run stage:tauri` (run automatically as part of the
-release build) downloads a checksum-pinned Node runtime and copies in the sidecar backend
-rather than using your own Node installation at runtime.
+`src-tauri/tauri.conf.json`). The bundle contains the Tauri app and its Rust backend; it
+does not contain a Node runtime or sidecar. Node is only needed on the build/test machine.
 
 Signed auto-updates are off by default for this release — see
 [docs/UPDATES.md](UPDATES.md) for current status.
@@ -167,7 +185,7 @@ Signed auto-updates are off by default for this release — see
 ### Versioning during development
 
 ```sh
-node scripts/tauri/version.mjs 0.7.1
+node scripts/tauri/version.mjs 0.8.1
 ```
 
 Syncs `package.json`/`package-lock.json`/`src-tauri/tauri.conf.json`/`Cargo.toml`/

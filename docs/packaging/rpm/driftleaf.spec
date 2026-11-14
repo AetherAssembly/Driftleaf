@@ -3,7 +3,7 @@
 %global debug_package %{nil}
 
 Name:           driftleaf
-Version:        0.7.2
+Version:        0.8.0
 Release:        1%{?dist}
 Summary:        A local-first encrypted notes, graph, and database app
 License:        AGPL-3.0-or-later
@@ -14,11 +14,9 @@ BuildRequires:  cpio
 BuildRequires:  rpm
 Requires:       hicolor-icon-theme
 
-# Driftleaf's own release RPM (built by `tauri build`, not this spec) installs its Node
-# sidecar backend under the fixed path /usr/lib/Driftleaf/ — not the %%{_libdir} macro,
-# since Tauri's Linux resource-path resolution expects that literal location regardless of
-# whether a distro's convention for 64-bit libraries is /usr/lib or /usr/lib64. This spec
-# repackages that same tree unchanged for OBS/Copr's distro-native expectations.
+# Driftleaf's own release RPM (built by `tauri build`, not this spec) contains the
+# self-contained Tauri application. This spec repackages it for OBS/Copr's distro-native
+# expectations.
 Source0:        https://github.com/AetherAssembly/Driftleaf/releases/download/v%{version}/Driftleaf-%{version}-1.x86_64.rpm
 Source1:        https://github.com/AetherAssembly/Driftleaf/releases/download/v%{version}/Driftleaf-%{version}-1.aarch64.rpm
 Source2:        https://raw.githubusercontent.com/AetherAssembly/Driftleaf/v%{version}/LICENSE
@@ -46,7 +44,6 @@ cp %{SOURCE2} %{_builddir}/LICENSE
 %install
 rm -rf %{buildroot}
 mkdir -p %{buildroot}%{_bindir}
-mkdir -p %{buildroot}/usr/lib/Driftleaf
 mkdir -p %{buildroot}%{_datadir}/applications
 mkdir -p %{buildroot}%{_datadir}/icons/hicolor/32x32/apps
 mkdir -p %{buildroot}%{_datadir}/icons/hicolor/128x128/apps
@@ -54,7 +51,6 @@ mkdir -p %{buildroot}%{_datadir}/icons/hicolor/256x256@2/apps
 mkdir -p %{buildroot}%{_datadir}/licenses/%{name}
 
 cp -a extracted/usr/bin/driftleaf %{buildroot}%{_bindir}/
-cp -a extracted/usr/lib/Driftleaf/. %{buildroot}/usr/lib/Driftleaf/
 cp -a extracted/usr/share/applications/Driftleaf.desktop %{buildroot}%{_datadir}/applications/
 cp -a extracted/usr/share/icons/hicolor/32x32/apps/driftleaf.png \
     %{buildroot}%{_datadir}/icons/hicolor/32x32/apps/
@@ -68,7 +64,6 @@ install -Dm644 %{_builddir}/LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LIC
 %dir %{_datadir}/licenses/%{name}
 %license %{_datadir}/licenses/%{name}/LICENSE
 %{_bindir}/driftleaf
-/usr/lib/Driftleaf/
 %{_datadir}/applications/Driftleaf.desktop
 %dir %{_datadir}/icons/hicolor
 %dir %{_datadir}/icons/hicolor/32x32
@@ -82,6 +77,16 @@ install -Dm644 %{_builddir}/LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LIC
 %{_datadir}/icons/hicolor/256x256@2/apps/driftleaf.png
 
 %changelog
+* Sat Nov 14 2026 AetherAssembly <support@aetherassembly.org> - 0.8.0-1
+- Move storage operations into the in-process Rust backend; release packages no
+  longer bundle Node.js or a Node sidecar.
+- Add Trash and restore, passphrase changes, idle auto-lock, encrypted
+  attachments, and an attachment manager with image previews.
+- Add dated ZIP export, find and replace, syntax highlighting, and note
+  title/content search in the command palette.
+- Add an Intel (x64) macOS release build and make startup announcement requests
+  follow the update-check setting.
+
 * Fri Nov 06 2026 AetherAssembly <support@aetherassembly.org> - 0.7.2-1
 - Added an announcement banner that checks Driftleaf's own site RSS feed once per
   launch, showing only its single most recent item; dismissal persists across restarts.

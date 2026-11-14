@@ -4,6 +4,78 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
+## [0.8.0] - 2026-11-14
+
+### Added
+
+- **Trash.** Deleting a note, database, or folder now moves the notes and databases to
+  Trash instead of removing them. Restore them from the sidebar for 30 days; **Delete
+  forever** and **Empty Trash** remove them immediately. Deleting no longer removes any
+  file from disk, so there is no longer a window in which a crash mid-delete can matter.
+- **Change passphrase** (Settings → Branch). The encryption key is re-sealed under the
+  new passphrase in one atomic write; no note is rewritten. See
+  [docs/RECOVERY.md](docs/RECOVERY.md#changing-your-passphrase) for what this does and
+  does not protect against.
+- **Auto-lock** (Settings → Branch): lock the branch after 1, 5, 15, 30, or 60 minutes
+  without input. Off by default.
+- **Encrypted attachments.** Paste or attach an image or file to a note. It is encrypted
+  into the branch (up to 25 MB each); images render inline. The editor still never loads
+  an image from a web address.
+- **Export unencrypted copy** (Diagnostics & Branch Health): the whole branch as a dated
+  `.zip` containing Markdown, CSV/JSON, and attachment files that need nothing from
+  Driftleaf to read.
+- **Find and replace** in a note with Ctrl/Cmd+F.
+- **Syntax highlighting** in fenced code blocks.
+- The Ctrl/Cmd+K palette now finds notes by title and by content, not only commands.
+- **Remove unused attachments** (Diagnostics & Branch Health), and health-check coverage
+  for attachments and Trash.
+- **Manage attachments** (Diagnostics & Branch Health): browse attachments separately,
+  preview images, and choose which items to remove.
+- [docs/SYNC.md](docs/SYNC.md): what is and is not safe when syncing a branch folder
+  yourself.
+
+### Changed
+
+- The Tauri desktop app now uses the in-process Rust storage backend. Release packages no
+  longer bundle Node.js or a Node sidecar; React/TypeScript and Node-based test tooling remain.
+- The announcement feed is now fetched only when "Check for updates and announcements
+  when Driftleaf starts" is on. With it off, Driftleaf makes no network request on its
+  own. Previously the feed was fetched on every launch regardless of that setting.
+- The license identifier is AGPL-3.0-or-later everywhere, and the Terms no longer
+  describe restrictions the license does not contain.
+- The welcome note, sample extensions, health-check labels, and error messages say
+  "branch" throughout instead of "vault".
+
+### Fixed
+
+- Error messages from the storage layer were being replaced by generic fallbacks ("Failed
+  to open branch") or prefixed with a stray "Error: ". A wrong passphrase now says
+  "Incorrect passphrase", and disk-full, permission, and missing-file errors show their
+  explanations.
+- Opening a note no longer shows its first line as raw Markdown. Source is revealed only
+  on the line the cursor is on, and only while the note body has focus.
+- Dragging Canvas cards did not work on Windows, where the shell's native drag-and-drop
+  handler intercepted the drag. The handler is now off; dropped files reach the editor as
+  attachments and are ignored everywhere else.
+- Ctrl/Cmd+Shift+K in the editor no longer also toggles the command palette.
+- The folder name beside "+ Note" and "+ Database" in the sidebar no longer wraps the
+  buttons onto two lines.
+
+### Development
+
+- `npm run dev:web` runs the renderer in an ordinary browser against the real backend, and
+  `npm run test:ui` drives it in headless Firefox as a UI smoke test that also regenerates
+  the screenshots. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+- macOS release builds now include an Intel (x64) DMG alongside Apple Silicon.
+
+### Compatibility
+
+- A branch whose passphrase has been changed uses a new `vault.json` format (version 2)
+  and cannot be opened by 0.7.2 or earlier, which reports "Incorrect passphrase".
+  Branches whose passphrase has never been changed are unaffected.
+- If a branch with items in Trash is opened by 0.7.2 or earlier, the older version
+  brings those items back as "Recovered note". No content is lost.
+
 ## [0.7.2] - 2026-11-06
 
 ### Added
@@ -57,7 +129,7 @@ The format is based on Keep a Changelog and this project uses semantic versionin
 - Settings → About: a "View license" button linking to the project's AGPLv3 license.
 - Signed auto-update manifests: each release build now produces a per-platform manifest
   fragment, merged into one `latest.json` that `tauri-plugin-updater` can verify. See
-  [docs/TAURI_UPDATES.md](docs/TAURI_UPDATES.md).
+  [docs/UPDATES.md](docs/UPDATES.md).
 - A search/indexing performance benchmark script
   ([scripts/perf/search-benchmark.mjs](scripts/perf/search-benchmark.mjs)).
 

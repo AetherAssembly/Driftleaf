@@ -10,7 +10,7 @@ same page for testing.
 
 #### Stable APT repository (recommended)
 
-The signing-key fingerprint must be `32B72F22E77E21F510B31849A7B44812A39EEB9C`. Both applications use this key. The repository supports **amd64** and **arm64**, including 64-bit Raspberry Pi OS; 32-bit armhf is not supported.
+The signing-key fingerprint must be `32B72F22E77E21F510B31849A7B44812A39EEB9C`. Every AetherAssembly APT repository is signed with this same key. The repository supports **amd64** and **arm64**, including 64-bit Raspberry Pi OS; 32-bit armhf is not supported.
 
 Only stable releases are published to APT. New stable releases may take up to 12 hours to appear. Beta releases are available directly from GitHub; there is no beta APT channel.
 
@@ -18,7 +18,7 @@ Only stable releases are published to APT. New stable releases may take up to 12
 sudo apt update
 sudo apt install ca-certificates curl gnupg
 sudo install -d -m 0755 /etc/apt/keyrings
-curl -fsSL https://apt.aetherassembly.org/before-its-gone/apt-repo-public.asc -o /tmp/aetherassembly-apt-public.asc
+curl -fsSL https://apt.aetherassembly.org/driftleaf/apt-repo-public.asc -o /tmp/aetherassembly-apt-public.asc
 gpg --show-keys --with-fingerprint /tmp/aetherassembly-apt-public.asc
 
 # Confirm the fingerprint below before continuing.
@@ -125,8 +125,10 @@ Compare the result with the checksum shown in the release notes.
 
 ## macOS
 
-Download the DMG from the release page, open it, and drag Driftleaf to Applications.
-The published macOS download is a DMG. The app is unsigned and not notarized,
+Download the DMG for your Mac from the release page, open it, and drag Driftleaf to
+Applications. Use the asset ending in `aarch64.dmg` on Apple Silicon (M1 and later) and
+the one ending in `x64.dmg` on Intel Macs; releases up to 0.7.2 have an Apple Silicon
+build only. The app is unsigned and not notarized,
 so macOS may block it from opening. In that case, removing its quarantine flag
 allows it to open:
 
