@@ -3,7 +3,7 @@ import { BRANCH_LOCK_FILENAME } from "../shared/storage";
 // folder placement, and database metadata live in an encrypted manifest; note files
 // use opaque IDs under .driftleaf/notes rather than exposing names in paths.
 
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import {
   access,
   cp,
@@ -31,6 +31,8 @@ import {
 import { getVaultTemplate } from "./templates";
 import { parseCsvDatabase, parseJsonDatabase } from "./database-import";
 import type {
+  AttachmentMeta,
+  AttachmentUsage,
   CanvasItem,
   ExtensionPermission,
   ExtensionSample,
@@ -45,6 +47,7 @@ import type {
   DatabasePropertyType,
   DatabaseRow,
   DatabaseViewDefinition,
+  TrashItem,
   VaultHealthCheck,
   VaultHealthReport,
 } from "../shared/ipc";
@@ -56,19 +59,23 @@ const WELCOME_NOTE_CONTENT = `# Welcome to Driftleaf
 
 ## Local-first, encrypted, yours alone
 
-- Your notes live only on this device (or wherever you point the vault folder) —
+- Your notes live only on this device (or wherever you point the branch folder) —
   no cloud, no account, no tracking.
 - Note content is encrypted at rest with AES-256-GCM. If you set a passphrase,
-  it's the only way to unlock the vault — **there is no password reset**. Write
-  it down and keep it somewhere safe.
+  it's the only way to unlock the branch — **there is no password reset**. Write
+  it down and keep it somewhere safe. You can change it later in Settings, but
+  only while the branch is unlocked.
 - Note titles, folder names, and database metadata are encrypted too. The app
-  decrypts the index only while this vault is unlocked.
+  decrypts the index only while this branch is unlocked.
 
 ## Organization
 
-Notes live in folders, not tags — the sidebar folder tree is private vault
+Notes live in folders, not tags — the sidebar folder tree is private branch
 metadata, not the on-disk folder structure. Right-click a folder to rename or delete it;
 right-click a note to move it.
+
+Deleted notes and databases go to **Trash** in the sidebar, where you can restore
+them for 30 days before they are removed for good.
 
 ## Markdown
 
@@ -82,11 +89,15 @@ mode** in the toolbar to see the raw markdown everywhere instead:
 - Inline code and fenced code blocks (wrap text in backticks)
 - \`- bullet\` or \`1. numbered\` lists, and \`- [ ] checkboxes\`
 
+Paste or attach an image or file and it is encrypted into the branch alongside
+your notes. Press Ctrl+F (Cmd+F on Mac) to find and replace inside a note, and
+Ctrl+K (Cmd+K) to jump to any note or command.
+
 Changes autosave a moment after you stop typing.
 
 ## If something goes wrong
 
-Every unlock double-checks the vault against what's actually on disk and
+Every unlock double-checks the branch against what's actually on disk and
 repairs small inconsistencies automatically (e.g. after a crash mid-save). If
 a note ever won't decrypt, it's reported as corrupted rather than silently
 losing your other notes. See \`docs/RECOVERY.md\` in the project repo for more.
@@ -545,6 +556,7 @@ export async function deleteDatabaseRow(vault: Vault, id: string, rowId: string)
   await updateDatabase(vault, id, data.properties, cleared.rows, data.views, data.activeViewId);
 }
 
+// Moves the database to Trash (see TrashEntry). Its encrypted file is left in place.
 export async function deleteDatabase(vault: Vault, id: string): Promise<void> {
   const databases = databasesFor(vault);
   const index = databases.findIndex((database) => database.id === id);
@@ -556,20 +568,35 @@ export async function deleteDatabase(vault: Vault, id: string): Promise<void> {
       throw new Error(`Database is linked from "${referencedBy.title}" and cannot be deleted yet`);
     }
   }
+  await assertNotLinkedFromTrash(vault, new Set([id]));
   const [meta] = databases.splice(index, 1);
   const previousCanvas = vault.manifest.canvasItems;
   vault.manifest.canvasItems = (previousCanvas ?? []).filter(
     (item) => item.kind !== "database" || item.targetId !== id,
   );
+  const trash = trashFor(vault);
+  const entry: TrashEntry = { kind: "database", meta, deletedAt: Date.now() };
+  trash.push(entry);
   try {
     await writeManifest(vault.rootPath, vault.manifest, vault.key);
   } catch (error) {
     databases.splice(index, 0, meta);
     vault.manifest.canvasItems = previousCanvas;
+    trash.splice(trash.indexOf(entry), 1);
     throw error;
   }
-  await rm(databasePath(vault, id), { force: true });
 }
+
+// A deleted note or database keeps its encrypted file exactly where it was; only its
+// manifest entry moves from notes/databases into this list. That makes "delete" a single
+// atomic manifest write with nothing to roll back on disk, and "restore" the same write in
+// reverse. Files are only removed when an entry is purged (by hand, by Empty Trash, or by
+// the retention sweep on unlock).
+type TrashEntry =
+  | { kind: "note"; meta: NoteMeta; deletedAt: number }
+  | { kind: "database"; meta: DatabaseMeta; deletedAt: number };
+
+export const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 interface Manifest {
   notes: NoteMeta[];
@@ -577,6 +604,8 @@ interface Manifest {
   databases?: DatabaseMeta[];
   extensions?: StoredExtension[];
   canvasItems?: CanvasItem[];
+  trash?: TrashEntry[];
+  attachments?: AttachmentMeta[];
 }
 
 export interface StoredExtension extends ExtensionSummary {
@@ -595,9 +624,9 @@ const EXTENSION_SAMPLES: Array<ExtensionSample & { source: string }> = [
   {
     id: "note-count",
     name: "Note count",
-    description: "Shows how many notes are in the current vault.",
+    description: "Shows how many notes are in the current branch.",
     source:
-      '(async () => { const notes = await window.driftleafExtension.listNotes(); const main = document.createElement("main"); main.style.cssText = "font:16px system-ui;padding:32px"; const heading = document.createElement("h1"); heading.textContent = "Vault overview"; const summary = document.createElement("p"); summary.textContent = `${notes.length} notes`; main.append(heading, summary); document.body.replaceChildren(main); })();',
+      '(async () => { const notes = await window.driftleafExtension.listNotes(); const main = document.createElement("main"); main.style.cssText = "font:16px system-ui;padding:32px"; const heading = document.createElement("h1"); heading.textContent = "Branch overview"; const summary = document.createElement("p"); summary.textContent = `${notes.length} notes`; main.append(heading, summary); document.body.replaceChildren(main); })();',
   },
   {
     id: "database-summary",
@@ -634,7 +663,7 @@ function validateExtension(extension: StoredExtension): void {
     (extension.sampleId !== undefined &&
       !EXTENSION_SAMPLES.some((sample) => sample.id === extension.sampleId))
   ) {
-    throw new Error("Vault contains an invalid extension definition");
+    throw new Error("Branch contains an invalid extension definition");
   }
 }
 
@@ -677,8 +706,87 @@ function databasePath(vault: Vault, id: string): string {
 
 // "scrypt" vaults derive their key from a passphrase. "none" remains only for
 // compatibility with legacy vaults created before this requirement was enforced.
+//
+// Version 1 derives the data key straight from the passphrase, so the passphrase can never
+// change without re-encrypting every file. Version 2 (written the first time a passphrase is
+// changed) keeps that same data key but stores it wrapped: scrypt(passphrase, salt) yields a
+// key-encryption key, and wrappedKeyHex is the data key sealed with it using the usual
+// [iv][tag][ciphertext] framing. Changing the passphrase is then one atomic rewrite of this
+// small file; no note, database, or attachment is touched.
 type VaultConfig =
-  { version: 1; kdf: "scrypt"; saltHex: string } | { version: 1; kdf: "none"; keyHex: string };
+  | { version: 1; kdf: "scrypt"; saltHex: string }
+  | { version: 1; kdf: "none"; keyHex: string }
+  | { version: 2; kdf: "scrypt"; saltHex: string; wrappedKeyHex: string };
+
+const KEY_BYTES = 32;
+
+function isHex(value: unknown, bytes: number): value is string {
+  return typeof value === "string" && new RegExp(`^[0-9a-f]{${bytes * 2}}$`, "i").test(value);
+}
+
+// Validates the shape of vault.json. `subject` only changes the wording of the error so a
+// damaged backup and a damaged open branch are reported as what they are.
+function parseVaultConfig(raw: unknown, subject: "Branch" | "Backup"): VaultConfig {
+  if (!raw || typeof raw !== "object") {
+    throw new Error(`${subject} has an invalid branch configuration`);
+  }
+  const config = raw as Record<string, unknown>;
+  if (config.version !== 1 && config.version !== 2) {
+    throw new Error(
+      subject === "Backup"
+        ? "This backup uses an unsupported branch format"
+        : "This branch was created by a newer version of Driftleaf. Update the app to open it.",
+    );
+  }
+  if (config.kdf === "scrypt") {
+    if (!isHex(config.saltHex, 16)) {
+      throw new Error(`${subject} has an invalid key-derivation salt`);
+    }
+    if (config.version === 2) {
+      // 12-byte iv + 16-byte tag + 32-byte key.
+      if (!isHex(config.wrappedKeyHex, 12 + 16 + KEY_BYTES)) {
+        throw new Error(`${subject} has an invalid wrapped encryption key`);
+      }
+      return {
+        version: 2,
+        kdf: "scrypt",
+        saltHex: config.saltHex,
+        wrappedKeyHex: config.wrappedKeyHex,
+      };
+    }
+    return { version: 1, kdf: "scrypt", saltHex: config.saltHex };
+  }
+  if (config.kdf === "none" && config.version === 1) {
+    if (!isHex(config.keyHex, KEY_BYTES)) {
+      throw new Error(`${subject} has an invalid encryption key`);
+    }
+    return { version: 1, kdf: "none", keyHex: config.keyHex };
+  }
+  throw new Error(`${subject} uses an unsupported key-derivation method`);
+}
+
+async function readVaultConfig(rootPath: string, subject: "Branch" | "Backup"): Promise<VaultConfig> {
+  const raw: unknown = JSON.parse(await readFile(configPath(rootPath), "utf-8"));
+  return parseVaultConfig(raw, subject);
+}
+
+// Returns the branch's data key for this config and passphrase. A wrong passphrase on a
+// version-2 config fails here (the wrapped key will not authenticate); on version 1 it
+// yields a wrong key that the caller's canary check then rejects.
+async function dataKeyFromConfig(config: VaultConfig, passphrase: string): Promise<Buffer> {
+  if (config.kdf === "none") return Buffer.from(config.keyHex, "hex");
+  const derived = await deriveVaultKey(passphrase, Buffer.from(config.saltHex, "hex"));
+  if (config.version === 1) return derived;
+  try {
+    const key = decrypt(unpackPayload(Buffer.from(config.wrappedKeyHex, "hex")), derived);
+    if (key.length !== KEY_BYTES) throw new Error("Unexpected key length");
+    return key;
+  } catch {
+    throw new Error("Incorrect passphrase");
+  } finally {
+    derived.fill(0);
+  }
+}
 
 export interface Vault {
   rootPath: string;
@@ -686,7 +794,7 @@ export interface Vault {
   manifest: Manifest;
 }
 
-function pathIsWithin(parentPath: string, childPath: string): boolean {
+export function pathIsWithin(parentPath: string, childPath: string): boolean {
   const relative = path.relative(parentPath, childPath);
   return (
     relative === "" ||
@@ -698,14 +806,14 @@ export async function createVaultBackup(vault: Vault, destinationParent: string)
   const sourcePath = await realpath(vault.rootPath);
   const destinationPath = await realpath(destinationParent);
   if (pathIsWithin(sourcePath, destinationPath)) {
-    throw new Error("Choose a backup destination outside the open vault folder");
+    throw new Error("Choose a backup destination outside the open branch folder");
   }
 
   const timestamp = new Date()
     .toISOString()
     .replace(/:/g, "-")
     .replace(/\.\d{3}Z$/, "Z");
-  const baseName = `Driftleaf-Backup-${timestamp}`;
+  const baseName = `Driftleaf-Backup-${branchLabel(sourcePath)}-${timestamp}`;
   let backupName = baseName;
   for (let suffix = 2; ; suffix++) {
     try {
@@ -855,11 +963,25 @@ function parseManifest(value: unknown): Manifest {
     !Array.isArray((value as Partial<Manifest>).notes) ||
     !Array.isArray((value as Partial<Manifest>).folders)
   ) {
-    throw new Error("Vault manifest is missing valid notes or folders arrays");
+    throw new Error("Branch index is missing valid notes or folders arrays");
   }
-  const manifest = { databases: [], extensions: [], canvasItems: [], ...(value as Manifest) };
+  const manifest = {
+    databases: [],
+    extensions: [],
+    canvasItems: [],
+    trash: [],
+    attachments: [],
+    ...(value as Manifest),
+  };
+  // A damaged Trash or attachment entry must never stop a branch from opening. Dropping the
+  // entry only forgets the bookkeeping: the encrypted file is still on disk, where the next
+  // reconcile (notes) or health check (databases, attachments) reports it.
+  manifest.trash = Array.isArray(manifest.trash) ? manifest.trash.filter(validTrashEntry) : [];
+  manifest.attachments = Array.isArray(manifest.attachments)
+    ? manifest.attachments.filter(validAttachmentMeta)
+    : [];
   if (!Array.isArray(manifest.extensions)) {
-    throw new Error("Vault manifest contains an invalid extensions list");
+    throw new Error("Branch index contains an invalid extensions list");
   }
   for (const extension of manifest.extensions) {
     if (
@@ -873,7 +995,7 @@ function parseManifest(value: unknown): Manifest {
   }
   for (const extension of manifest.extensions) validateExtension(extension);
   if (!Array.isArray(manifest.canvasItems)) {
-    throw new Error("Vault manifest contains invalid canvas items");
+    throw new Error("Branch index contains invalid canvas items");
   }
   validateCanvasItems(manifest.canvasItems, manifest.notes, manifest.databases ?? []);
   return manifest;
@@ -1037,7 +1159,7 @@ async function readManifest(rootPath: string, key: Buffer): Promise<Manifest> {
     return parseManifest(JSON.parse(plaintext) as unknown);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw new Error("Encrypted vault index is damaged or cannot be decrypted", { cause: error });
+      throw new Error("Encrypted branch index is damaged or cannot be decrypted", { cause: error });
     }
   }
   const raw = await readFile(legacyManifestPath(rootPath), "utf-8");
@@ -1072,7 +1194,7 @@ export async function createVault(
   templateId: VaultTemplateId = "blank",
 ): Promise<Vault> {
   if (!passphrase || passphrase.trim().length === 0) {
-    throw new Error("A passphrase is required to create a vault.");
+    throw new Error("A passphrase is required to create a branch.");
   }
 
   const template = getVaultTemplate(templateId);
@@ -1128,8 +1250,7 @@ export async function createVault(
 }
 
 export async function vaultHasPassphrase(rootPath: string): Promise<boolean> {
-  const configRaw = await readFile(configPath(rootPath), "utf-8");
-  const config = JSON.parse(configRaw) as VaultConfig;
+  const config = await readVaultConfig(rootPath, "Branch");
   return config.kdf === "scrypt";
 }
 
@@ -1139,12 +1260,8 @@ export interface UnlockResult {
 }
 
 export async function unlockVault(rootPath: string, passphrase: string): Promise<UnlockResult> {
-  const configRaw = await readFile(configPath(rootPath), "utf-8");
-  const config = JSON.parse(configRaw) as VaultConfig;
-  const key =
-    config.kdf === "scrypt"
-      ? await deriveVaultKey(passphrase, Buffer.from(config.saltHex, "hex"))
-      : Buffer.from(config.keyHex, "hex");
+  const config = await readVaultConfig(rootPath, "Branch");
+  const key = await dataKeyFromConfig(config, passphrase);
 
   const canaryData = await readFile(canaryPath(rootPath));
   let decrypted: Buffer;
@@ -1163,6 +1280,11 @@ export async function unlockVault(rootPath: string, passphrase: string): Promise
   const recovery = await reconcileVault(vault);
   await writeManifest(rootPath, manifest, key);
   await rm(legacyManifestPath(rootPath), { force: true });
+  // Best effort: a failed retention sweep must never stop a branch from opening. Anything
+  // it could not remove is simply still in Trash next time.
+  await purgeExpiredTrash(vault).catch((error: unknown) => {
+    console.error("Could not clear expired trash:", error);
+  });
   return { vault, recovery };
 }
 
@@ -1257,11 +1379,58 @@ export async function reconcileVault(vault: Vault): Promise<VaultRecoveryReport>
     await pruneEmptyLegacyFolders(vault.rootPath, folder);
   }
 
+  // Trashed notes still own their encrypted file. Claim those files so the orphan pass below
+  // does not "recover" them as new notes, and drop any Trash entry whose file is gone.
+  // A copy of Driftleaf from before Trash existed does not know to claim them, so it will
+  // have recovered each trashed file as a live "Recovered note" with the same ID; in that
+  // case the live note wins and takes its real title and folder back from the Trash entry.
+  const survivorsById = new Map(survivors.map((note) => [note.id, note]));
+  const liveDatabaseIds = new Set(databasesFor(vault).map((database) => database.id));
+  const keptTrash: TrashEntry[] = [];
+  for (const entry of trashFor(vault)) {
+    if (entry.kind === "note") {
+      const privateKey = `@private/${entry.meta.id}.enc`;
+      const live = survivorsById.get(entry.meta.id);
+      if (live) {
+        if (live.title === "Recovered note") {
+          live.title = entry.meta.title;
+          live.folderPath = entry.meta.folderPath;
+        }
+        continue;
+      }
+      if (!onDisk.has(privateKey)) continue;
+      claimed.add(privateKey);
+    } else {
+      if (liveDatabaseIds.has(entry.meta.id)) continue;
+      try {
+        await access(databasePath(vault, entry.meta.id));
+      } catch {
+        continue;
+      }
+    }
+    keptTrash.push(entry);
+  }
+  const trashChanged = keptTrash.length !== trashFor(vault).length;
+  vault.manifest.trash = keptTrash;
+
   for (const [key, { folderPath, fileName, private: isPrivate }] of onDisk) {
     if (claimed.has(key)) continue;
     const id = isPrivate && /^[0-9a-f-]{36}\.enc$/i.test(fileName)
       ? fileName.slice(0, -".enc".length)
       : randomUUID();
+    if (!(isPrivate && /^[0-9a-f-]{36}\.enc$/i.test(fileName))) {
+      // The file is not where a note with this ID is read from. Move it there, or the
+      // recovered note would be listed but unreadable and "recovered" again on every unlock.
+      try {
+        const from = isPrivate
+          ? path.join(privateNotesPath, fileName)
+          : legacyNotePath(vault.rootPath, { folderPath, fileName });
+        await rename(from, notePath(vault.rootPath, { id }));
+        await pruneEmptyLegacyFolders(vault.rootPath, folderPath);
+      } catch {
+        continue;
+      }
+    }
     survivors.push({
       id,
       title: isPrivate ? "Recovered note" : titleFromFileName(fileName),
@@ -1281,7 +1450,7 @@ export async function reconcileVault(vault: Vault): Promise<VaultRecoveryReport>
   );
   const canvasChanged = vault.manifest.canvasItems.length !== previousCanvas.length;
 
-  if (!isEmptyReport(report) || canvasChanged) {
+  if (!isEmptyReport(report) || canvasChanged || trashChanged) {
     await writeManifest(vault.rootPath, vault.manifest, vault.key);
   }
 
@@ -1392,7 +1561,8 @@ async function inspectVaultData(
       return (
         !!config &&
         typeof config === "object" &&
-        (config as Partial<VaultConfig>).version === 1 &&
+        ((config as { version?: unknown }).version === 1 ||
+          (config as { version?: unknown }).version === 2) &&
         decrypted.toString("utf-8") === CANARY_TEXT
       );
     } catch {
@@ -1400,11 +1570,11 @@ async function inspectVaultData(
     }
   })();
   addCheck(
-    "Vault metadata and key check",
+    "Branch metadata and key check",
     canaryValid ? "ok" : "error",
     canaryValid
-      ? "Vault configuration and encrypted key check are readable."
-      : "Vault configuration or encrypted key check is missing, invalid, or damaged.",
+      ? "Branch configuration and encrypted key check are readable."
+      : "Branch configuration or encrypted key check is missing, invalid, or damaged.",
   );
 
   const manifestValid = await readManifestStrict(rootPath, key)
@@ -1415,11 +1585,11 @@ async function inspectVaultData(
     )
     .catch(() => false);
   addCheck(
-    "Vault index",
+    "Branch index",
     manifestValid ? "ok" : "error",
     manifestValid
       ? `${manifest.notes.length} note entries and ${manifest.folders.length} folders are indexed.`
-      : "The vault manifest is missing, unreadable, or has an invalid structure.",
+      : "The branch index is missing, unreadable, or has an invalid structure.",
   );
   if (!manifestValid) {
     return { checkedAt: Date.now(), checks };
@@ -1432,7 +1602,7 @@ async function inspectVaultData(
     addCheck(
       "Encrypted files",
       "error",
-      `Could not scan the vault folder: ${error instanceof Error ? error.message : String(error)}`,
+      `Could not scan the branch folder: ${error instanceof Error ? error.message : String(error)}`,
     );
     return { checkedAt: Date.now(), checks };
   }
@@ -1469,6 +1639,11 @@ async function inspectVaultData(
     }
   }
 
+  const trashedEntries = manifest.trash ?? [];
+  for (const entry of trashedEntries) {
+    if (entry.kind === "note") expected.add(`@private/${entry.meta.id}.enc`);
+  }
+
   const orphanFiles = [...disk.encryptedFiles.keys()].filter((file) => !expected.has(file)).length;
   let unreadableFiles = 0;
   for (const file of disk.encryptedFiles.values()) {
@@ -1499,7 +1674,7 @@ async function inspectVaultData(
     "Incomplete-write leftovers",
     disk.temporaryFiles > 0 ? "warning" : "ok",
     disk.temporaryFiles > 0
-      ? `${disk.temporaryFiles} temporary file(s) remain in the vault folder.`
+      ? `${disk.temporaryFiles} temporary file(s) remain in the branch folder.`
       : "No temporary write files were found.",
   );
 
@@ -1531,6 +1706,10 @@ async function inspectVaultData(
     } catch {
       unreadableDatabases++;
     }
+  }
+
+  for (const entry of trashedEntries) {
+    if (entry.kind === "database") expectedDatabaseFiles.add(`${entry.meta.id}.db.enc`);
   }
 
   const { orphanDatabaseFiles, metadataTempFiles } = await readdir(
@@ -1565,7 +1744,46 @@ async function inspectVaultData(
     addCheck(
       "Database write leftovers",
       "warning",
-      `${metadataTempFiles} temporary file(s) remain in the vault metadata folder.`,
+      `${metadataTempFiles} temporary file(s) remain in the branch metadata folder.`,
+    );
+  }
+
+  const attachmentMetas = manifest.attachments ?? [];
+  let damagedAttachments = 0;
+  for (const attachment of attachmentMetas) {
+    try {
+      const bytes = await readFile(attachmentPath(rootPath, attachment.id));
+      decrypt(unpackPayload(bytes), key);
+    } catch {
+      damagedAttachments++;
+    }
+  }
+  const expectedAttachmentFiles = new Set(attachmentMetas.map((item) => `${item.id}.enc`));
+  const orphanAttachmentFiles = await readdir(path.join(rootPath, DRIFTLEAF_DIR, "attachments"), {
+    withFileTypes: true,
+  })
+    .then(
+      (entries) =>
+        entries.filter(
+          (entry) =>
+            entry.isFile() &&
+            entry.name.endsWith(".enc") &&
+            !expectedAttachmentFiles.has(entry.name),
+        ).length,
+    )
+    .catch(() => 0);
+  addCheck(
+    "Encrypted attachments",
+    damagedAttachments > 0 ? "error" : orphanAttachmentFiles > 0 ? "warning" : "ok",
+    damagedAttachments + orphanAttachmentFiles === 0
+      ? `${attachmentMetas.length} attachment(s) decrypt successfully.`
+      : `${damagedAttachments} missing or damaged attachment(s) and ${orphanAttachmentFiles} unindexed attachment file(s).`,
+  );
+  if (trashedEntries.length > 0) {
+    addCheck(
+      "Trash",
+      "ok",
+      `${trashedEntries.length} deleted item(s) are held in Trash and can be restored.`,
     );
   }
   return { checkedAt: Date.now(), checks };
@@ -1580,25 +1798,12 @@ export async function verifyVaultBackup(
   rootPath: string,
   passphrase: string,
 ): Promise<VaultHealthReport> {
-  const rawConfig: unknown = JSON.parse(await readFile(configPath(rootPath), "utf-8"));
-  if (!rawConfig || typeof rawConfig !== "object") {
-    throw new Error("Backup has an invalid vault configuration");
-  }
-  const config = rawConfig as Partial<VaultConfig>;
-  if (config.version !== 1) throw new Error("This backup uses an unsupported vault format");
+  const config = await readVaultConfig(rootPath, "Backup");
   let key: Buffer;
-  if (config.kdf === "scrypt") {
-    if (typeof config.saltHex !== "string" || !/^[0-9a-f]{32}$/i.test(config.saltHex)) {
-      throw new Error("Backup has an invalid key-derivation salt");
-    }
-    key = await deriveVaultKey(passphrase, Buffer.from(config.saltHex, "hex"));
-  } else if (config.kdf === "none") {
-    if (typeof config.keyHex !== "string" || !/^[0-9a-f]{64}$/i.test(config.keyHex)) {
-      throw new Error("Backup has an invalid encryption key");
-    }
-    key = Buffer.from(config.keyHex, "hex");
-  } else {
-    throw new Error("Backup uses an unsupported key-derivation method");
+  try {
+    key = await dataKeyFromConfig(config, passphrase);
+  } catch {
+    throw new Error("Backup passphrase is incorrect or its key check is damaged");
   }
 
   try {
@@ -1614,6 +1819,554 @@ export async function verifyVaultBackup(
     return await inspectVaultData(rootPath, key, manifest);
   } finally {
     key.fill(0);
+  }
+}
+
+// Which databases each trashed database links to through its relation properties. A trashed
+// database cannot go through readDatabase() (that only serves live ones), so its file is
+// read directly. An unreadable file reports no links: it cannot be restored anyway.
+async function trashedDatabaseLinks(
+  vault: Vault,
+): Promise<Array<{ id: string; title: string; targets: Set<string> }>> {
+  const links: Array<{ id: string; title: string; targets: Set<string> }> = [];
+  for (const entry of trashFor(vault)) {
+    if (entry.kind !== "database") continue;
+    const targets = new Set<string>();
+    try {
+      const bytes = await readFile(databasePath(vault, entry.meta.id));
+      const parsed = JSON.parse(decrypt(unpackPayload(bytes), vault.key).toString("utf-8")) as {
+        properties?: DatabaseProperty[];
+      };
+      for (const property of parsed.properties ?? []) {
+        if (typeof property?.relationDatabaseId === "string") {
+          targets.add(property.relationDatabaseId);
+        }
+      }
+    } catch {
+      // Reported by the health check; nothing to protect here.
+    }
+    links.push({ id: entry.meta.id, title: entry.meta.title, targets });
+  }
+  return links;
+}
+
+// Relations must never dangle, including across Trash: a database that something in Trash
+// still links to cannot be deleted or purged on its own, or restoring the linking database
+// later would bring back a relation to nothing.
+async function assertNotLinkedFromTrash(
+  vault: Vault,
+  ids: Set<string>,
+  ignore: Set<string> = new Set(),
+): Promise<void> {
+  for (const trashed of await trashedDatabaseLinks(vault)) {
+    if (ids.has(trashed.id) || ignore.has(trashed.id)) continue;
+    if ([...trashed.targets].some((target) => ids.has(target))) {
+      throw new Error(
+        `A database in Trash, "${trashed.title}", links to this. Restore it or delete it permanently first`,
+      );
+    }
+  }
+}
+
+function trashFor(vault: Vault): TrashEntry[] {
+  vault.manifest.trash ??= [];
+  return vault.manifest.trash;
+}
+
+function validTrashEntry(value: unknown): value is TrashEntry {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Partial<TrashEntry>;
+  if (typeof entry.deletedAt !== "number" || !Number.isFinite(entry.deletedAt)) return false;
+  if (entry.kind === "note") {
+    return validManifestNote(entry.meta) && /^[0-9a-f-]{36}$/i.test(entry.meta.id);
+  }
+  return entry.kind === "database" && validDatabaseMeta(entry.meta);
+}
+
+export function listTrash(vault: Vault): TrashItem[] {
+  return trashFor(vault)
+    .map((entry) => ({
+      kind: entry.kind,
+      id: entry.meta.id,
+      title: entry.meta.title,
+      folderPath: entry.meta.folderPath,
+      deletedAt: entry.deletedAt,
+      expiresAt: entry.deletedAt + TRASH_RETENTION_MS,
+    }))
+    .sort((a, b) => b.deletedAt - a.deletedAt);
+}
+
+// Puts a trashed note or database back where it was. The folder it came from may have been
+// deleted since, so every folder on its path is registered again in the same manifest write.
+// Databases deleted together (a folder delete) can link to each other, so restoring one also
+// restores every trashed database it links to, directly or indirectly, in that same write.
+// Returns everything that was restored, the requested item first.
+export async function restoreTrashItem(
+  vault: Vault,
+  kind: TrashItem["kind"],
+  id: string,
+): Promise<Array<{ kind: "note"; meta: NoteMeta } | { kind: "database"; meta: DatabaseMeta }>> {
+  const trash = trashFor(vault);
+  const requested = trash.find((entry) => entry.kind === kind && entry.meta.id === id);
+  if (!requested) throw new Error("That item is no longer in Trash");
+
+  const restoring: TrashEntry[] = [requested];
+  if (requested.kind === "database") {
+    const links = await trashedDatabaseLinks(vault);
+    const liveIds = new Set(databasesFor(vault).map((database) => database.id));
+    const queue = [id];
+    const seen = new Set(queue);
+    while (queue.length > 0) {
+      const currentId = queue.pop()!;
+      for (const target of links.find((link) => link.id === currentId)?.targets ?? []) {
+        if (liveIds.has(target) || seen.has(target)) continue;
+        const linked = trash.find(
+          (entry) => entry.kind === "database" && entry.meta.id === target,
+        );
+        if (!linked) {
+          throw new Error(
+            "This database links to another database that no longer exists, so it cannot be restored",
+          );
+        }
+        seen.add(target);
+        queue.push(target);
+        restoring.push(linked);
+      }
+    }
+  }
+
+  for (const entry of restoring) {
+    validateFolderPath(entry.meta.folderPath);
+    try {
+      await access(
+        entry.kind === "note"
+          ? notePath(vault.rootPath, entry.meta)
+          : databasePath(vault, entry.meta.id),
+      );
+    } catch {
+      throw new Error(`The encrypted file for "${entry.meta.title}" is missing, so it cannot be restored`);
+    }
+  }
+
+  const previousFolders = vault.manifest.folders;
+  const previousNotes = vault.manifest.notes;
+  const previousDatabases = databasesFor(vault);
+  const folders = [...previousFolders];
+  for (const entry of restoring) {
+    let current = "";
+    for (const part of entry.meta.folderPath.split("/").filter(Boolean)) {
+      current = current ? `${current}/${part}` : part;
+      if (!folders.includes(current)) folders.push(current);
+    }
+  }
+  vault.manifest.trash = trash.filter((entry) => !restoring.includes(entry));
+  vault.manifest.folders = folders;
+  vault.manifest.notes = [
+    ...previousNotes,
+    ...restoring.flatMap((entry) => (entry.kind === "note" ? [entry.meta] : [])),
+  ];
+  vault.manifest.databases = [
+    ...previousDatabases,
+    ...restoring.flatMap((entry) => (entry.kind === "database" ? [entry.meta] : [])),
+  ];
+  try {
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
+  } catch (error) {
+    vault.manifest.trash = trash;
+    vault.manifest.folders = previousFolders;
+    vault.manifest.notes = previousNotes;
+    vault.manifest.databases = previousDatabases;
+    throw error;
+  }
+  return restoring.map((entry) =>
+    entry.kind === "note"
+      ? { kind: "note" as const, meta: entry.meta }
+      : { kind: "database" as const, meta: entry.meta },
+  );
+}
+
+// Permanently removes every Trash entry `shouldPurge` selects. Same ordering as every other
+// destructive step in this file: the manifest forgets the entries first, then the encrypted
+// files are removed, so a crash in between leaves stray ciphertext (reported by the health
+// check, recovered by reconcile for notes) and never an entry pointing at nothing.
+async function purgeTrashEntries(
+  vault: Vault,
+  shouldPurge: (entry: TrashEntry) => boolean,
+): Promise<number> {
+  const previous = trashFor(vault);
+  const purged = previous.filter(shouldPurge);
+  if (purged.length === 0) return 0;
+  vault.manifest.trash = previous.filter((entry) => !purged.includes(entry));
+  try {
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
+  } catch (error) {
+    vault.manifest.trash = previous;
+    throw error;
+  }
+  await Promise.all(
+    purged.map((entry) =>
+      rm(
+        entry.kind === "note"
+          ? notePath(vault.rootPath, entry.meta)
+          : databasePath(vault, entry.meta.id),
+        { force: true },
+      ),
+    ),
+  );
+  return purged.length;
+}
+
+export async function purgeTrashItem(
+  vault: Vault,
+  kind: TrashItem["kind"],
+  id: string,
+): Promise<void> {
+  if (kind === "database") await assertNotLinkedFromTrash(vault, new Set([id]));
+  const removed = await purgeTrashEntries(
+    vault,
+    (entry) => entry.kind === kind && entry.meta.id === id,
+  );
+  if (removed === 0) throw new Error("That item is no longer in Trash");
+}
+
+export function emptyTrash(vault: Vault): Promise<number> {
+  return purgeTrashEntries(vault, () => true);
+}
+
+// Retention sweep, run on unlock. A database that a not-yet-expired trashed database still
+// links to is kept until that one expires too (see assertNotLinkedFromTrash).
+export async function purgeExpiredTrash(vault: Vault, now = Date.now()): Promise<number> {
+  const expired = (entry: TrashEntry) => entry.deletedAt + TRASH_RETENTION_MS <= now;
+  const trash = trashFor(vault);
+  if (!trash.some(expired)) return 0;
+  const keptIds = new Set(
+    trash.filter((entry) => entry.kind === "database" && !expired(entry)).map((e) => e.meta.id),
+  );
+  const protectedIds = new Set<string>();
+  if (keptIds.size > 0) {
+    const links = await trashedDatabaseLinks(vault);
+    const queue = [...keptIds];
+    while (queue.length > 0) {
+      const currentId = queue.pop()!;
+      for (const target of links.find((link) => link.id === currentId)?.targets ?? []) {
+        if (keptIds.has(target) || protectedIds.has(target)) continue;
+        protectedIds.add(target);
+        queue.push(target);
+      }
+    }
+  }
+  return purgeTrashEntries(
+    vault,
+    (entry) => expired(entry) && !(entry.kind === "database" && protectedIds.has(entry.meta.id)),
+  );
+}
+
+// ---------------------------------------------------------------------------------------
+// Attachments: arbitrary files (images, PDFs, ...) encrypted with the branch key under
+// .driftleaf/attachments/<id>.enc. Notes refer to one as `attachment:<id>` in an ordinary
+// Markdown image or link, so the note text stays portable and the bytes never sit in a note.
+// ---------------------------------------------------------------------------------------
+
+export const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+// An attachment is added the moment it is pasted, but the note that refers to it is only
+// saved a moment later (or not at all if that save fails and is retried). Cleanup therefore
+// never touches anything this recent.
+export const ATTACHMENT_UNUSED_GRACE_MS = 24 * 60 * 60 * 1000;
+const ATTACHMENT_REFERENCE = /attachment:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi;
+
+function attachmentsFor(vault: Vault): AttachmentMeta[] {
+  vault.manifest.attachments ??= [];
+  return vault.manifest.attachments;
+}
+
+function attachmentPath(rootPath: string, id: string): string {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Invalid attachment ID");
+  return path.join(rootPath, DRIFTLEAF_DIR, "attachments", `${id}.enc`);
+}
+
+function validAttachmentMeta(value: unknown): value is AttachmentMeta {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Partial<AttachmentMeta>;
+  return (
+    typeof item.id === "string" &&
+    /^[0-9a-f-]{36}$/i.test(item.id) &&
+    typeof item.name === "string" &&
+    typeof item.mimeType === "string" &&
+    typeof item.size === "number" &&
+    typeof item.createdAt === "number"
+  );
+}
+
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+
+// Makes one path segment safe on Windows, macOS, and Linux at once: no separators, no
+// characters NTFS rejects, no trailing dots or spaces, no device names.
+export function safeSegment(value: string, fallback: string): string {
+  const trimmed = value
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
+    .replace(/[. ]+$/g, "")
+    .trim();
+  const shortened = truncateWhole(trimmed, 100).replace(/[. ]+$/g, "");
+  if (!shortened) return fallback;
+  return WINDOWS_RESERVED.test(shortened) ? `${shortened}_` : shortened;
+}
+
+// The branch's folder name, made safe to embed in a file name, so a backup or export says
+// which branch it came from.
+export function branchLabel(rootPath: string): string {
+  return safeSegment(path.basename(rootPath), "branch").replaceAll(" ", "-");
+}
+
+// Shortens a string to at most `max` UTF-16 units without cutting a character in half.
+// A plain .slice() can end on the first half of a surrogate pair (an emoji, say); that lone
+// half is not valid Unicode, and a manifest containing one cannot be parsed by strict JSON
+// readers, the Rust port of this engine among them.
+export function truncateWhole(value: string, max: number): string {
+  if (value.length <= max) return value;
+  const cut = value.slice(0, max);
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+}
+
+// The original filename is only ever shown to the user and offered as a default when saving
+// a copy; it is never used as a path inside the branch. Strip anything that could still
+// make it one when it is suggested to a save dialog or written by an export.
+function cleanAttachmentName(name: string): string {
+  const base = name.split(/[\\/]/).pop() ?? "";
+  const cleaned = truncateWhole(base.replace(/[\u0000-\u001f<>:"|?*]/g, "").trim(), 200);
+  return cleaned && cleaned !== "." && cleaned !== ".." ? cleaned : "attachment";
+}
+
+function cleanMimeType(mimeType: string): string {
+  return /^[a-z0-9][a-z0-9.+-]{0,60}\/[a-z0-9][a-z0-9.+-]{0,60}$/i.test(mimeType)
+    ? mimeType.toLowerCase()
+    : "application/octet-stream";
+}
+
+export function listAttachments(vault: Vault): AttachmentMeta[] {
+  return attachmentsFor(vault);
+}
+
+// File first, manifest second (the same "disk first" order as createNote): a crash between
+// the two leaves an unindexed ciphertext file the health check reports, never an index
+// entry for bytes that were not written.
+export async function addAttachment(
+  vault: Vault,
+  name: string,
+  mimeType: string,
+  data: Buffer,
+): Promise<AttachmentMeta> {
+  if (typeof name !== "string" || typeof mimeType !== "string") {
+    throw new Error("Invalid attachment");
+  }
+  if (data.length === 0) throw new Error("That file is empty");
+  if (data.length > ATTACHMENT_MAX_BYTES) {
+    throw new Error(
+      `Attachments can be at most ${Math.floor(ATTACHMENT_MAX_BYTES / (1024 * 1024))} MB`,
+    );
+  }
+  const meta: AttachmentMeta = {
+    id: randomUUID(),
+    name: cleanAttachmentName(name),
+    mimeType: cleanMimeType(mimeType),
+    size: data.length,
+    createdAt: Date.now(),
+  };
+  const filePath = attachmentPath(vault.rootPath, meta.id);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFileAtomic(filePath, packPayload(encrypt(data, vault.key)));
+  const attachments = attachmentsFor(vault);
+  attachments.push(meta);
+  try {
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
+  } catch (error) {
+    attachments.splice(attachments.indexOf(meta), 1);
+    await rm(filePath, { force: true }).catch(() => {});
+    throw error;
+  }
+  return meta;
+}
+
+export async function readAttachment(
+  vault: Vault,
+  id: string,
+): Promise<{ meta: AttachmentMeta; data: Buffer }> {
+  const meta = attachmentsFor(vault).find((item) => item.id === id);
+  if (!meta) throw new Error("Attachment not found");
+  let bytes: Buffer;
+  try {
+    bytes = await readFile(attachmentPath(vault.rootPath, id));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error("This attachment's encrypted file is missing", { cause: error });
+    }
+    throw error;
+  }
+  try {
+    return { meta, data: decrypt(unpackPayload(bytes), vault.key) };
+  } catch {
+    throw new Error("Attachment is corrupted and cannot be decrypted");
+  }
+}
+
+// Attachments no note refers to. Trashed notes count as referring (restoring one must bring
+// its images back with it), and recently added attachments are never reported (see
+// ATTACHMENT_UNUSED_GRACE_MS). If any note cannot be read this throws rather than guess:
+// treating an unreadable note as "refers to nothing" could delete its attachments.
+export async function findUnusedAttachments(
+  vault: Vault,
+  now = Date.now(),
+): Promise<AttachmentMeta[]> {
+  const attachments = attachmentsFor(vault);
+  if (attachments.length === 0) return [];
+  const referenced = new Set<string>();
+  const noteFiles = [
+    ...vault.manifest.notes,
+    ...trashFor(vault).flatMap((entry) => (entry.kind === "note" ? [entry.meta] : [])),
+  ];
+  for (const meta of noteFiles) {
+    let content: string;
+    try {
+      const bytes = await readFile(notePath(vault.rootPath, meta));
+      content = decrypt(unpackPayload(bytes), vault.key).toString("utf-8");
+    } catch {
+      throw new Error(
+        `Could not read "${meta.title}", so unused attachments cannot be worked out safely`,
+      );
+    }
+    for (const match of content.matchAll(ATTACHMENT_REFERENCE)) {
+      referenced.add(match[1].toLowerCase());
+    }
+  }
+  return attachments.filter(
+    (item) =>
+      !referenced.has(item.id.toLowerCase()) && item.createdAt + ATTACHMENT_UNUSED_GRACE_MS <= now,
+  );
+}
+
+// Every attachment with the notes that refer to it, newest first. This is a listing, not a
+// safety decision, so a note that cannot be read is simply skipped.
+export async function listAttachmentUsage(vault: Vault): Promise<AttachmentUsage[]> {
+  const usedBy = new Map<string, AttachmentUsage["usedBy"]>();
+  const noteFiles = [
+    ...vault.manifest.notes.map((meta) => ({ meta, trashed: false })),
+    ...trashFor(vault).flatMap((entry) =>
+      entry.kind === "note" ? [{ meta: entry.meta, trashed: true }] : [],
+    ),
+  ];
+  for (const { meta, trashed } of noteFiles) {
+    let content: string;
+    try {
+      const bytes = await readFile(notePath(vault.rootPath, meta));
+      content = decrypt(unpackPayload(bytes), vault.key).toString("utf-8");
+    } catch {
+      continue;
+    }
+    const seen = new Set<string>();
+    for (const match of content.matchAll(ATTACHMENT_REFERENCE)) {
+      const id = match[1].toLowerCase();
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const list = usedBy.get(id) ?? [];
+      list.push({ id: meta.id, title: meta.title, folderPath: meta.folderPath, trashed });
+      usedBy.set(id, list);
+    }
+  }
+  return attachmentsFor(vault)
+    .map((item) => ({ ...item, usedBy: usedBy.get(item.id.toLowerCase()) ?? [] }))
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+// Deletes one attachment the user chose, whether or not a note still refers to it (the
+// caller has warned them). The manifest forgets it first, then the file is removed.
+export async function removeAttachment(vault: Vault, id: string): Promise<void> {
+  const previous = attachmentsFor(vault);
+  if (!/^[0-9a-f-]{36}$/i.test(id) || !previous.some((item) => item.id === id)) {
+    throw new Error("Attachment not found");
+  }
+  vault.manifest.attachments = previous.filter((item) => item.id !== id);
+  try {
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
+  } catch (error) {
+    vault.manifest.attachments = previous;
+    throw error;
+  }
+  await rm(attachmentPath(vault.rootPath, id), { force: true });
+}
+
+export async function removeUnusedAttachments(
+  vault: Vault,
+  now = Date.now(),
+): Promise<{ removed: number; bytes: number }> {
+  const unused = await findUnusedAttachments(vault, now);
+  if (unused.length === 0) return { removed: 0, bytes: 0 };
+  const previous = attachmentsFor(vault);
+  vault.manifest.attachments = previous.filter((item) => !unused.includes(item));
+  try {
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
+  } catch (error) {
+    vault.manifest.attachments = previous;
+    throw error;
+  }
+  await Promise.all(
+    unused.map((item) => rm(attachmentPath(vault.rootPath, item.id), { force: true })),
+  );
+  return { removed: unused.length, bytes: unused.reduce((total, item) => total + item.size, 0) };
+}
+
+// Changes the passphrase without re-encrypting anything: the data key stays the same and is
+// stored wrapped under a key derived from the new passphrase (see VaultConfig, version 2).
+// The swap is a single atomic rewrite of vault.json, and the new config is proven to open
+// before it replaces the old one, so a crash or a failure at any point leaves the branch
+// opening with the old passphrase exactly as before.
+//
+// What this does not do: it does not rotate the data key. Anyone holding both the old
+// passphrase and an older copy of this branch (a backup, a synced copy) can still open that
+// copy, and backups made before the change keep their old passphrase.
+export async function changeVaultPassphrase(
+  vault: Vault,
+  currentPassphrase: string,
+  newPassphrase: string,
+): Promise<void> {
+  if (typeof newPassphrase !== "string" || newPassphrase.trim().length === 0) {
+    throw new Error("A new passphrase is required.");
+  }
+  const config = await readVaultConfig(vault.rootPath, "Branch");
+  let currentKey: Buffer;
+  try {
+    currentKey = await dataKeyFromConfig(config, String(currentPassphrase ?? ""));
+  } catch {
+    throw new Error("Current passphrase is incorrect");
+  }
+  const currentMatches =
+    currentKey.length === vault.key.length && timingSafeEqual(currentKey, vault.key);
+  // Legacy "none" branches hand back a second view of nothing we own; scrypt ones a fresh
+  // buffer. Either way this copy is no longer needed.
+  if (currentKey !== vault.key) currentKey.fill(0);
+  if (!currentMatches) throw new Error("Current passphrase is incorrect");
+
+  const salt = generateSalt();
+  const wrappingKey = await deriveVaultKey(newPassphrase, salt);
+  try {
+    const next: VaultConfig = {
+      version: 2,
+      kdf: "scrypt",
+      saltHex: salt.toString("hex"),
+      wrappedKeyHex: packPayload(encrypt(vault.key, wrappingKey)).toString("hex"),
+    };
+    const serialized = JSON.stringify(next, null, 2);
+    const reparsed = parseVaultConfig(JSON.parse(serialized) as unknown, "Branch");
+    if (reparsed.version !== 2) throw new Error("Could not prepare the new passphrase");
+    const unwrapped = decrypt(
+      unpackPayload(Buffer.from(reparsed.wrappedKeyHex, "hex")),
+      wrappingKey,
+    );
+    const opens = unwrapped.length === vault.key.length && timingSafeEqual(unwrapped, vault.key);
+    unwrapped.fill(0);
+    if (!opens) throw new Error("Could not verify the new passphrase; nothing was changed");
+    await writeFileAtomic(configPath(vault.rootPath), serialized);
+  } finally {
+    wrappingKey.fill(0);
   }
 }
 
@@ -1707,9 +2460,9 @@ export async function renameNote(vault: Vault, id: string, title: string): Promi
   }
 }
 
-// Manifest is updated before the file is removed: if a crash happens in between, the
-// worst case is an orphaned .enc file on disk (harmless, cleaned up by reconcileVault()),
-// never a manifest entry pointing at a note that no longer exists.
+// Moves the note to Trash: its manifest entry moves from `notes` to `trash` in one atomic
+// manifest write and the encrypted file is not touched, so there is no window in which a
+// crash can lose content. The file is removed only when the Trash entry is purged.
 export async function deleteNote(vault: Vault, id: string): Promise<void> {
   const index = vault.manifest.notes.findIndex((n) => n.id === id);
   if (index === -1) throw new Error(`Note not found: ${id}`);
@@ -1718,14 +2471,17 @@ export async function deleteNote(vault: Vault, id: string): Promise<void> {
   vault.manifest.canvasItems = (previousCanvas ?? []).filter(
     (item) => item.kind !== "note" || item.targetId !== id,
   );
+  const trash = trashFor(vault);
+  const entry: TrashEntry = { kind: "note", meta, deletedAt: Date.now() };
+  trash.push(entry);
   try {
     await writeManifest(vault.rootPath, vault.manifest, vault.key);
   } catch (err) {
     vault.manifest.notes.splice(index, 0, meta);
     vault.manifest.canvasItems = previousCanvas;
+    trash.splice(trash.indexOf(entry), 1);
     throw err;
   }
-  await rm(notePath(vault.rootPath, meta), { force: true });
 }
 
 export async function createFolder(vault: Vault, folderPath: string): Promise<void> {
@@ -1772,7 +2528,7 @@ export async function renameFolder(
   oldFolderPath: string,
   newFolderPath: string,
 ): Promise<void> {
-  if (!oldFolderPath) throw new Error("Cannot rename the vault root");
+  if (!oldFolderPath) throw new Error("Cannot rename the branch root");
   validateFolderPath(oldFolderPath);
   validateFolderPath(newFolderPath);
   if (newFolderPath !== oldFolderPath && listFolders(vault).includes(newFolderPath)) {
@@ -1813,10 +2569,11 @@ export async function renameFolder(
   await pruneEmptyLegacyFolders(vault.rootPath, oldFolderPath);
 }
 
-// The encrypted manifest drops entries first, then encrypted note/database files are
-// removed. A crash mid-operation leaves orphaned ciphertext rather than missing entries.
+// Every note and database under the folder moves to Trash in one manifest write (each keeps
+// its original folder path, so restoring one recreates the folder it came from). No
+// encrypted file is removed here.
 export async function deleteFolder(vault: Vault, folderPath: string): Promise<string[]> {
-  if (!folderPath) throw new Error("Cannot delete the vault root");
+  if (!folderPath) throw new Error("Cannot delete the branch root");
   validateFolderPath(folderPath);
   const affected = vault.manifest.notes.filter(
     (n) => n.folderPath === folderPath || n.folderPath.startsWith(folderPath + "/"),
@@ -1844,11 +2601,19 @@ export async function deleteFolder(vault: Vault, folderPath: string): Promise<st
       }
     }
   }
+  if (affectedDatabaseIds.size > 0) await assertNotLinkedFromTrash(vault, affectedDatabaseIds);
   const deletedIds = affected.map((n) => n.id);
   const prevNotes = vault.manifest.notes;
   const prevFolders = vault.manifest.folders;
   const prevDatabases = [...databasesFor(vault)];
   const prevCanvas = vault.manifest.canvasItems;
+  const prevTrash = trashFor(vault);
+  const deletedAt = Date.now();
+  vault.manifest.trash = [
+    ...prevTrash,
+    ...affected.map((meta): TrashEntry => ({ kind: "note", meta, deletedAt })),
+    ...affectedDatabases.map((meta): TrashEntry => ({ kind: "database", meta, deletedAt })),
+  ];
   const deletedNoteIds = new Set(deletedIds);
   const deletedDatabaseIds = new Set(affectedDatabaseIds);
   vault.manifest.notes = vault.manifest.notes.filter((n) => !deletedIds.includes(n.id));
@@ -1871,12 +2636,9 @@ export async function deleteFolder(vault: Vault, folderPath: string): Promise<st
     vault.manifest.folders = prevFolders;
     vault.manifest.databases = prevDatabases;
     vault.manifest.canvasItems = prevCanvas;
+    vault.manifest.trash = prevTrash;
     throw err;
   }
-  await Promise.all(
-    affectedDatabases.map((database) => rm(databasePath(vault, database.id), { force: true })),
-  );
-  await Promise.all(affected.map((note) => rm(notePath(vault.rootPath, note), { force: true })));
   await pruneEmptyLegacyFolders(vault.rootPath, folderPath);
   return deletedIds;
 }

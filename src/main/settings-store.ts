@@ -5,7 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
-import type { AppSettings } from "../shared/ipc";
+import { AUTO_LOCK_MINUTES_OPTIONS, type AppSettings } from "../shared/ipc";
 
 export type { AppSettings } from "../shared/ipc";
 
@@ -15,6 +15,7 @@ const DEFAULTS: AppSettings = {
   editorFontSizePx: 15,
   autosaveIntervalMs: 500,
   checkUpdatesAutomatically: true,
+  autoLockMinutes: 0,
 };
 
 // Mirrors the bounds SettingsModal.tsx's number inputs enforce in the UI — a direct
@@ -75,6 +76,9 @@ export function createSettingsStore(baseDir: string): SettingsStore {
     );
     if (typeof next.checkUpdatesAutomatically !== "boolean") {
       next.checkUpdatesAutomatically = DEFAULTS.checkUpdatesAutomatically;
+    }
+    if (!(AUTO_LOCK_MINUTES_OPTIONS as readonly number[]).includes(next.autoLockMinutes)) {
+      next.autoLockMinutes = DEFAULTS.autoLockMinutes;
     }
 
     const filePath = settingsFilePath();

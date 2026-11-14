@@ -1,4 +1,4 @@
-use super::{prepare_close, request_flush, validate_main_window, FlushState, Sidecar};
+use super::{prepare_close, request_flush, validate_main_window, FlushState, Backend};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
@@ -278,7 +278,7 @@ pub async fn update_install(
     app: AppHandle,
     state: tauri::State<'_, Updates>,
     flush: tauri::State<'_, Arc<FlushState>>,
-    sidecar: tauri::State<'_, Arc<Sidecar>>,
+    backend: tauri::State<'_, Arc<Backend>>,
 ) -> Result<(), String> {
     validate_main_window(window.label())?;
     let _operation = state.operation.lock().await;
@@ -292,7 +292,7 @@ pub async fn update_install(
     }
     let (id, receiver) = request_flush(&window.as_ref().window(), &flush);
     let ready = prepare_close(&flush, id, receiver, Duration::from_secs(30), || async {
-        sidecar
+        backend
             .call("lifecycle.trustedDrain", vec![])
             .await
             .map(|_| ())

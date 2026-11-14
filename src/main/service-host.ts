@@ -40,6 +40,8 @@ export interface ServiceHost {
     suggestedFileName: string,
     format: DatabaseExportFormat,
   ): Promise<string | null>;
+  // A plain "save a copy of this file" dialog, used for decrypted attachment copies.
+  pickSaveDestination(title: string, suggestedFileName: string): Promise<string | null>;
   openExternal(url: string): Promise<void>;
   diagnosticsExtras(): DiagnosticsExtras;
   // Called whenever the active session is about to be replaced or cleared (a new vault is

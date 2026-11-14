@@ -23,6 +23,7 @@ import type {
   DriftleafApi,
   ExtensionPermission,
   ImportResult,
+  TrashItem,
   VaultTemplateId,
 } from "../shared/ipc";
 import type { ServiceHost } from "./service-host";
@@ -31,6 +32,7 @@ import type { Vault } from "./vault";
 import * as searchModule from "./search";
 import type { SearchIndex } from "./search";
 import { exportDatabase } from "./database-export";
+import { exportBranchPlaintext } from "./branch-export";
 import { downloadCommunityAsset, listCommunityReleases } from "./community-catalog";
 
 interface Session {
@@ -64,16 +66,22 @@ export type DriftleafService = Omit<DriftleafApi, "events" | "extensions" | "upd
 // Translates raw Node fs error codes into messages a user can act on. Thrown errors from a
 // command reject the caller's promise with the message intact, so this is the one place
 // worth doing the translation rather than in every command.
+//
+// Deliberately not `err instanceof Error`: the packaged sidecar (and the test harness) load
+// this module in its own vm realm, while vault.ts and Node's fs run in the host realm, so
+// every error they throw is an instance of a *different* Error constructor. With an
+// instanceof check none of them matched: the fs translations below never ran, and every
+// message was re-wrapped as String(err), reaching the user as "Error: Incorrect passphrase".
 function friendlyError(err: unknown): Error {
-  if (err instanceof Error) {
+  if (err && typeof err === "object" && typeof (err as { message?: unknown }).message === "string") {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOSPC") return new Error("Disk is full. Free up space and try again.");
     if (code === "EACCES" || code === "EPERM") {
       return new Error("Permission denied. Check that Driftleaf can write to this folder.");
     }
     if (code === "ENOENT")
-      return new Error("A vault file is missing. The vault folder may have moved.");
-    return err;
+      return new Error("A branch file is missing. The branch folder may have moved.");
+    return err as Error;
   }
   return new Error(String(err));
 }
@@ -90,7 +98,7 @@ export function createDriftleafService(host: ServiceHost): DriftleafService {
   }
 
   function requireVault(): Vault {
-    if (!session.vault) throw new Error("No vault is unlocked");
+    if (!session.vault) throw new Error("No branch is unlocked");
     return session.vault;
   }
 
@@ -257,7 +265,91 @@ export function createDriftleafService(host: ServiceHost): DriftleafService {
         }
         return vaultModule.verifyVaultBackup(rootPath, passphrase);
       }),
+      changePassphrase: serializedCommand(
+        async (currentPassphrase: string, newPassphrase: string) => {
+          await vaultModule.changeVaultPassphrase(
+            requireVault(),
+            currentPassphrase,
+            newPassphrase,
+          );
+        },
+      ),
+      exportPlaintext: serializedCommand(async () => {
+        const vault = requireVault();
+        const destination = await host.pickBackupDestination();
+        if (!destination) return null;
+        return exportBranchPlaintext(vault, destination);
+      }),
       lock: () => lockSession(),
+    },
+    trash: {
+      list: serializedCommand(() => vaultModule.listTrash(requireVault())),
+      restore: serializedCommand(async (kind: TrashItem["kind"], id: string) => {
+        if (kind !== "note" && kind !== "database") throw new Error("Unknown Trash item type");
+        const vault = requireVault();
+        const restored = await vaultModule.restoreTrashItem(vault, kind, id);
+        if (!session.index) return;
+        for (const item of restored) {
+          if (item.kind !== "note") continue;
+          // The restore itself has already been written. A note that cannot be read back
+          // is still restored (and reported by the health check); it just is not searchable.
+          try {
+            const content = await vaultModule.readNote(vault, item.meta.id);
+            searchModule.reindexNote(session.index, item.meta, content);
+          } catch {
+            /* left unindexed */
+          }
+        }
+      }),
+      purge: serializedCommand(async (kind: TrashItem["kind"], id: string) => {
+        if (kind !== "note" && kind !== "database") throw new Error("Unknown Trash item type");
+        await vaultModule.purgeTrashItem(requireVault(), kind, id);
+      }),
+      empty: serializedCommand(() => vaultModule.emptyTrash(requireVault())),
+    },
+    attachments: {
+      add: serializedCommand(async (name: string, mimeType: string, dataBase64: string) => {
+        const vault = requireVault();
+        if (typeof dataBase64 !== "string") throw new Error("Invalid attachment data");
+        // Reject oversized input before decoding it into a second, larger buffer.
+        if (dataBase64.length > Math.ceil(vaultModule.ATTACHMENT_MAX_BYTES / 3) * 4 + 4) {
+          throw new Error(
+            `Attachments can be at most ${Math.floor(vaultModule.ATTACHMENT_MAX_BYTES / (1024 * 1024))} MB`,
+          );
+        }
+        return vaultModule.addAttachment(vault, name, mimeType, Buffer.from(dataBase64, "base64"));
+      }),
+      read: serializedCommand(async (id: string) => {
+        const { meta, data } = await vaultModule.readAttachment(requireVault(), id);
+        return { meta, dataBase64: data.toString("base64") };
+      }),
+      list: serializedCommand(() => vaultModule.listAttachments(requireVault())),
+      listUsage: serializedCommand(() => vaultModule.listAttachmentUsage(requireVault())),
+      remove: serializedCommand(async (id: string) => {
+        await vaultModule.removeAttachment(requireVault(), id);
+      }),
+      saveCopy: serializedCommand(async (id: string) => {
+        const { meta, data } = await vaultModule.readAttachment(requireVault(), id);
+        const destinationPath = await host.pickSaveDestination(`Save ${meta.name}`, meta.name);
+        if (!destinationPath) return false;
+        const temporaryPath = `${destinationPath}.tmp-${randomUUID()}`;
+        try {
+          await writeFile(temporaryPath, data, { flag: "wx" });
+          await rename(temporaryPath, destinationPath);
+        } catch (error) {
+          await rm(temporaryPath, { force: true }).catch(() => {});
+          throw error;
+        }
+        return true;
+      }),
+      unused: serializedCommand(async () => {
+        const unused = await vaultModule.findUnusedAttachments(requireVault());
+        return { count: unused.length, bytes: unused.reduce((sum, item) => sum + item.size, 0) };
+      }),
+      removeUnused: serializedCommand(async () => {
+        const { removed, bytes } = await vaultModule.removeUnusedAttachments(requireVault());
+        return { count: removed, bytes };
+      }),
     },
     notes: {
       list: (folderPath?: string) => Promise.resolve(vaultModule.listNotes(requireVault(), folderPath)),
@@ -329,7 +421,7 @@ export function createDriftleafService(host: ServiceHost): DriftleafService {
         return importResult;
       }),
       graph: serializedCommand(() => {
-        if (!session.index) throw new Error("No vault is unlocked");
+        if (!session.index) throw new Error("No branch is unlocked");
         return searchModule.buildNoteGraph(session.index);
       }),
     },
