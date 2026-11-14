@@ -122,7 +122,7 @@ These changes require extra care:
 
 5. **Updates and packaging** (`src-tauri/src/updates.rs`, `src-tauri/tauri*.conf.json`,
    `build/`, `.github/workflows/release.yml`, `.github/workflows/tauri-release.yml`)
-   - Preserve updater manifest generation (see `docs/TAURI_UPDATES.md`)
+   - Preserve updater manifest generation (see [docs/UPDATES.md](../docs/UPDATES.md))
    - Do not enable automatic updates for a platform until signing is configured for it
    - Linux and unsigned macOS stay manual-download-only; see `docs/UPDATES.md`
 
@@ -189,7 +189,7 @@ If your change affects users, update:
 
 ## Licensing
 
-By contributing, you agree that your code will be licensed under [AGPL-3.0-only](../LICENSE). Matches the license on [`aether-packages`](https://github.com/AetherAssembly/aether-packages).
+By contributing, you agree that your code will be licensed under [AGPL-3.0-or-later](../LICENSE), the same license as the rest of Driftleaf.
 
 ## Questions?
 

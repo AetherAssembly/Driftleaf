@@ -1,6 +1,6 @@
 # Terms of Service
 
-_Last updated: 2026-08-31_
+_Last updated: 2026-11-13_
 
 > The canonical, always-current version of this document is hosted at
 > [legal.aetherassembly.org/driftleaf/tos.html](https://legal.aetherassembly.org/driftleaf/tos.html).
@@ -16,18 +16,18 @@ Driftleaf is developed and maintained by AetherAssembly, a small team consisting
 
 ## License
 
-Driftleaf is currently licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later). AetherAssembly is in the process of finalizing a custom organization-wide license. Until that license is in effect, the AGPL-3.0-or-later governs your use of this software.
+Driftleaf is free software, licensed under the GNU Affero General Public License, version 3 or (at your option) any later version (AGPL-3.0-or-later). The full text is in the [LICENSE](../LICENSE) file, and it is the license that governs your rights to the software. Nothing in these terms adds a restriction to it or takes a permission away from it.
 
-Under the AGPL-3.0-or-later and in line with AetherAssembly's intended licensing direction:
+In plain language, and without replacing the license text:
 
-- **Personal use** is free and unrestricted.
-- **Commercial use**, including using this software as part of a paid product or service, offering it as a hosted service, or using it to generate revenue, requires a written commercial agreement with AetherAssembly. Contact [support@aetherassembly.org](mailto:support@aetherassembly.org) to discuss commercial licensing.
-- **Forks and modifications** must remain publicly available under the same license. You may not privatize, relicense, or distribute a fork under more restrictive terms.
-- **Attribution** to AetherAssembly must be maintained in all copies, forks, and derivative works.
+- You may use Driftleaf for any purpose, personal or commercial, at no charge.
+- You may study, modify, and redistribute it.
+- If you distribute a modified version, or let other people use a modified version over a network, you must make the source of your version available to them under the same license.
+- You must keep the existing copyright and license notices intact.
 
 ## Permitted Use
 
-You may use, copy, modify, and distribute this project in accordance with the AGPL-3.0-or-later and the conditions above.
+You may use, copy, modify, and distribute this project in accordance with the AGPL-3.0-or-later.
 
 ## Pre-Release Status
 
@@ -42,7 +42,7 @@ See the project's [security policy](SECURITY.md) for the current state of these 
 
 ## Your Passphrase and Your Data
 
-Driftleaf encrypts your notes locally using a key derived from a passphrase that you choose. AetherAssembly does not know, store, or have any way to recover your passphrase.
+Driftleaf encrypts your notes locally using a key protected by a passphrase that you choose. AetherAssembly does not know, store, or have any way to recover your passphrase. You can change the passphrase from inside an unlocked branch, but a forgotten one cannot be reset.
 
 You are solely responsible for:
 
@@ -63,7 +63,7 @@ Support requests can be directed to [support@aetherassembly.org](mailto:support@
 
 ## Third-Party Services
 
-Driftleaf does not currently connect to any third-party service. If networked features (such as optional sync) are added in a future release, this section and the accompanying Privacy Policy will be updated before that release ships.
+Driftleaf has no account system and never sends branch contents anywhere. It does make a small number of requests for public information, all described in the [Privacy Policy](PRIVACY.md): update checks and the community extension and template gallery contact GitHub, and the announcement banner reads a public feed on driftleaf.aetherassembly.org. The startup requests can be turned off in **Settings → Updates**. If further networked features (such as optional sync) are added in a future release, this section and the Privacy Policy will be updated before that release ships.
 
 ## Limitation of Liability
 

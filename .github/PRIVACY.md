@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: 2026-10-11_
+_Last updated: 2026-11-13_
 
 > The canonical, always-current version of this document is hosted at
 > [legal.aetherassembly.org/driftleaf/privacy.html](https://legal.aetherassembly.org/driftleaf/privacy.html).
@@ -20,9 +20,13 @@ Driftleaf stores the following information locally on your device, inside the
 branch folder you choose. The app's internal API and storage format still use
 the term "vault" for this same branch.
 
-- Your note content, encrypted with AES-256-GCM using a key derived from your passphrase
-- An encrypted manifest (`.driftleaf/manifest.enc`) recording note titles, folders, timestamps, and installed extension code and permissions. Note files use opaque IDs rather than titles in their filesystem paths.
-- Application settings (such as window state and preferences), stored in Electron's local `userData` directory
+- Your note content, databases, and attachments (images and files you add to notes), each encrypted with AES-256-GCM using a key protected by your passphrase
+- An encrypted manifest (`.driftleaf/manifest.enc`) recording note titles, folders, timestamps, attachment names, items in Trash, and installed extension code and permissions. Note and attachment files use opaque IDs rather than titles in their filesystem paths.
+- Application settings (such as theme and preferences, and the path of the last branch you opened), stored unencrypted in the app's settings directory for your operating-system user account
+
+Deleted notes and databases are kept, still encrypted, in the branch's Trash for 30 days so you can restore them, and are then removed. You can empty Trash yourself at any time.
+
+The only time Driftleaf writes your notes to disk unencrypted is when you choose **Export unencrypted copy** yourself, into a folder you pick, or save a copy of a single attachment.
 
 Branch contents remain on your device. The app also makes update-check requests
 to GitHub when automatic update checks are enabled, or when you manually
@@ -30,7 +34,13 @@ choose **Check for updates**. These requests are for public release metadata;
 they do not include notes, branch contents, the passphrase, or an account
 identifier. GitHub receives the ordinary network request metadata (such as
 your IP address). Update downloads are user-initiated. Disable automatic checks
-in **Settings → Updates** to skip startup checks. Extensions run with network
+in **Settings → Updates** to skip startup checks. With that same setting on,
+Driftleaf also reads a public announcement feed
+(`https://driftleaf.aetherassembly.org/rss_driftleaf.xml`) once per launch to
+show the latest project announcement; the request carries no branch data or
+identifier, and the web host receives ordinary network request metadata such
+as your IP address. Turning the setting off stops both startup requests, so
+Driftleaf then makes no network request on its own. Extensions run with network
 access disabled by the app. When you open or refresh **Extensions → Community
 gallery**, Driftleaf requests public release metadata from GitHub for the
 `AetherAssembly/Driftleaf-Extensions` and `AetherAssembly/Driftleaf-Templates`
@@ -45,8 +55,8 @@ Driftleaf does not include user accounts, built-in analytics or tracking, advert
 
 ## Network Requests
 
-Apart from the GitHub release checks, community catalog requests, and
-user-initiated downloads described above, Driftleaf does not sync, phone home,
+Apart from the GitHub release checks, the announcement feed, community catalog
+requests, and user-initiated downloads described above, Driftleaf does not sync, phone home,
 or transmit branch data. Extensions run in isolated windows with network access
 disabled by the app. The application remains usable offline; release catalog
 requests simply fail until a network connection is available.
@@ -57,7 +67,7 @@ to describe exactly what is sent and where before that release ships.
 
 ## Encryption and Your Passphrase
 
-Your branch is encrypted with a key derived from your passphrase using scrypt. Your passphrase is never transmitted anywhere and is not stored by Driftleaf or AetherAssembly in any recoverable form. This also means AetherAssembly cannot reset your passphrase or recover your notes if it is lost.
+Your branch is encrypted with a key that is derived from, or sealed by, your passphrase using scrypt. Your passphrase is never transmitted anywhere and is not stored by Driftleaf or AetherAssembly in any recoverable form. This also means AetherAssembly cannot reset your passphrase or recover your notes if it is lost. You can change the passphrase yourself while the branch is unlocked.
 
 ## Data Sharing
 
@@ -65,7 +75,7 @@ Driftleaf does not sell, rent, or share your notes or any other local data with 
 
 ## Data Retention and Deletion
 
-Your data remains on your device, in the branch folder you chose, until you delete it yourself. Uninstalling the application does not delete your branch or Electron's local settings directory — you are responsible for removing those manually if desired.
+Your data remains on your device, in the branch folder you chose, until you delete it yourself. Uninstalling the application does not delete your branch or the app's local settings directory — you are responsible for removing those manually if desired.
 
 ## Open Source Nature of the Project
 

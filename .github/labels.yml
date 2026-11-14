@@ -59,11 +59,11 @@
 
 - name: 'area: sidecar'
   color: 'E6F1FB'
-  description: Bundled Node sidecar process - branch storage and command handlers
+  description: Node reference service and browser development harness; not shipped
 
 - name: 'area: core'
   color: 'E6F1FB'
-  description: 'crates/driftleaf-core: the Rust storage-engine port'
+  description: 'crates/driftleaf-core: the active Rust storage backend'
 
 - name: 'area: renderer'
   color: 'EEEDFE'
@@ -91,7 +91,7 @@
 
 - name: 'area: ipc'
   color: 'EAF3DE'
-  description: Renderer/sidecar/Tauri command contract and process boundaries
+  description: Renderer-to-Rust Tauri command contract
 
 # ── Platform ──────────────────────────────────────────────────────────────────
 - name: 'platform: linux'
