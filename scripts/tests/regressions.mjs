@@ -10,13 +10,17 @@ import { once } from "node:events";
 import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import ts from "typescript";
+import AdmZip from "adm-zip";
 import * as vault from "../../src/main/vault.ts";
 import * as links from "../../src/shared/note-links.ts";
 import { SerialQueue } from "../../src/shared/serial-queue.ts";
 import * as storage from "../../src/shared/storage.ts";
 import * as databaseExport from "../../src/main/database-export.ts";
+import * as branchExport from "../../src/main/branch-export.ts";
 import * as communityCatalog from "../../src/main/community-catalog.ts";
 import { DraftWrites } from "../../src/renderer/lib/draft-writes.ts";
+import { createSettingsStore } from "../../src/main/settings-store.ts";
+import { mkdir, readdir } from "node:fs/promises";
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -103,6 +107,7 @@ const serviceModule = loadModule("src/main/service.ts", {
   "./vault": vault,
   "./search": search,
   "./database-export": databaseExport,
+  "./branch-export": branchExport,
   "./community-catalog": communityCatalog,
 });
 
@@ -142,6 +147,7 @@ function fakeHost(overrides = {}) {
     pickImportFiles: async () => null,
     pickExtensionFile: async () => null,
     pickExportDestination: async () => null,
+    pickSaveDestination: async () => null,
     openExternal: async () => {},
     diagnosticsExtras: () => ({ version: "test", runtime: "test" }),
     ...overrides,
@@ -188,7 +194,7 @@ async function runCoreCommandContract(call, directory) {
   await call("notes.write", note.id, "hello from the contract test");
   assert.equal(await call("notes.read", note.id), "hello from the contract test");
   await call("vault.lock");
-  await assert.rejects(call("notes.read", note.id), /No vault is unlocked/);
+  await assert.rejects(call("notes.read", note.id), /No branch is unlocked/);
 }
 
 test("service contract: core session/note commands work directly against the service", async () => {
@@ -238,7 +244,7 @@ test("service op queue waits for complete writes and rejects writes queued after
     const note = await service.notes.create("", "Race");
     const writes = Array.from({ length: 8 }, (_, n) => service.notes.write(note.id, `revision ${n}`));
     const locking = service.vault.lock();
-    const late = assert.rejects(service.notes.write(note.id, "too late"), /No vault is unlocked/);
+    const late = assert.rejects(service.notes.write(note.id, "too late"), /No branch is unlocked/);
     await Promise.all([...writes, locking, late]);
     const reopened = await vault.unlockVault(directory, "passphrase");
     assert.equal(await vault.readNote(reopened.vault, note.id), "revision 7");
@@ -495,5 +501,141 @@ test("shared extension database reads hide ungranted databases and related colum
       const expanded = await access.readDatabase("owned-window", visible.id);
       assert.equal(expanded.properties.length, 3);
     } finally { await service.vault.lock(); }
+  });
+});
+
+test("service: Trash round-trips through search, and restore puts a note back in the index", async () => {
+  await temporaryBranch(async (directory) => {
+    const service = serviceHarness();
+    await service.vault.create(directory, "trash-passphrase", "blank");
+    const note = await service.notes.create("", "Quarterly review");
+    await service.notes.write(note.id, "zebrafish migration notes");
+    assert.equal((await service.search.query("zebrafish")).length, 1);
+
+    await service.notes.remove(note.id);
+    assert.equal((await service.search.query("zebrafish")).length, 0);
+    assert.ok(!(await service.notes.list()).some((n) => n.id === note.id));
+    const trash = await service.trash.list();
+    assert.deepEqual(trash.map((item) => [item.kind, item.id, item.title]), [
+      ["note", note.id, "Quarterly review"],
+    ]);
+
+    await assert.rejects(service.trash.restore("folder", note.id), /Unknown Trash item type/);
+    await service.trash.restore("note", note.id);
+    assert.equal((await service.search.query("zebrafish")).length, 1);
+    assert.equal(await service.notes.read(note.id), "zebrafish migration notes");
+
+    await service.notes.remove(note.id);
+    await service.trash.purge("note", note.id);
+    assert.deepEqual(await service.trash.list(), []);
+    await service.notes.remove((await service.notes.list())[0].id);
+    assert.equal(await service.trash.empty(), 1);
+    await service.vault.lock();
+    await assert.rejects(service.trash.list(), /No branch is unlocked/);
+  });
+});
+
+test("service: attachments cross the bridge as base64 and can be saved as a decrypted copy", async () => {
+  await temporaryBranch(async (directory) => {
+    const saveTarget = path.join(directory, "..", `driftleaf-saved-${Date.now()}.bin`);
+    const service = serviceHarness({ pickSaveDestination: async () => saveTarget });
+    try {
+      await service.vault.create(directory, "attachment-passphrase", "blank");
+      const bytes = Buffer.from([0, 1, 2, 253, 254, 255, 10, 13]);
+      const meta = await service.attachments.add("photo.png", "image/png", bytes.toString("base64"));
+      assert.equal(meta.size, bytes.length);
+      const read = await service.attachments.read(meta.id);
+      assert.deepEqual(Buffer.from(read.dataBase64, "base64"), bytes);
+      assert.deepEqual((await service.attachments.list()).map((item) => item.id), [meta.id]);
+
+      await assert.rejects(service.attachments.add("x", "image/png", 42), /Invalid attachment data/);
+      await assert.rejects(
+        service.attachments.add("x", "image/png", "A".repeat(36 * 1024 * 1024)),
+        /at most 25 MB/,
+      );
+
+      assert.equal(await service.attachments.saveCopy(meta.id), true);
+      assert.deepEqual(await readFile(saveTarget), bytes);
+      // Freshly added, so the grace period protects it even though no note refers to it.
+      // Spread: the service runs in its own vm realm, so its object literals have a
+      // different Object.prototype than this file's and fail a strict deepEqual as-is.
+      assert.deepEqual({ ...(await service.attachments.unused()) }, { count: 0, bytes: 0 });
+      assert.deepEqual({ ...(await service.attachments.removeUnused()) }, { count: 0, bytes: 0 });
+      await service.vault.lock();
+      await assert.rejects(service.attachments.read(meta.id), /No branch is unlocked/);
+    } finally {
+      await rm(saveTarget, { force: true });
+    }
+  });
+});
+
+test("service: passphrase change takes effect for the next unlock and export honours the picker", async () => {
+  await temporaryBranch(async (directory) => {
+    const exportParent = `${directory}-export`;
+    await mkdir(exportParent);
+    let picked = null;
+    const service = serviceHarness({ pickBackupDestination: async () => picked });
+    try {
+      await service.vault.create(directory, "first-passphrase", "blank");
+      const note = await service.notes.create("", "Exported note");
+      await service.notes.write(note.id, "plain text out");
+
+      assert.equal(await service.vault.exportPlaintext(), null, "a cancelled picker exports nothing");
+      assert.deepEqual(await readdir(exportParent), []);
+      picked = exportParent;
+      const result = await service.vault.exportPlaintext();
+      assert.equal(result.notes, 2);
+      const archive = new AdmZip(result.path);
+      const exportRoot = path.basename(result.path, ".zip");
+      assert.equal(
+        archive.readAsText(`${exportRoot}/Exported note.md`),
+        "plain text out",
+      );
+
+      await assert.rejects(
+        service.vault.changePassphrase("wrong", "second-passphrase"),
+        /Current passphrase is incorrect/,
+      );
+      await service.vault.changePassphrase("first-passphrase", "second-passphrase");
+      assert.equal(await service.notes.read(note.id), "plain text out");
+      await service.vault.lock();
+      await assert.rejects(service.vault.unlock(directory, "first-passphrase"), /Incorrect passphrase/);
+      await service.vault.unlock(directory, "second-passphrase");
+      assert.equal(await service.notes.read(note.id), "plain text out");
+      await service.vault.lock();
+    } finally {
+      await rm(exportParent, { recursive: true, force: true });
+    }
+  });
+});
+
+test("settings store only persists auto-lock values the UI offers", async () => {
+  await temporaryBranch(async (directory) => {
+    const store = createSettingsStore(directory);
+    assert.equal((await store.readSettings()).autoLockMinutes, 0);
+    assert.equal((await store.patchSettings({ autoLockMinutes: 15 })).autoLockMinutes, 15);
+    assert.equal((await store.patchSettings({ autoLockMinutes: 7 })).autoLockMinutes, 0);
+    assert.equal((await store.patchSettings({ autoLockMinutes: "5" })).autoLockMinutes, 0);
+    assert.equal((await store.patchSettings({ theme: "dark" })).autoLockMinutes, 0);
+  });
+});
+
+test("service: errors from the storage layer keep their exact message across the vm realm", async () => {
+  await temporaryBranch(async (directory) => {
+    const service = serviceHarness();
+    await service.vault.create(directory, "realm-passphrase", "blank");
+    await service.vault.lock();
+    // vault.ts runs in this file's realm and service.ts in its own, exactly as in the
+    // packaged sidecar. The message must arrive verbatim, not as "Error: Incorrect passphrase".
+    await assert.rejects(service.vault.unlock(directory, "wrong"), (error) => {
+      assert.equal(error.message, "Incorrect passphrase");
+      return true;
+    });
+    // A missing file is an fs error from the host realm; it must still be translated.
+    await rm(path.join(directory, ".driftleaf", "vault.json"));
+    await assert.rejects(service.vault.unlock(directory, "realm-passphrase"), (error) => {
+      assert.equal(error.message, "A branch file is missing. The branch folder may have moved.");
+      return true;
+    });
   });
 });
