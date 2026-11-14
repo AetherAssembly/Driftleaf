@@ -77,6 +77,11 @@ jobs:
             bundles: deb,rpm,appimage
           - os: macos-latest
             bundles: dmg
+          # Intel Macs. macos-latest is Apple Silicon only; without this job Intel users
+          # have no build at all. Tauri names the two DMGs by architecture
+          # (..._aarch64.dmg / ..._x64.dmg), so they do not collide on upload.
+          - os: macos-15-intel
+            bundles: dmg
           - os: windows-latest
             bundles: nsis
 
@@ -286,6 +291,8 @@ jobs:
           added   = subsection(section, 'Added')
           fixed   = subsection(section, 'Fixed')
           changed = subsection(section, 'Changed')
+          security = subsection(section, 'Security')
+          compatibility = subsection(section, 'Compatibility')
 
           # --- SHA256 helpers ---
           def sha256(path):
@@ -315,7 +322,8 @@ jobs:
               row("Linux (arm64) AppImage", find_one("*arm64.AppImage", "*aarch64.AppImage")),
               row("Linux (arm64) .deb",     find_one("*arm64.deb")),
               row("Linux (arm64) .rpm",     find_one("*aarch64.rpm")),
-              row("macOS DMG",              find_one("*.dmg")),
+              row("macOS (Apple Silicon) DMG", find_one("*aarch64.dmg", "*arm64.dmg")),
+              row("macOS (Intel) DMG",         find_one("*x64.dmg", "*x86_64.dmg")),
               row("Windows installer",      find_one("*setup*.exe", "*-installer.exe")),
           ]))
 
@@ -344,6 +352,10 @@ jobs:
               parts += ["### Bug fixes", "", fixed, ""]
           if changed:
               parts += ["### Changes", "", changed, ""]
+          if security:
+              parts += ["### Security", "", security, ""]
+          if compatibility:
+              parts += ["### Compatibility", "", compatibility, ""]
 
           parts += [
               "---", "",
