@@ -16,8 +16,8 @@ hex = "0.4"
 rusqlite = { version = "0.37", features = ["bundled"] }
 zip = { version = "9", default-features = false, features = ["deflate"] }
 regex = "1"
+base64 = "0.22"
+# Only for the local calendar date in a new branch's "{{date}}" template notes.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [dev-dependencies]
-# Only used by the branch_mutate example (importTemplateArchive's byte-array op field),
-# not by the library itself.
-base64 = "0.22"

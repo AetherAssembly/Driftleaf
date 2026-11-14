@@ -5,6 +5,17 @@
 // "$row:N", or "$ext:N" is replaced with the Nth id created by a prior op of that kind in
 // this same invocation, before the op runs — so a script can chain "create X, then
 // reference X's real generated id" without the caller needing to predict UUIDs.
+// "$att:N" does the same for attachments, and also resolves inside a longer string (as
+// "attachment:$att:N" in note content), since that is where attachment ids are used.
+//
+// Trash ops: restoreTrashItem / purgeTrashItem ({ kind, id }), emptyTrash, and
+// purgeExpiredTrash ({ now } in ms, defaulting to the current time). Attachment ops:
+// addAttachment ({ name, mimeType, dataBase64 }) and removeUnusedAttachments ({ now }).
+// changePassphrase takes { currentPassphrase, newPassphrase }. An optional top-level
+// "unusedAttachmentsNow" also reports findUnusedAttachments() as of that time.
+// exportPlaintext ({ destinationParent }) writes the whole-branch plaintext export.
+// A top-level "dump": false skips the full read-back below and prints only what the ops
+// themselves returned, for branches that deliberately contain unreadable items.
 use driftleaf_core::mutation::Branch;
 use serde_json::Value;
 use std::io::{self, Read};
@@ -29,6 +40,11 @@ fn resolve(value: &mut Value, lists: &Lists) {
         Value::String(s) => {
             if let Some(resolved) = resolve_placeholder(s, lists) {
                 *s = resolved;
+            } else if s.contains("$att:") {
+                // Highest index first, so "$att:1" is not consumed as a prefix of "$att:10".
+                for (index, id) in lists.attachments.iter().enumerate().rev() {
+                    *s = s.replace(&format!("$att:{index}"), id);
+                }
             }
         }
         Value::Array(items) => items.iter_mut().for_each(|item| resolve(item, lists)),
@@ -43,9 +59,14 @@ struct Lists {
     databases: Vec<String>,
     rows: Vec<String>,
     extensions: Vec<String>,
+    attachments: Vec<String>,
     orphans: Vec<String>,
     imports: Vec<Value>,
     exports: Vec<Value>,
+    restored: Vec<Value>,
+    purged: Vec<Value>,
+    removed_attachments: Vec<Value>,
+    plaintext_exports: Vec<Value>,
 }
 
 fn str_field<'a>(op: &'a Value, name: &str) -> Result<&'a str, String> {
@@ -56,6 +77,15 @@ fn str_field<'a>(op: &'a Value, name: &str) -> Result<&'a str, String> {
 
 fn opt_str_field<'a>(op: &'a Value, name: &str) -> Option<&'a str> {
     op.get(name).and_then(Value::as_str)
+}
+
+fn now_field(op: &Value) -> u64 {
+    op.get("now").and_then(Value::as_u64).unwrap_or_else(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+    })
 }
 
 fn strings_field(op: &Value, name: &str) -> Vec<String> {
@@ -177,8 +207,56 @@ fn main() -> Result<(), String> {
                 let (title, content) = branch.export_database(str_field(&op, "id")?, str_field(&op, "format")?)?;
                 lists.exports.push(serde_json::json!({ "title": title, "content": content }));
             }
+            "restoreTrashItem" => {
+                let restored = branch.restore_trash_item(str_field(&op, "kind")?, str_field(&op, "id")?)?;
+                lists.restored.push(Value::Array(restored));
+            }
+            "purgeTrashItem" => branch.purge_trash_item(str_field(&op, "kind")?, str_field(&op, "id")?)?,
+            "emptyTrash" => {
+                let count = branch.empty_trash()?;
+                lists.purged.push(serde_json::json!(count));
+            }
+            "purgeExpiredTrash" => {
+                let count = branch.purge_expired_trash(now_field(&op))?;
+                lists.purged.push(serde_json::json!(count));
+            }
+            "addAttachment" => {
+                use base64::Engine;
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(str_field(&op, "dataBase64")?)
+                    .map_err(|e| e.to_string())?;
+                let meta = branch.add_attachment(str_field(&op, "name")?, str_field(&op, "mimeType")?, &bytes)?;
+                lists.attachments.push(meta["id"].as_str().ok_or("Missing id")?.to_owned());
+            }
+            "removeUnusedAttachments" => {
+                let result = branch.remove_unused_attachments(now_field(&op))?;
+                lists.removed_attachments.push(result);
+            }
+            "exportPlaintext" => {
+                let result = branch.export_plaintext(std::path::Path::new(str_field(&op, "destinationParent")?))?;
+                lists.plaintext_exports.push(result);
+            }
+            "changePassphrase" => branch.change_passphrase(
+                str_field(&op, "currentPassphrase")?,
+                str_field(&op, "newPassphrase")?,
+            )?,
             other => return Err(format!("Unknown op type: {other}")),
         }
+    }
+
+    if request.get("dump").and_then(Value::as_bool) == Some(false) {
+        println!(
+            "{}",
+            serde_json::json!({
+                "manifest": branch.manifest,
+                "trash": branch.list_trash(),
+                "restored": lists.restored,
+                "purged": lists.purged,
+                "removedAttachments": lists.removed_attachments,
+                "plaintextExports": lists.plaintext_exports,
+            })
+        );
+        return Ok(());
     }
 
     let mut notes = serde_json::Map::new();
@@ -191,6 +269,24 @@ fn main() -> Result<(), String> {
         let id = database["id"].as_str().ok_or("Missing database ID")?;
         databases.insert(id.into(), branch.read_database(id)?);
     }
+
+    let mut attachments = serde_json::Map::new();
+    for attachment in branch.list_attachments().as_array().ok_or("Missing attachments")? {
+        use base64::Engine;
+        let id = attachment["id"].as_str().ok_or("Missing attachment ID")?;
+        let (meta, data) = branch.read_attachment(id)?;
+        attachments.insert(
+            id.into(),
+            serde_json::json!({
+                "meta": meta,
+                "dataBase64": base64::engine::general_purpose::STANDARD.encode(data),
+            }),
+        );
+    }
+    let unused_attachments = match request.get("unusedAttachmentsNow").and_then(Value::as_u64) {
+        Some(now) => Value::Array(branch.find_unused_attachments(now)?),
+        None => Value::Null,
+    };
 
     let search_index = driftleaf_core::search::SearchIndex::open()?;
     search_index.build_from_branch(&branch)?;
@@ -209,6 +305,7 @@ fn main() -> Result<(), String> {
             "createdDatabases": lists.databases,
             "createdRows": lists.rows,
             "createdExtensions": lists.extensions,
+            "createdAttachments": lists.attachments,
             "orphans": lists.orphans,
             "notes": notes,
             "databases": databases,
@@ -217,6 +314,13 @@ fn main() -> Result<(), String> {
             "health": branch.inspect(),
             "imports": lists.imports,
             "exports": lists.exports,
+            "trash": branch.list_trash(),
+            "restored": lists.restored,
+            "purged": lists.purged,
+            "attachments": attachments,
+            "removedAttachments": lists.removed_attachments,
+            "unusedAttachments": unused_attachments,
+            "plaintextExports": lists.plaintext_exports,
             "search": search_output,
         })
     );

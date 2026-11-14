@@ -21,7 +21,7 @@ impl BranchLock {
                     error.sqlite_error_code(),
                     Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
                 ) {
-                    "This branch is already open in another Driftleaf window or process".into()
+                    "This branch is already open in another Driftleaf window or process. Lock or close it there first.".into()
                 } else {
                     error.to_string()
                 }

@@ -1,0 +1,98 @@
+[
+  {
+    "id": "blank",
+    "folders": [],
+    "notes": []
+  },
+  {
+    "id": "general",
+    "folders": [
+      "Projects"
+    ],
+    "notes": [
+      {
+        "folderPath": "",
+        "title": "Inbox",
+        "content": "# Inbox\n\nCapture thoughts here and organize them later.\n"
+      },
+      {
+        "folderPath": "Projects",
+        "title": "Project Notes",
+        "content": "# Project Notes\n\n## Active projects\n\n## Next actions\n"
+      }
+    ]
+  },
+  {
+    "id": "productivity",
+    "folders": [
+      "Tasks",
+      "Projects",
+      "Archive"
+    ],
+    "notes": [
+      {
+        "folderPath": "Tasks",
+        "title": "Inbox",
+        "content": "# Task Inbox\n\n- [ ] \n"
+      },
+      {
+        "folderPath": "Tasks",
+        "title": "Today",
+        "content": "# Today\n\n## Priorities\n\n- [ ] \n"
+      },
+      {
+        "folderPath": "Tasks",
+        "title": "This Week",
+        "content": "# This Week\n\n- [ ] \n"
+      },
+      {
+        "folderPath": "Tasks",
+        "title": "Someday",
+        "content": "# Someday\n\n- [ ] \n"
+      },
+      {
+        "folderPath": "Projects",
+        "title": "Project List",
+        "content": "# Projects\n\n## Active\n\n## On hold\n"
+      }
+    ]
+  },
+  {
+    "id": "journal",
+    "folders": [
+      "Journal"
+    ],
+    "notes": [
+      {
+        "folderPath": "Journal",
+        "title": "{{date}}",
+        "content": "# {{date}}\n\n## What happened today?\n\n## Thoughts\n\n## Tomorrow\n"
+      }
+    ]
+  },
+  {
+    "id": "study",
+    "folders": [
+      "Courses",
+      "Assignments",
+      "Study Sessions"
+    ],
+    "notes": [
+      {
+        "folderPath": "Courses",
+        "title": "Course Template",
+        "content": "# Course\n\n## Topics\n\n## Notes\n"
+      },
+      {
+        "folderPath": "Assignments",
+        "title": "Assignment Tracker",
+        "content": "# Assignments\n\n| Assignment | Due | Status |\n| --- | --- | --- |\n"
+      },
+      {
+        "folderPath": "Study Sessions",
+        "title": "Study Log",
+        "content": "# Study Log\n\n## Session\n- Date:\n- Subject:\n- Focus:\n- Notes:\n"
+      }
+    ]
+  }
+]

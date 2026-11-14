@@ -1,6 +1,10 @@
 //! Branch backup and health-check compatibility, ported from createVaultBackup(),
 //! inspectVaultData()/inspectVault(), and verifyVaultBackup() in src/main/vault.ts.
-use crate::{decrypt, derive_key, open_branch, valid_id, Key, DRIFTLEAF_DIR};
+use crate::{
+    decrypt, open_branch, read_manifest, valid_database_meta, valid_id, valid_manifest_note,
+    vault_config::{data_key_from_config, read_vault_config, Subject},
+    Key, DRIFTLEAF_DIR,
+};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
@@ -16,7 +20,7 @@ const WRITER_LOCK_NAMES: &[&str] = &[
     ".driftleaf-writer.sqlite-shm",
 ];
 
-fn path_is_within(parent: &Path, child: &Path) -> bool {
+pub(crate) fn path_is_within(parent: &Path, child: &Path) -> bool {
     child == parent || child.strip_prefix(parent).is_ok()
 }
 
@@ -48,10 +52,9 @@ pub fn create_vault_backup(root: &Path, destination_parent: &Path) -> Result<Pat
     let source = root.canonicalize().map_err(|e| e.to_string())?;
     let destination = destination_parent.canonicalize().map_err(|e| e.to_string())?;
     if path_is_within(&source, &destination) {
-        return Err("Choose a backup destination outside the open vault folder".into());
+        return Err("Choose a backup destination outside the open branch folder".into());
     }
-    let timestamp = chrono_like_timestamp();
-    let base_name = format!("Driftleaf-Backup-{timestamp}");
+    let base_name = format!("Driftleaf-Backup-{}-{}", branch_label(&source), chrono_like_timestamp());
     let mut backup_name = base_name.clone();
     let mut suffix = 2;
     while destination.join(&backup_name).exists() {
@@ -71,9 +74,16 @@ pub fn create_vault_backup(root: &Path, destination_parent: &Path) -> Result<Pat
     }
 }
 
+// The branch's folder name, made safe to embed in a file name, so a backup or export says
+// which branch it came from. branchLabel() in src/main/vault.ts.
+pub(crate) fn branch_label(root: &Path) -> String {
+    let name = root.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    crate::branch_export::safe_segment(&name, "branch").replace(' ', "-")
+}
+
 // ISO-8601-ish, colons replaced with "-" and milliseconds dropped — same shape as
 // `new Date().toISOString().replace(/:/g, "-").replace(/\.\d{3}Z$/, "Z")` in vault.ts.
-fn chrono_like_timestamp() -> String {
+pub(crate) fn chrono_like_timestamp() -> String {
     let millis = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -144,21 +154,6 @@ fn scan_vault_files(root: &Path) -> Result<DiskScan, String> {
     Ok(DiskScan { encrypted_files, temporary_files })
 }
 
-fn valid_manifest_note(value: &Value) -> bool {
-    value["id"].is_string()
-        && value["title"].is_string()
-        && value["folderPath"].is_string()
-        && (value.get("fileName").is_none() || value["fileName"].is_string())
-        && value["updatedAt"].is_number()
-}
-
-fn valid_database_meta(value: &Value) -> bool {
-    value["id"].as_str().is_some_and(valid_id)
-        && value["title"].is_string()
-        && value["folderPath"].is_string()
-        && value["updatedAt"].is_number()
-}
-
 fn add_check(checks: &mut Vec<Value>, name: &str, status: &str, details: String) {
     checks.push(json!({ "name": name, "status": status, "details": details }));
 }
@@ -169,19 +164,10 @@ fn validate_folder_path_ok(folder_path: &str) -> bool {
         && !folder_path.split('/').any(|part| part == DRIFTLEAF_DIR)
 }
 
-/// Reads the manifest strictly off disk (no legacy-path fallback beyond what readManifest
-/// already does) the way inspectVaultData() does, independent of whatever in-memory
-/// manifest a caller might otherwise be holding.
+/// Reads the manifest off disk the way inspectVaultData()'s readManifestStrict() does,
+/// independent of whatever in-memory manifest a caller might otherwise be holding.
 fn read_manifest_strict(root: &Path, key: &Key) -> Result<Value, String> {
-    let private = root.join(DRIFTLEAF_DIR);
-    match fs::read(private.join("manifest.enc")) {
-        Ok(bytes) => serde_json::from_slice(&decrypt(&bytes, key)?).map_err(|e| e.to_string()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            serde_json::from_slice(&fs::read(private.join("manifest.json")).map_err(|e| e.to_string())?)
-                .map_err(|e| e.to_string())
-        }
-        Err(error) => Err(error.to_string()),
-    }
+    read_manifest(root, key)
 }
 
 fn inspect_vault_data(root: &Path, key: &Key, manifest: &Value) -> Value {
@@ -192,17 +178,23 @@ fn inspect_vault_data(root: &Path, key: &Key, manifest: &Value) -> Value {
             serde_json::from_slice(&fs::read(root.join(DRIFTLEAF_DIR).join("vault.json")).ok()?).ok()?;
         let canary = fs::read(root.join(DRIFTLEAF_DIR).join("canary.enc")).ok()?;
         let decrypted = decrypt(&canary, key).ok()?;
-        Some(config["version"] == 1 && decrypted.as_slice() == CANARY_TEXT)
+        // Version 1 (derived key) or 2 (wrapped key); see vault_config.rs.
+        let version = config.get("version").and_then(Value::as_f64);
+        Some(
+            (config.is_object() || config.is_array())
+                && (version == Some(1.0) || version == Some(2.0))
+                && decrypted.as_slice() == CANARY_TEXT,
+        )
     })()
     .unwrap_or(false);
     add_check(
         &mut checks,
-        "Vault metadata and key check",
+        "Branch metadata and key check",
         if canary_valid { "ok" } else { "error" },
         if canary_valid {
-            "Vault configuration and encrypted key check are readable.".into()
+            "Branch configuration and encrypted key check are readable.".into()
         } else {
-            "Vault configuration or encrypted key check is missing, invalid, or damaged.".into()
+            "Branch configuration or encrypted key check is missing, invalid, or damaged.".into()
         },
     );
 
@@ -215,12 +207,12 @@ fn inspect_vault_data(root: &Path, key: &Key, manifest: &Value) -> Value {
     let folder_count = manifest["folders"].as_array().map(Vec::len).unwrap_or(0);
     add_check(
         &mut checks,
-        "Vault index",
+        "Branch index",
         if manifest_valid { "ok" } else { "error" },
         if manifest_valid {
             format!("{note_count} note entries and {folder_count} folders are indexed.")
         } else {
-            "The vault manifest is missing, unreadable, or has an invalid structure.".into()
+            "The branch index is missing, unreadable, or has an invalid structure.".into()
         },
     );
     if !manifest_valid {
@@ -234,7 +226,7 @@ fn inspect_vault_data(root: &Path, key: &Key, manifest: &Value) -> Value {
                 &mut checks,
                 "Encrypted files",
                 "error",
-                format!("Could not scan the vault folder: {error}"),
+                format!("Could not scan the branch folder: {error}"),
             );
             return json!({ "checkedAt": crate::mutation::now_ms(), "checks": checks });
         }
@@ -263,6 +255,15 @@ fn inspect_vault_data(root: &Path, key: &Key, manifest: &Value) -> Value {
             missing_files += 1;
         }
         expected.insert(file_key);
+    }
+
+    // A trashed note or database still owns its encrypted file (see trash.rs), so those
+    // files are accounted for rather than reported as unindexed.
+    let trashed_entries: Vec<&Value> = manifest["trash"].as_array().into_iter().flatten().collect();
+    for entry in &trashed_entries {
+        if entry["kind"] == "note" {
+            expected.insert(format!("@private/{}.enc", entry["meta"]["id"].as_str().unwrap_or("")));
+        }
     }
 
     let orphan_files = disk.encrypted_files.keys().filter(|key| !expected.contains(*key)).count();
@@ -310,7 +311,7 @@ fn inspect_vault_data(root: &Path, key: &Key, manifest: &Value) -> Value {
         "Incomplete-write leftovers",
         if disk.temporary_files > 0 { "warning" } else { "ok" },
         if disk.temporary_files > 0 {
-            format!("{} temporary file(s) remain in the vault folder.", disk.temporary_files)
+            format!("{} temporary file(s) remain in the branch folder.", disk.temporary_files)
         } else {
             "No temporary write files were found.".into()
         },
@@ -340,6 +341,12 @@ fn inspect_vault_data(root: &Path, key: &Key, manifest: &Value) -> Value {
             .unwrap_or(false);
         if !valid {
             unreadable_databases += 1;
+        }
+    }
+    for entry in &trashed_entries {
+        if entry["kind"] == "database" {
+            expected_database_files
+                .insert(format!("{}.db.enc", entry["meta"]["id"].as_str().unwrap_or("")));
         }
     }
     let (orphan_database_files, metadata_temp_files) = fs::read_dir(root.join(DRIFTLEAF_DIR))
@@ -384,7 +391,66 @@ fn inspect_vault_data(root: &Path, key: &Key, manifest: &Value) -> Value {
             &mut checks,
             "Database write leftovers",
             "warning",
-            format!("{metadata_temp_files} temporary file(s) remain in the vault metadata folder."),
+            format!("{metadata_temp_files} temporary file(s) remain in the branch metadata folder."),
+        );
+    }
+
+    let attachment_metas: Vec<&Value> = manifest["attachments"].as_array().into_iter().flatten().collect();
+    let attachments_dir = root.join(DRIFTLEAF_DIR).join("attachments");
+    let mut damaged_attachments = 0u32;
+    let mut expected_attachment_files = std::collections::HashSet::new();
+    for attachment in &attachment_metas {
+        let id = attachment["id"].as_str().unwrap_or("");
+        expected_attachment_files.insert(format!("{id}.enc"));
+        let readable = valid_id(id)
+            && fs::read(attachments_dir.join(format!("{id}.enc")))
+                .ok()
+                .and_then(|bytes| decrypt(&bytes, key).ok())
+                .is_some();
+        if !readable {
+            damaged_attachments += 1;
+        }
+    }
+    let orphan_attachment_files = fs::read_dir(&attachments_dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|entry| {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    entry.file_type().is_ok_and(|t| t.is_file())
+                        && name.ends_with(".enc")
+                        && !expected_attachment_files.contains(&name)
+                })
+                .count()
+        })
+        .unwrap_or(0);
+    add_check(
+        &mut checks,
+        "Encrypted attachments",
+        if damaged_attachments > 0 {
+            "error"
+        } else if orphan_attachment_files > 0 {
+            "warning"
+        } else {
+            "ok"
+        },
+        if damaged_attachments == 0 && orphan_attachment_files == 0 {
+            format!("{} attachment(s) decrypt successfully.", attachment_metas.len())
+        } else {
+            format!(
+                "{damaged_attachments} missing or damaged attachment(s) and {orphan_attachment_files} unindexed attachment file(s)."
+            )
+        },
+    );
+    if !trashed_entries.is_empty() {
+        add_check(
+            &mut checks,
+            "Trash",
+            "ok",
+            format!(
+                "{} deleted item(s) are held in Trash and can be restored.",
+                trashed_entries.len()
+            ),
         );
     }
 
@@ -399,26 +465,15 @@ pub fn inspect(root: &Path, key: &Key, manifest: &Value) -> Value {
 /// Opens an on-disk branch with its own passphrase (independent of any already-open
 /// `Branch`/`Snapshot`) and runs the same health check, mirroring verifyVaultBackup().
 pub fn verify_vault_backup(root: &Path, passphrase: &str) -> Result<Value, String> {
-    let config: Value =
-        serde_json::from_slice(&fs::read(root.join(DRIFTLEAF_DIR).join("vault.json")).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
-    if config["version"] != 1 {
-        return Err("This backup uses an unsupported vault format".into());
-    }
-    let key = if config["kdf"] == "scrypt" {
-        let salt_hex = config["saltHex"].as_str().filter(|s| s.len() == 32).ok_or("Backup has an invalid key-derivation salt")?;
-        derive_key(passphrase, &hex::decode(salt_hex).map_err(|e| e.to_string())?)?
-    } else if config["kdf"] == "none" {
-        let key_hex = config["keyHex"].as_str().filter(|s| s.len() == 64).ok_or("Backup has an invalid encryption key")?;
-        let bytes = hex::decode(key_hex).map_err(|e| e.to_string())?;
-        Key::new(bytes.try_into().map_err(|_| "Invalid legacy key")?)
-    } else {
-        return Err("Backup uses an unsupported key-derivation method".into());
-    };
-    let canary = fs::read(root.join(DRIFTLEAF_DIR).join("canary.enc")).map_err(|e| e.to_string())?;
-    let decrypted = decrypt(&canary, &key).map_err(|_| "Backup passphrase is incorrect or its key check is damaged".to_string())?;
+    const KEY_CHECK_FAILED: &str = "Backup passphrase is incorrect or its key check is damaged";
+    let config = read_vault_config(root, Subject::Backup)?;
+    // A wrong passphrase on a version-2 backup already fails here, at the unwrap; on
+    // version 1 it yields a wrong key that the canary check below rejects.
+    let key = data_key_from_config(&config, passphrase).map_err(|_| KEY_CHECK_FAILED.to_string())?;
+    let canary = fs::read(root.join(DRIFTLEAF_DIR).join("canary.enc")).map_err(|_| KEY_CHECK_FAILED.to_string())?;
+    let decrypted = decrypt(&canary, &key).map_err(|_| KEY_CHECK_FAILED.to_string())?;
     if decrypted.as_slice() != CANARY_TEXT {
-        return Err("Backup passphrase is incorrect or its key check is damaged".into());
+        return Err(KEY_CHECK_FAILED.into());
     }
     let manifest = read_manifest_strict(root, &key)?;
     Ok(inspect_vault_data(root, &key, &manifest))
