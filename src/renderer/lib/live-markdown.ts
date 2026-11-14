@@ -1,15 +1,20 @@
-import { EditorView, Decoration, type DecorationSet, ViewPlugin, type ViewUpdate, WidgetType, keymap } from "@codemirror/view";
-import { RangeSetBuilder, type Extension } from "@codemirror/state";
+import { EditorView, Decoration, type Command, type DecorationSet, type KeyBinding, ViewPlugin, type ViewUpdate, WidgetType, keymap } from "@codemirror/view";
+import { EditorState, RangeSetBuilder, type Extension } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { markdown, markdownLanguage, markdownKeymap } from "@codemirror/lang-markdown";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import type { SyntaxNodeRef } from "@lezer/common";
+import { closeSearchPanel, findNext, findPrevious, openSearchPanel, search } from "@codemirror/search";
+import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
 import type { NoteLinkTarget } from "../../shared/note-links";
 import { resolveWikiLink } from "../../shared/note-links";
+import { codeHighlightExtension, resolveCodeLanguage } from "./code-highlight";
+import { attachmentIdFromUrl, type LoadedAttachment } from "./attachments";
 
 export interface LivePreviewRefs {
   notesRef: { current: NoteLinkTarget[] };
   onNavigateRef: { current: (id: string) => void };
+  loadAttachmentRef: { current: (id: string) => Promise<LoadedAttachment> };
+  onOpenAttachmentRef: { current: (id: string) => void };
 }
 
 const WIKILINK_RE = /\[\[([^[\]|\n]+)(\|([^[\]\n]*))?\]\]/g;
@@ -48,7 +53,73 @@ class CheckboxWidget extends WidgetType {
   }
 }
 
+// Renders `![alt](attachment:<id>)` as the decrypted image. Only attachments are ever
+// rendered: an image with a web address stays as plain Markdown text, so opening a note can
+// never cause a network request. Non-image attachments written with image syntax, and
+// attachments that cannot be loaded, render as a labelled chip instead.
+class AttachmentWidget extends WidgetType {
+  constructor(
+    private id: string,
+    private alt: string,
+    private from: number,
+    private refs: LivePreviewRefs,
+  ) {
+    super();
+  }
+
+  eq(other: AttachmentWidget): boolean {
+    return other.id === this.id && other.alt === this.alt && other.from === this.from;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement("span");
+    wrap.className = "cm-attachment cm-attachment--pending";
+    wrap.textContent = "Loading attachment…";
+    this.refs.loadAttachmentRef.current(this.id).then(
+      (loaded) => {
+        wrap.classList.remove("cm-attachment--pending");
+        if (loaded.imageUrl) {
+          const image = document.createElement("img");
+          image.src = loaded.imageUrl;
+          image.alt = this.alt || loaded.meta.name;
+          image.draggable = false;
+          // The image's size is only known once it has decoded; let CodeMirror re-measure
+          // line heights then, or the cursor and scroll position are computed for a line
+          // that is still one text row tall.
+          image.addEventListener("load", () => view.requestMeasure());
+          wrap.replaceChildren(image);
+        } else {
+          wrap.classList.add("cm-attachment--file");
+          wrap.textContent = `Attached file: ${loaded.meta.name}`;
+        }
+        view.requestMeasure();
+      },
+      () => {
+        wrap.classList.remove("cm-attachment--pending");
+        wrap.classList.add("cm-attachment--missing");
+        wrap.textContent = `Attachment unavailable${this.alt ? `: ${this.alt}` : ""}`;
+      },
+    );
+    // Clicking the rendered attachment puts the cursor on its Markdown, which reveals the
+    // source for editing (the same way every other inline decoration here behaves).
+    wrap.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      view.dispatch({ selection: { anchor: this.from } });
+      view.focus();
+    });
+    return wrap;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+// Raw Markdown is revealed only where the cursor is, and only while the note body has
+// focus. A note that has just been opened (cursor parked at position 0, focus still in the
+// sidebar) therefore renders fully formatted instead of showing its first line as source.
 function overlapsSelection(view: EditorView, from: number, to: number): boolean {
+  if (!view.hasFocus) return false;
   for (const range of view.state.selection.ranges) {
     if (range.from <= to && range.to >= from) return true;
   }
@@ -115,7 +186,8 @@ function collectWikiLinks(
   }
 }
 
-function buildDecorations(view: EditorView, notes: NoteLinkTarget[]): DecorationSet {
+function buildDecorations(view: EditorView, refs: LivePreviewRefs): DecorationSet {
+  const notes = refs.notesRef.current;
   const entries: Entry[] = [];
   const lineClasses = new Map<number, Set<string>>();
   const codeRanges: Array<{ from: number; to: number }> = [];
@@ -178,6 +250,23 @@ function buildDecorations(view: EditorView, notes: NoteLinkTarget[]): Decoration
           return;
         }
 
+        if (name === "Image") {
+          const node = ref.node;
+          const marks = node.getChildren("LinkMark");
+          const url = node.getChild("URL");
+          if (marks.length < 2 || !url) return;
+          const id = attachmentIdFromUrl(view.state.doc.sliceString(url.from, url.to));
+          // Not an attachment (for example a web address): leave the Markdown as text.
+          if (!id || overlapsSelection(view, node.from, node.to)) return false;
+          const alt = view.state.doc.sliceString(marks[0].to, marks[1].from);
+          entries.push({
+            from: node.from,
+            to: node.to,
+            deco: Decoration.replace({ widget: new AttachmentWidget(id, alt, node.from, refs) }),
+          });
+          return false;
+        }
+
         if (name === "Link") {
           const node = ref.node;
           const marks = node.getChildren("LinkMark");
@@ -185,10 +274,14 @@ function buildDecorations(view: EditorView, notes: NoteLinkTarget[]): Decoration
           if (marks.length < 2 || !url) return;
           const labelFrom = marks[0].to;
           const labelTo = marks[1].from;
+          const href = view.state.doc.sliceString(url.from, url.to);
           entries.push({
             from: labelFrom,
             to: labelTo,
-            deco: Decoration.mark({ class: "cm-link-label", attributes: { "data-href": view.state.doc.sliceString(url.from, url.to) } }),
+            deco: Decoration.mark({
+              class: attachmentIdFromUrl(href) ? "cm-link-label cm-attachment-link" : "cm-link-label",
+              attributes: { "data-href": href },
+            }),
           });
           if (!overlapsSelection(view, node.from, node.to)) {
             entries.push({ from: node.from, to: labelFrom, deco: Decoration.replace({}) });
@@ -257,12 +350,17 @@ function createPlugin(refs: LivePreviewRefs) {
       decorations: DecorationSet;
 
       constructor(view: EditorView) {
-        this.decorations = buildDecorations(view, refs.notesRef.current);
+        this.decorations = buildDecorations(view, refs);
       }
 
       update(update: ViewUpdate) {
-        if (update.docChanged || update.viewportChanged || update.selectionSet) {
-          this.decorations = buildDecorations(update.view, refs.notesRef.current);
+        if (
+          update.docChanged ||
+          update.viewportChanged ||
+          update.selectionSet ||
+          update.focusChanged
+        ) {
+          this.decorations = buildDecorations(update.view, refs);
         }
       }
     },
@@ -288,7 +386,11 @@ function linkNavigationHandler(refs: LivePreviewRefs) {
       const link = target.closest(".cm-link-label[data-href]");
       if (link instanceof HTMLElement) {
         event.preventDefault();
-        window.open(link.dataset.href, "_blank", "noopener,noreferrer");
+        const attachmentId = attachmentIdFromUrl(link.dataset.href ?? "");
+        // An attachment link saves a decrypted copy where the user chooses; it is never
+        // handed to window.open(), which would ask the OS to open "attachment:…".
+        if (attachmentId) refs.onOpenAttachmentRef.current(attachmentId);
+        else window.open(link.dataset.href, "_blank", "noopener,noreferrer");
         return true;
       }
 
@@ -301,12 +403,90 @@ function linkNavigationHandler(refs: LivePreviewRefs) {
   });
 }
 
-/** Language support, history and keybindings — always on, regardless of preview mode. */
+/**
+ * The find/replace subset of @codemirror/search's `searchKeymap`. Its other bindings are
+ * left out on purpose: Mod-d and Mod-Shift-l build multiple selections, which this editor
+ * does not enable, and Mod-Alt-g opens an unrelated go-to-line panel.
+ *
+ * The "search-panel" scope makes these work while focus is in the panel's own fields.
+ * Escape must stay ahead of defaultKeymap's Escape (simplifySelection) below:
+ * closeSearchPanel reports "not handled" when no panel is open, so that still runs.
+ */
+const searchBindings: readonly KeyBinding[] = [
+  { key: "Mod-f", run: openSearchPanel, scope: "editor search-panel" },
+  { key: "F3", run: findNext, shift: findPrevious, scope: "editor search-panel", preventDefault: true },
+  { key: "Mod-g", run: findNext, shift: findPrevious, scope: "editor search-panel", preventDefault: true },
+  { key: "Escape", run: closeSearchPanel, scope: "editor search-panel" },
+];
+
+/**
+ * Sentence-case labels for the search panel, matching the rest of the app. CodeMirror
+ * derives both the visible text and the aria-labels from these phrases.
+ */
+const searchPhrases = {
+  next: "Next",
+  previous: "Previous",
+  "match case": "Match case",
+  regexp: "Regex",
+  "by word": "Whole word",
+  replace: "Replace",
+  "replace all": "Replace all",
+  close: "Close",
+};
+
+/**
+ * Enter inside highlighted code that sits in a blockquote.
+ *
+ * lang-markdown's Enter handler (which repeats the `> ` marker) stands down wherever a
+ * nested code language is active, so once a fence has a recognized language the default
+ * handler would start the new line without the marker and the line would fall out of the
+ * quote, cutting the code block in two. This repeats the current line's quote prefix (and
+ * its indentation) instead. Everywhere else it reports "not handled".
+ */
+const continueQuotedCode: Command = ({ state, dispatch }) => {
+  const { main } = state.selection;
+  if (state.selection.ranges.length !== 1 || !main.empty) return false;
+  const pos = main.head;
+  if (markdownLanguage.isActiveAt(state, pos, -1) || markdownLanguage.isActiveAt(state, pos, 1)) return false;
+
+  // resolve() stays in the markdown tree (it does not enter the mounted code language).
+  let quoted = false;
+  let fenced = false;
+  for (let node: SyntaxNode | null = syntaxTree(state).resolve(pos, -1); node; node = node.parent) {
+    if (node.name === "FencedCode") fenced = true;
+    else if (node.name === "Blockquote") quoted = fenced;
+  }
+  if (!quoted) return false;
+
+  const prefix = /^(?:[ \t]*>[ \t]?)+[ \t]*/.exec(state.doc.lineAt(pos).text)?.[0];
+  if (!prefix) return false;
+  const insert = state.lineBreak + prefix;
+  dispatch(
+    state.update({
+      changes: { from: pos, insert },
+      selection: { anchor: pos + insert.length },
+      scrollIntoView: true,
+      userEvent: "input",
+    }),
+  );
+  return true;
+};
+
+/** Language support, history, find/replace and keybindings — always on, regardless of preview mode. */
 export function markdownEditingExtension(): Extension {
   return [
     history(),
-    keymap.of([...markdownKeymap, ...historyKeymap, ...defaultKeymap]),
-    markdown({ base: markdownLanguage, addKeymap: false }),
+    search({ top: true }),
+    EditorState.phrases.of(searchPhrases),
+    keymap.of([
+      ...searchBindings,
+      { key: "Enter", run: continueQuotedCode },
+      ...markdownKeymap,
+      ...historyKeymap,
+      ...defaultKeymap,
+    ]),
+    markdown({ base: markdownLanguage, addKeymap: false, codeLanguages: resolveCodeLanguage }),
+    codeHighlightExtension(),
   ];
 }
 

@@ -378,7 +378,9 @@ export function DatabaseView({ databaseId, onDeleted, onRenamed }: DatabaseViewP
 
   async function deleteDatabase() {
     if (
-      !window.confirm(`Delete the "${data?.meta.title ?? "database"}" database and all its rows?`)
+      !window.confirm(
+        `Move the "${data?.meta.title ?? "database"}" database and all its rows to Trash? You can restore it from there for 30 days.`,
+      )
     ) {
       return;
     }

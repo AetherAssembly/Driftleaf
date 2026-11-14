@@ -2350,6 +2350,198 @@ body {
 }
 
 .quick-capture__overlay,
+/* ---- Trash, security settings ---- */
+.ae-modal:has(.trash) {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.trash {
+  display: grid;
+  gap: 12px;
+}
+
+.trash__intro,
+.trash__empty {
+  margin: 0;
+  color: var(--ae-color-text-muted, #666);
+  font-size: 0.9em;
+}
+
+.trash__empty {
+  padding: 24px 0;
+  text-align: center;
+}
+
+.trash__list {
+  display: grid;
+  gap: 6px;
+  max-height: 46vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.trash__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ae-color-border, #ddd);
+  border-radius: 10px;
+  background: var(--ae-color-bg, transparent);
+}
+
+.trash__item-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.trash__item-text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash__item-text span {
+  color: var(--ae-color-text-muted, #666);
+  font-size: 0.82em;
+}
+
+.trash__item-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.trash__confirm {
+  padding: 12px;
+  border: 1px solid var(--ae-color-danger, #c0392b);
+  border-radius: 10px;
+}
+
+.trash__confirm p {
+  margin: 0 0 10px;
+}
+
+.trash__status {
+  min-height: 1.2em;
+  margin: 0;
+  color: var(--ae-color-text-muted, #666);
+  font-size: 0.86em;
+}
+
+.trash__error,
+.security__error {
+  margin: 0;
+  color: var(--ae-color-danger, #c0392b);
+  font-size: 0.9em;
+}
+
+.security__label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.9em;
+  font-weight: 600;
+}
+
+.security__select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--ae-color-border, #ddd);
+  border-radius: var(--ae-radius-sm, 4px);
+  background: var(--ae-color-surface, #fff);
+  color: inherit;
+  font: inherit;
+}
+
+.security__select:focus-visible {
+  outline: 2px solid var(--ae-color-primary, #4f7a5c);
+  outline-offset: 2px;
+}
+
+.security__form {
+  display: grid;
+  gap: 12px;
+}
+
+.security__notes {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ae-color-text-muted, #666);
+  font-size: 0.86em;
+}
+
+/* ---- Sidebar folder row: the label gives way before the buttons wrap ---- */
+.sidebar__notes-header > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar__notes-header-actions {
+  flex: 0 0 auto;
+}
+
+.sidebar__notes-header-actions button {
+  white-space: nowrap;
+}
+
+/* ---- Attachments manager ---- */
+.ae-modal:has(.attachments) { width: min(760px, calc(100vw - 32px)); }
+.attachments { display: grid; gap: 12px; }
+.attachments__intro, .attachments__empty { margin: 0; color: var(--ae-color-text-muted, #666); font-size: 0.9em; }
+.attachments__empty { padding: 24px 0; text-align: center; }
+.attachments__list { display: grid; gap: 6px; max-height: 52vh; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.attachments__item { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid var(--ae-color-border, #ddd); border-radius: 10px; }
+.attachments__preview { display: grid; flex: 0 0 72px; width: 72px; height: 54px; place-items: center; overflow: hidden; border-radius: 6px; background: var(--ae-color-surface-hover, rgba(0, 0, 0, 0.06)); color: var(--ae-color-text-muted, #666); font-size: 0.72em; }
+.attachments__preview img { width: 100%; height: 100%; object-fit: cover; }
+.attachments__text { display: grid; flex: 1 1 auto; gap: 2px; min-width: 0; }
+.attachments__text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachments__text span { color: var(--ae-color-text-muted, #666); font-size: 0.82em; }
+.attachments__unused { font-style: italic; }
+.attachments__note-link { padding: 0; border: none; background: none; color: var(--ae-color-primary, #4f7a5c); cursor: pointer; font: inherit; text-decoration: underline; }
+.attachments__actions { display: flex; flex: 0 0 auto; gap: 6px; }
+
+/* ---- Attachments in the editor ---- */
+.cm-attachment {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+  cursor: text;
+}
+
+.cm-attachment img {
+  display: block;
+  max-width: 100%;
+  max-height: 480px;
+  border-radius: 6px;
+}
+
+.cm-attachment--pending,
+.cm-attachment--file,
+.cm-attachment--missing {
+  padding: 2px 8px;
+  border: 1px solid var(--ae-color-border, #ddd);
+  border-radius: 6px;
+  color: var(--ae-color-text-muted, #666);
+  font-size: 0.9em;
+}
+
+.cm-attachment--missing {
+  border-color: var(--ae-color-danger, #c0392b);
+  color: var(--ae-color-danger, #c0392b);
+}
+
+.cm-attachment-link::before {
+  content: "\1F4CE\00A0";
+}
+
 .command-palette__overlay {
   position: fixed;
   inset: 0;
@@ -2450,4 +2642,178 @@ body {
   text-align: center;
   opacity: 0.6;
   font-size: 0.9em;
+}
+
+/* ==========================================================================
+   Editor: find/replace panel, search-match highlights, fenced-code syntax colors
+   --------------------------------------------------------------------------
+   One self-contained block. Every color below is a theme custom property (or a
+   --code-* token defined here per theme), so all themes are covered.
+
+   The selectors carry the extra `.editor__codemirror .cm-editor` prefix on
+   purpose: CodeMirror injects its own base theme after this stylesheet, so a
+   rule only wins when its specificity is strictly higher than CodeMirror's.
+   ========================================================================== */
+
+/* Syntax token colors used by lib/code-highlight.ts. Light is the default; "system"
+   resolves to light or dark, and every named theme is dark. Each value is at least
+   4.5:1 (WCAG AA) against that theme's --ae-color-bg and --ae-color-surface. */
+:root {
+  --code-comment: #5b6770;
+  --code-keyword: #7a3da8;
+  --code-string: #1c6b3f;
+  --code-number: #9a4d08;
+  --code-function: #1f55b5;
+  --code-type: #0b6b78;
+  --code-property: #a8324f;
+  --code-meta: #655f73;
+  --code-inserted: #17703a;
+  --code-deleted: #b3261e;
+}
+
+:root[data-theme="dark"],
+:root[data-theme="aquatic"],
+:root[data-theme="mossy"],
+:root[data-theme="sunset"],
+:root[data-theme="space"],
+:root[data-theme="cherry"],
+:root[data-theme="arctic"],
+:root[data-theme="amber"] {
+  --code-comment: #9aa7ad;
+  --code-keyword: #d2a6ff;
+  --code-string: #9fd88f;
+  --code-number: #f2b272;
+  --code-function: #8ab8ff;
+  --code-type: #6fd3d8;
+  --code-property: #ff9db5;
+  --code-meta: #b9b1c9;
+  --code-inserted: #7ee787;
+  --code-deleted: #ff9288;
+}
+
+/* Find/replace panel */
+
+.editor__codemirror .cm-editor .cm-panels {
+  background: var(--ae-color-surface);
+  color: var(--ae-color-text);
+  font-family: var(--ae-font-sans, system-ui, sans-serif);
+}
+
+.editor__codemirror .cm-editor .cm-panels-top {
+  border-bottom: 1px solid var(--ae-color-border);
+}
+
+.editor__codemirror .cm-editor .cm-panel.cm-search {
+  padding: var(--ae-space-2, 8px) 2.75em var(--ae-space-2, 8px) var(--ae-space-3, 12px);
+  font-size: 0.875em;
+  line-height: 1.4;
+}
+
+.editor__codemirror .cm-editor .cm-panel.cm-search input,
+.editor__codemirror .cm-editor .cm-panel.cm-search button,
+.editor__codemirror .cm-editor .cm-panel.cm-search label {
+  margin: 3px 8px 3px 0;
+  font-family: inherit;
+  font-size: 1em;
+}
+
+.editor__codemirror .cm-editor .cm-panel.cm-search .cm-textfield {
+  box-sizing: border-box;
+  width: 16em;
+  max-width: 100%;
+  padding: 0.3em 0.6em;
+  border: 1px solid var(--ae-color-border);
+  border-radius: var(--ae-radius-md, 6px);
+  background: var(--ae-color-bg);
+  color: var(--ae-color-text);
+}
+
+.editor__codemirror .cm-editor .cm-panel.cm-search .cm-textfield::placeholder {
+  color: var(--ae-color-text-placeholder);
+}
+
+.editor__codemirror .cm-editor .cm-panel.cm-search .cm-button {
+  padding: 0.3em 0.8em;
+  border: 1px solid var(--ae-color-border);
+  border-radius: var(--ae-radius-md, 6px);
+  background: var(--ae-color-secondary);
+  color: var(--ae-color-secondary-fg);
+  cursor: pointer;
+}
+
+.editor__codemirror .cm-editor .cm-panel.cm-search .cm-button:hover,
+.editor__codemirror .cm-editor .cm-panel.cm-search .cm-button:active {
+  background: var(--ae-color-secondary-hover);
+}
+
+/* "Select all matches" needs multiple selections, which this editor does not enable;
+   the button would collapse to a single match, so it is removed (also from the tab
+   order and the accessibility tree) rather than left looking functional. */
+.editor__codemirror .cm-editor .cm-panel.cm-search button[name="select"] {
+  display: none;
+}
+
+.editor__codemirror .cm-editor .cm-panel.cm-search label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  vertical-align: middle;
+  color: var(--ae-color-text-muted);
+  cursor: pointer;
+}
+
+.editor__codemirror .cm-editor .cm-panel.cm-search input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--ae-color-primary);
+  cursor: pointer;
+}
+
+.editor__codemirror .cm-editor .cm-panel.cm-search button[name="close"] {
+  top: var(--ae-space-2, 8px);
+  right: var(--ae-space-2, 8px);
+  width: 1.75em;
+  height: 1.75em;
+  margin: 0;
+  border-radius: var(--ae-radius-md, 6px);
+  background: transparent;
+  color: var(--ae-color-text-muted);
+  font-size: 1.15em;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.editor__codemirror .cm-editor .cm-panel.cm-search button[name="close"]:hover {
+  background: var(--ae-color-secondary);
+  color: var(--ae-color-secondary-fg);
+}
+
+/* Keyboard focus: same ring as the app-wide rule near the top of this file, restated
+   here so CodeMirror's panel styles can never mask it. */
+.editor__codemirror .cm-editor .cm-panel.cm-search input:focus-visible,
+.editor__codemirror .cm-editor .cm-panel.cm-search button:focus-visible {
+  outline: 2px solid var(--ae-color-primary);
+  outline-offset: 2px;
+}
+
+.editor__codemirror .cm-editor .cm-panel.cm-search .cm-textfield:focus-visible {
+  border-color: var(--ae-color-primary);
+  outline-offset: 0;
+}
+
+/* Search matches: every match gets a tinted fill; the current one gets a different
+   tint plus a solid ring, so the two are not told apart by hue alone. */
+.editor__codemirror .cm-editor .cm-content .cm-searchMatch {
+  background-color: color-mix(in srgb, var(--ae-color-warning) 30%, transparent);
+  border-radius: 2px;
+}
+
+.editor__codemirror .cm-editor .cm-content .cm-searchMatch-selected {
+  background-color: color-mix(in srgb, var(--ae-color-primary) 35%, transparent);
+  outline: 2px solid var(--ae-color-primary);
+}
+
+/* Matched text drops link/syntax colors while highlighted so it keeps full text contrast
+   on top of the tint. */
+.editor__codemirror .cm-editor .cm-content .cm-searchMatch span {
+  color: inherit;
 }

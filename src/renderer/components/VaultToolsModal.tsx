@@ -1,13 +1,26 @@
 import { draftWrites } from "../lib/draft-writes";
 import { useEffect, useState } from "react";
 import { Button, Input, Modal } from "@aetherAssembly/ui";
-import type { AppDiagnostics, AppSettings, VaultHealthReport } from "../../shared/ipc";
+import type {
+  AppDiagnostics,
+  AppSettings,
+  PlaintextExportResult,
+  UnusedAttachments,
+  VaultHealthReport,
+} from "../../shared/ipc";
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 interface VaultToolsModalProps {
   open: boolean;
   onClose: () => void;
   theme: AppSettings["theme"];
   noteCount: number;
+  onOpenAttachments: () => void;
 }
 
 function formatDiagnostics(diagnostics: AppDiagnostics, theme: AppSettings["theme"]): string {
@@ -47,7 +60,13 @@ function HealthChecks({ report }: { report: VaultHealthReport }) {
   );
 }
 
-export function VaultToolsModal({ open, onClose, theme, noteCount }: VaultToolsModalProps) {
+export function VaultToolsModal({
+  open,
+  onClose,
+  theme,
+  noteCount,
+  onOpenAttachments,
+}: VaultToolsModalProps) {
   const [diagnostics, setDiagnostics] = useState<AppDiagnostics | null>(null);
   const [healthReport, setHealthReport] = useState<VaultHealthReport | null>(null);
   const [backupReport, setBackupReport] = useState<VaultHealthReport | null>(null);
@@ -58,6 +77,55 @@ export function VaultToolsModal({ open, onClose, theme, noteCount }: VaultToolsM
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [exportResult, setExportResult] = useState<PlaintextExportResult | null>(null);
+  const [unusedAttachments, setUnusedAttachments] = useState<UnusedAttachments | null>(null);
+  const [attachmentStatus, setAttachmentStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setExportResult(null);
+    setAttachmentStatus(null);
+    setUnusedAttachments(null);
+    // Unsaved edits may be the only place a just-pasted attachment is referenced, so they
+    // are written before anything is counted as unused.
+    void draftWrites
+      .flush()
+      .then(() => window.driftleaf.attachments.unused())
+      .then(setUnusedAttachments)
+      .catch(() => setUnusedAttachments(null));
+  }, [open]);
+
+  async function exportPlaintext() {
+    setBusy(true);
+    setError(null);
+    setExportResult(null);
+    try {
+      await draftWrites.flush();
+      setExportResult(await window.driftleaf.vault.exportPlaintext());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not export the branch");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeUnusedAttachments() {
+    setBusy(true);
+    setError(null);
+    setAttachmentStatus(null);
+    try {
+      await draftWrites.flush();
+      const removed = await window.driftleaf.attachments.removeUnused();
+      setAttachmentStatus(
+        `Removed ${removed.count} unused attachment(s), freeing ${formatBytes(removed.bytes)}.`,
+      );
+      setUnusedAttachments(await window.driftleaf.attachments.unused());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not remove unused attachments");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -165,6 +233,72 @@ export function VaultToolsModal({ open, onClose, theme, noteCount }: VaultToolsM
               Backup created at <span className="unlock-screen__path">{createdBackupPath}</span>
             </p>
           )}
+        </section>
+
+        <section className="settings__panel tools-modal__section">
+          <span className="settings__eyebrow">PORTABILITY</span>
+          <h2>Export as plain files</h2>
+          <p className="settings__about">
+            Writes every note as a Markdown file in its folder, every database as CSV and JSON,
+            and every attachment as an ordinary file, packed into one .zip named after this branch
+            and the date, in a folder you choose.{" "}
+            <strong>The export is not encrypted.</strong> Anyone who can read that file can read
+            your notes, so put it somewhere you trust and delete it when you are done. Items in
+            Trash are not exported.
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={busy}
+            disabled={busy}
+            onClick={() => void exportPlaintext()}
+          >
+            Export unencrypted copy…
+          </Button>
+          {exportResult && (
+            <div className="settings__about" role="status">
+              <p>
+                Exported {exportResult.notes} note(s), {exportResult.databases} database(s), and{" "}
+                {exportResult.attachments} attachment(s) to{" "}
+                <span className="unlock-screen__path">{exportResult.path}</span>
+              </p>
+              {exportResult.skipped.length > 0 && (
+                <p className="tools-modal__check--error">
+                  Could not export: {exportResult.skipped.join("; ")}
+                </p>
+              )}
+            </div>
+          )}
+        </section>
+
+        <section className="settings__panel tools-modal__section">
+          <span className="settings__eyebrow">STORAGE</span>
+          <h2>Unused attachments</h2>
+          <p className="settings__about">
+            Images and files stay in the branch after the note that used them is edited or
+            permanently deleted. This removes attachments that no note refers to, including notes
+            in Trash. Anything added in the last 24 hours is always kept.
+          </p>
+          <p className="settings__about" role="status">
+            {attachmentStatus ??
+              (unusedAttachments === null
+                ? "Checking…"
+                : unusedAttachments.count === 0
+                  ? "No unused attachments."
+                  : `${unusedAttachments.count} unused attachment(s), ${formatBytes(unusedAttachments.bytes)}.`)}
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={busy}
+            disabled={busy || !unusedAttachments || unusedAttachments.count === 0}
+            onClick={() => void removeUnusedAttachments()}
+          >
+            Remove unused attachments
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onOpenAttachments}>
+            Manage attachments…
+          </Button>
         </section>
 
         <section className="settings__panel tools-modal__section">

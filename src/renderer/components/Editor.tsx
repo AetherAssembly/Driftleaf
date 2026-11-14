@@ -1,6 +1,7 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useRef, useState } from "react";
 import { Button, Modal } from "@aetherAssembly/ui";
 import type { NoteMeta } from "../../shared/ipc";
+import type { AttachFilesHandle } from "./MarkdownEditor";
 
 // CodeMirror and its language/markdown packages are sizeable; split them into their
 // own chunk so the rest of the app doesn't pay for the editor until a note is opened.
@@ -20,6 +21,7 @@ interface EditorProps {
   onRenameTitle: (title: string) => void;
   onDelete: () => void;
   onNavigate: (id: string) => void;
+  onNotify: (message: string) => void;
 }
 
 export function Editor({
@@ -34,9 +36,12 @@ export function Editor({
   onRenameTitle,
   onDelete,
   onNavigate,
+  onNotify,
 }: EditorProps) {
   const [sourceMode, setSourceMode] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const attachFilesRef = useRef<AttachFilesHandle["current"]>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
     <div className="editor">
@@ -52,6 +57,28 @@ export function Editor({
           <span className="editor__save-status" aria-live="polite">
             {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "Saved" : null}
           </span>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            hidden
+            tabIndex={-1}
+            aria-hidden="true"
+            onChange={(event) => {
+              const files = [...(event.target.files ?? [])];
+              // Reset so picking the same file twice in a row still fires a change.
+              event.target.value = "";
+              if (files.length > 0) attachFilesRef.current?.(files);
+            }}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            title="Attach an image or file. It is encrypted into this branch. You can also paste or drop one into the note."
+          >
+            Attach
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => setSourceMode((v) => !v)}>
             {sourceMode ? "Live preview" : "Source mode"}
           </Button>
@@ -94,8 +121,8 @@ export function Editor({
 
       <Modal open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete note?">
         <p>
-          &ldquo;{note.title || "Untitled"}&rdquo; will be permanently deleted. This cannot be
-          undone.
+          &ldquo;{note.title || "Untitled"}&rdquo; will be moved to Trash. You can restore it
+          from there for 30 days.
         </p>
         <div className="modal-actions">
           <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>
@@ -109,7 +136,7 @@ export function Editor({
               onDelete();
             }}
           >
-            Yes, delete
+            Move to Trash
           </Button>
         </div>
       </Modal>
@@ -123,6 +150,8 @@ export function Editor({
             placeholder="Start writing…"
             onChange={onChange}
             onNavigate={onNavigate}
+            onNotify={onNotify}
+            attachFilesRef={attachFilesRef}
           />
         </Suspense>
       </div>
