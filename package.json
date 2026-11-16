@@ -25,7 +25,7 @@
     "test:rust-compat": "cargo test --manifest-path crates/driftleaf-core/Cargo.toml --release && cargo build --manifest-path crates/driftleaf-core/Cargo.toml --release --examples && node --experimental-strip-types scripts/tests/crypto-interop.mjs && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/branch-interop.mjs && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/mutation-interop.mjs && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/database-interop.mjs && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/backup-interop.mjs && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/database-import-interop.mjs && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/import-interop.mjs && node --experimental-strip-types scripts/tests/formula-interop.mjs && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/database-export-interop.mjs && node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/tests/search-interop.mjs && node scripts/tests/lock-interop.mjs"
   },
   "dependencies": {
-    "@aetherAssembly/ui": "^1.0.4",
+    "@aetherAssembly/ui": "^1.0.5",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/language": "^6.13.1",
@@ -40,7 +40,7 @@
     "adm-zip": "^0.6.0",
     "codemirror": "^6.0.2",
     "dompurify": "^3.4.14",
-    "marked": "^18.1.2",
+    "marked": "^18.2.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
