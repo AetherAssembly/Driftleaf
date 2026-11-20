@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
+## [0.8.1] - 2026-11-20
+
+## Fixed
+
+- Launching Driftleaf on Windows no longer opens a blank console window alongside
+  the app. Release builds of the Tauri shell now declare the Windows GUI subsystem;
+  a console appears only when the binary is deliberately run from a terminal.
+- Ctrl/Cmd+Shift+K no longer also toggles the command palette. *(placeholder if
+  already fixed in 0.8.0 — remove)*
+
+### Changed
+
+- Development builds use the same app identifier (`org.aetherassembly.driftleaf`)
+  as release builds instead of a `.dev` suffixed one, so dev sessions match
+  installed-release behavior for settings paths and update identity. Shipped
+  packages are unaffected; no settings or branches migrate.
+
+### Development
+
+- CONTRIBUTING.md now points contributors at the `development` branch instead of
+  the nonexistent `dev`.
+
 ## [0.8.0] - 2026-11-14
 
 ### Added

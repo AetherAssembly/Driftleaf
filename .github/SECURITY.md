@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-**Do not** open a public issue for security vulnerabilities. Instead, please email security concerns to the [maintainers](mailto:support@aetherassembly.org) privately.
+**Do not** open a public issue for security vulnerabilities. Instead, please email security concerns to the [security@aetherassembly.org](mailto:security@aetherassembly.org) privately, or use [Github](https://github.com/AetherAssembly/Driftleaf/security/advisories/new).
 
 For Driftleaf, security issues are especially critical because they may affect user data encryption or note storage safety. Please report vulnerabilities responsibly.
 
@@ -75,4 +75,5 @@ No vulnerabilities have been publicly reported. Confirmed vulnerabilities and an
 - [docs/RECOVERY.md](../docs/RECOVERY.md) - Branch recovery procedures
 - [docs/DATA_LOSS_TESTING.md](../docs/DATA_LOSS_TESTING.md) - Data loss safeguards
 - [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) - Technical architecture
+- [Security Email](mailto:security@aetherassembly.org)
 - [General Support Email](mailto:support@aetherassembly.org)

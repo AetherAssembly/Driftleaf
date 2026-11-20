@@ -3,7 +3,7 @@
 %global debug_package %{nil}
 
 Name:           driftleaf
-Version:        0.8.0
+Version:        0.8.1
 Release:        1%{?dist}
 Summary:        A local-first encrypted notes, graph, and database app
 License:        AGPL-3.0-or-later
@@ -77,6 +77,12 @@ install -Dm644 %{_builddir}/LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LIC
 %{_datadir}/icons/hicolor/256x256@2/apps/driftleaf.png
 
 %changelog
+* Fri Nov 20 2026 AetherAssembly <support@aetherassembly.org> - 0.8.1-1
+- Stop the blank console window that opened alongside every launch on Windows
+  since 0.8.0; release builds now use the Windows GUI subsystem.
+- Align development builds with the release app identifier, and fix stale
+  contributor and security-policy references.
+
 * Sat Nov 14 2026 AetherAssembly <support@aetherassembly.org> - 0.8.0-1
 - Move storage operations into the in-process Rust backend; release packages no
   longer bundle Node.js or a Node sidecar.
