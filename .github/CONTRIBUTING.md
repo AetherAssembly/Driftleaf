@@ -15,7 +15,7 @@ Please read our [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before contributing. We
 - Rust (stable toolchain) and platform build dependencies for Tauri — see the
   [Tauri prerequisites guide](https://v2.tauri.app/start/prerequisites/)
 - Git
-- (For `npm install`) A GitHub Personal Access Token with `read:packages` scope to install `@aetherAssembly/ui` from GitHub Packages
+- (For `npm install`) A GitHub Personal Access Token with `read:packages` scope to install `@aetherAssembly/ui` from GitHub Packages. Read more [here](https://wiki.aetherassembly.org/aether-packages/).
 
 ### Local Setup
 
@@ -135,7 +135,7 @@ These changes require extra care:
 
 ## Submitting a Pull Request
 
-1. **Fork and branch** off the appropriate base (usually `dev` for features, `main` for hotfixes)
+1. **Fork and branch** off the appropriate base (usually `development` for features, `main` for hotfixes)
 2. **Make your changes** following the code style
 3. **Run tests** locally:
 
