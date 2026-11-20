@@ -15,9 +15,11 @@ branch. No note content is sent to a remote search service.
 
 ## Benchmarks
 
-Measured with `scripts/perf/search-benchmark.mjs` against generated branches of
-each size (~1.4 KB of varied prose per note), on an AMD Ryzen 7 7700 (8-core,
-16-thread) desktop with Node 26. Reproduce with:
+Measured with `scripts/perf/search-benchmark.mjs` against the Node reference
+implementation and generated branches of each size (~1.4 KB of varied prose per
+note), on an AMD Ryzen 7 7700 (8-core, 16-thread) desktop with Node 26. These
+results are historical reference-backend measurements, not measurements of the
+Rust backend used by the desktop app. Reproduce with:
 
 ```sh
 node --experimental-strip-types --loader ./scripts/tests/typescript-loader.mjs scripts/perf/search-benchmark.mjs
@@ -53,16 +55,10 @@ script's own note-creation timings (also printed) are **not** representative
 of real typing: they bulk-create notes back-to-back, so they mostly measure
 how manifest-rewrite cost grows with note count, not interactive performance.
 
-`DEBUG_SEARCH=1` enables the `[search]` timing lines inside `buildIndex()` and
-`search()` themselves (`src/main/search.ts`), but only when that code runs
-directly in a plain Node process, as the benchmark script does. Running
-through the actual app (`npx tauri dev` or a packaged build) routes those same
-calls through the sidecar process, whose entrypoint intentionally replaces
-`console.log` with a no-op — stdout there is reserved exclusively for the
-framed wire protocol to the Tauri shell — so `[search]` lines never reach any
-terminal or devtools console that way. The benchmark script (or a similar
-standalone script importing `vault.ts`/`search.ts` directly) is currently the
-only way to see that instrumentation's output at all.
+`DEBUG_SEARCH=1` enables the `[search]` timing lines in the Node reference
+implementation (`src/main/search.ts`) when a benchmark or test invokes it. The
+Tauri desktop app uses the Rust search backend; these Node timings do not describe
+its performance.
 
 For related details, see [How Driftleaf Keeps Your Data](ARCHITECTURE.md) and
 [Branch Recovery](RECOVERY.md).

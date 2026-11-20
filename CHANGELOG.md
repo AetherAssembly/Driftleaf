@@ -4,6 +4,146 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
+## [0.8.1] - 2026-11-20
+
+## Fixed
+
+- Launching Driftleaf on Windows no longer opens a blank console window alongside
+  the app. Release builds of the Tauri shell now declare the Windows GUI subsystem;
+  a console appears only when the binary is deliberately run from a terminal.
+- Ctrl/Cmd+Shift+K no longer also toggles the command palette. *(placeholder if
+  already fixed in 0.8.0 — remove)*
+
+### Changed
+
+- Development builds use the same app identifier (`org.aetherassembly.driftleaf`)
+  as release builds instead of a `.dev` suffixed one, so dev sessions match
+  installed-release behavior for settings paths and update identity. Shipped
+  packages are unaffected; no settings or branches migrate.
+
+### Development
+
+- CONTRIBUTING.md now points contributors at the `development` branch instead of
+  the nonexistent `dev`.
+
+## [0.8.0] - 2026-11-14
+
+### Added
+
+- **Trash.** Deleting a note, database, or folder now moves the notes and databases to
+  Trash instead of removing them. Restore them from the sidebar for 30 days; **Delete
+  forever** and **Empty Trash** remove them immediately. Deleting no longer removes any
+  file from disk, so there is no longer a window in which a crash mid-delete can matter.
+- **Change passphrase** (Settings → Branch). The encryption key is re-sealed under the
+  new passphrase in one atomic write; no note is rewritten. See
+  [docs/RECOVERY.md](docs/RECOVERY.md#changing-your-passphrase) for what this does and
+  does not protect against.
+- **Auto-lock** (Settings → Branch): lock the branch after 1, 5, 15, 30, or 60 minutes
+  without input. Off by default.
+- **Encrypted attachments.** Paste or attach an image or file to a note. It is encrypted
+  into the branch (up to 25 MB each); images render inline. The editor still never loads
+  an image from a web address.
+- **Export unencrypted copy** (Diagnostics & Branch Health): the whole branch as a dated
+  `.zip` containing Markdown, CSV/JSON, and attachment files that need nothing from
+  Driftleaf to read.
+- **Find and replace** in a note with Ctrl/Cmd+F.
+- **Syntax highlighting** in fenced code blocks.
+- The Ctrl/Cmd+K palette now finds notes by title and by content, not only commands.
+- **Remove unused attachments** (Diagnostics & Branch Health), and health-check coverage
+  for attachments and Trash.
+- **Manage attachments** (Diagnostics & Branch Health): browse attachments separately,
+  preview images, and choose which items to remove.
+- [docs/SYNC.md](docs/SYNC.md): what is and is not safe when syncing a branch folder
+  yourself.
+
+### Changed
+
+- The Tauri desktop app now uses the in-process Rust storage backend. Release packages no
+  longer bundle Node.js or a Node sidecar; React/TypeScript and Node-based test tooling remain.
+- The announcement feed is now fetched only when "Check for updates and announcements
+  when Driftleaf starts" is on. With it off, Driftleaf makes no network request on its
+  own. Previously the feed was fetched on every launch regardless of that setting.
+- The license identifier is AGPL-3.0-or-later everywhere, and the Terms no longer
+  describe restrictions the license does not contain.
+- The welcome note, sample extensions, health-check labels, and error messages say
+  "branch" throughout instead of "vault".
+
+### Fixed
+
+- Error messages from the storage layer were being replaced by generic fallbacks ("Failed
+  to open branch") or prefixed with a stray "Error: ". A wrong passphrase now says
+  "Incorrect passphrase", and disk-full, permission, and missing-file errors show their
+  explanations.
+- Opening a note no longer shows its first line as raw Markdown. Source is revealed only
+  on the line the cursor is on, and only while the note body has focus.
+- Dragging Canvas cards did not work on Windows, where the shell's native drag-and-drop
+  handler intercepted the drag. The handler is now off; dropped files reach the editor as
+  attachments and are ignored everywhere else.
+- Ctrl/Cmd+Shift+K in the editor no longer also toggles the command palette.
+- The folder name beside "+ Note" and "+ Database" in the sidebar no longer wraps the
+  buttons onto two lines.
+
+### Development
+
+- `npm run dev:web` runs the renderer in an ordinary browser against the real backend, and
+  `npm run test:ui` drives it in headless Firefox as a UI smoke test that also regenerates
+  the screenshots. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+- macOS release builds now include an Intel (x64) DMG alongside Apple Silicon.
+
+### Compatibility
+
+- A branch whose passphrase has been changed uses a new `vault.json` format (version 2)
+  and cannot be opened by 0.7.2 or earlier, which reports "Incorrect passphrase".
+  Branches whose passphrase has never been changed are unaffected.
+- If a branch with items in Trash is opened by 0.7.2 or earlier, the older version
+  brings those items back as "Recovered note". No content is lost.
+
+## [0.7.2] - 2026-11-06
+
+### Added
+
+- An announcement banner that checks Driftleaf's own site RSS feed once per launch and
+  shows the latest post; dismissible, and stays dismissed across restarts.
+- Live-preview Markdown editing: headings, bold/italic/strikethrough, inline code, links,
+  `[[wikilinks]]`, blockquotes, task checkboxes, and horizontal rules now render inline as
+  you type, with a Source-mode toggle for raw Markdown. Built on CodeMirror 6.
+- Canvas cards can be repositioned with arrow keys (Shift+arrow for bigger steps),
+  announced for screen readers.
+
+### Fixed
+
+- A missing rustls crypto provider crashed the first network request in unsigned/debug
+  builds.
+- Quick capture no longer discards its draft if the save fails.
+- A stale navigation response could overwrite newer edits or selection; navigation is now
+  generation-tracked.
+- Failed folder creation and note renames could desync the in-memory manifest from disk;
+  both now roll back on failure.
+- Creating a note, database, or the daily note from Graph/Canvas view now switches back
+  to the editor instead of leaving it hidden.
+- Renaming an ancestor folder no longer leaves a nested selection pointing at the old
+  path.
+- Locking the branch now invalidates in-flight search/navigation and resets branch state.
+- Ctrl/Cmd+K no longer stacks the command palette on the Extensions dialog.
+- Search failures now show a toast instead of an unhandled rejection, and stale results
+  can no longer overwrite newer ones.
+- Linux and unsigned-macOS builds now check real release metadata and can open the
+  release page, instead of always reporting updates as unsupported.
+- The note title and quick-capture fields have explicit accessible labels.
+- Writes are now fsynced for real crash durability, and a failed atomic write cleans up
+  its temp file instead of leaving it behind.
+- The in-window navigation guard now uses an explicit origin allowlist instead of an
+  overly broad scheme check and a spoofable string-prefix match on the dev server URL.
+- A Calendar-view row add could silently revert a concurrent database edit; it now always
+  merges onto the latest state.
+
+### Security
+
+- Updated the `zip` crate (archive/template import) from 2.6.1 to 9.0.5, which carries
+  fixes for several upstream advisories, including a critical parser-differential issue
+  (dual-header "zip cloaking") and a high-severity unbounded symlink-target handling bug
+  during extraction.
+
 ## [0.7.1] - 2026-10-26
 
 ### Added
@@ -11,7 +151,7 @@ The format is based on Keep a Changelog and this project uses semantic versionin
 - Settings → About: a "View license" button linking to the project's AGPLv3 license.
 - Signed auto-update manifests: each release build now produces a per-platform manifest
   fragment, merged into one `latest.json` that `tauri-plugin-updater` can verify. See
-  [docs/TAURI_UPDATES.md](docs/TAURI_UPDATES.md).
+  [docs/UPDATES.md](docs/UPDATES.md).
 - A search/indexing performance benchmark script
   ([scripts/perf/search-benchmark.mjs](scripts/perf/search-benchmark.mjs)).
 
@@ -180,7 +320,7 @@ The format is based on Keep a Changelog and this project uses semantic versionin
 - Added CSV and JSON database import, both as standalone files and inside ZIP
   archives. Imported databases are encrypted in the vault and support an
   editable table, rows, properties, formulas, relations, and basic rollups.
-- Added Notion-style JSON property normalization and common formula functions.
+- Added JSON property normalization and common formula functions.
 
 ### Changed
 

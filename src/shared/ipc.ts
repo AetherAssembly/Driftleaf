@@ -7,7 +7,11 @@ export interface AppSettings {
   editorFontSizePx: number;
   autosaveIntervalMs: number;
   checkUpdatesAutomatically: boolean;
+  // Lock the branch after this many minutes without keyboard or pointer input. 0 = never.
+  autoLockMinutes: number;
 }
+
+export const AUTO_LOCK_MINUTES_OPTIONS = [0, 1, 5, 15, 30, 60] as const;
 
 export type Theme =
   | "system"
@@ -139,6 +143,18 @@ export interface UpdateStatus {
   automaticInstall: boolean;
 }
 
+// The single most recent <item> from Driftleaf's own site RSS feed — a one-way, read-only
+// scan, fetched once per launch and never written back to or polled for older entries. `null`
+// means nothing has been fetched successfully yet.
+export interface AnnouncementItem {
+  guid: string;
+  title: string;
+  link: string | null;
+  pubDate: string | null;
+  description: string | null;
+  checkedAt: number;
+}
+
 export interface VaultHealthCheck {
   name: string;
   status: "ok" | "warning" | "error";
@@ -155,6 +171,49 @@ export interface NoteMeta {
   title: string;
   folderPath: string;
   updatedAt: number;
+}
+
+// A deleted note or database, held in Trash until `expiresAt` (see TRASH_RETENTION_MS in
+// src/main/vault.ts). `folderPath` is where it will go back to if restored.
+export interface TrashItem {
+  kind: "note" | "database";
+  id: string;
+  title: string;
+  folderPath: string;
+  deletedAt: number;
+  expiresAt: number;
+}
+
+// A file encrypted into the branch. Notes refer to it as `attachment:<id>`.
+export interface AttachmentMeta {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  createdAt: number;
+}
+
+// An attachment together with the notes that refer to it (live or in Trash).
+export interface AttachmentUsage extends AttachmentMeta {
+  usedBy: Array<{ id: string; title: string; folderPath: string; trashed: boolean }>;
+}
+
+export interface AttachmentContent {
+  meta: AttachmentMeta;
+  dataBase64: string;
+}
+
+export interface UnusedAttachments {
+  count: number;
+  bytes: number;
+}
+
+export interface PlaintextExportResult {
+  path: string;
+  notes: number;
+  databases: number;
+  attachments: number;
+  skipped: string[];
 }
 
 export interface SearchResult {
@@ -237,6 +296,10 @@ export interface DriftleafApi {
     hasPassphrase(rootPath: string): Promise<boolean>;
     healthCheck(): Promise<VaultHealthReport>;
     verifyBackup(rootPath: string, passphrase: string): Promise<VaultHealthReport>;
+    changePassphrase(currentPassphrase: string, newPassphrase: string): Promise<void>;
+    // Writes every note, database, and attachment as ordinary unencrypted files into one
+    // .zip in a folder the user picks. Resolves null if the folder picker was cancelled.
+    exportPlaintext(): Promise<PlaintextExportResult | null>;
     lock(): Promise<void>;
   };
   notes: {
@@ -267,6 +330,24 @@ export interface DriftleafApi {
     deleteRow(databaseId: string, rowId: string): Promise<void>;
     export(id: string, format: DatabaseExportFormat): Promise<boolean>;
     delete(id: string): Promise<void>;
+  };
+  trash: {
+    list(): Promise<TrashItem[]>;
+    restore(kind: TrashItem["kind"], id: string): Promise<void>;
+    purge(kind: TrashItem["kind"], id: string): Promise<void>;
+    empty(): Promise<number>;
+  };
+  attachments: {
+    add(name: string, mimeType: string, dataBase64: string): Promise<AttachmentMeta>;
+    read(id: string): Promise<AttachmentContent>;
+    list(): Promise<AttachmentMeta[]>;
+    listUsage(): Promise<AttachmentUsage[]>;
+    // Deletes one attachment even if a note still refers to it; the UI warns first.
+    remove(id: string): Promise<void>;
+    // Shows a save dialog and writes a decrypted copy. Resolves false if cancelled.
+    saveCopy(id: string): Promise<boolean>;
+    unused(): Promise<UnusedAttachments>;
+    removeUnused(): Promise<UnusedAttachments>;
   };
   folders: {
     create(folderPath: string): Promise<void>;
@@ -311,12 +392,17 @@ export interface DriftleafApi {
     install(): Promise<void>;
     openDownload(): Promise<void>;
   };
+  announcements: {
+    status(): Promise<AnnouncementItem | null>;
+    check(): Promise<AnnouncementItem | null>;
+  };
   events: {
     // Lifecycle listeners return unsubscribe functions.
     onCloseCancelled(callback: () => void): () => void;
     onBeforeClose(callback: () => Promise<void>): () => void;
     onQuickCapture(callback: () => void): () => void;
     onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
+    onAnnouncementStatus(callback: (item: AnnouncementItem | null) => void): () => void;
   };
 }
 

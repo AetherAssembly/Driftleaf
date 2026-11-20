@@ -1,0 +1,14 @@
+[
+  {
+    "id": "note-count",
+    "name": "Note count",
+    "description": "Shows how many notes are in the current branch.",
+    "source": "(async () => { const notes = await window.driftleafExtension.listNotes(); const main = document.createElement(\"main\"); main.style.cssText = \"font:16px system-ui;padding:32px\"; const heading = document.createElement(\"h1\"); heading.textContent = \"Branch overview\"; const summary = document.createElement(\"p\"); summary.textContent = `${notes.length} notes`; main.append(heading, summary); document.body.replaceChildren(main); })();"
+  },
+  {
+    "id": "database-summary",
+    "name": "Database summary",
+    "description": "Lists only the databases you explicitly grant access to.",
+    "source": "(async () => { const databases = await window.driftleafExtension.listDatabases(); const main = document.createElement(\"main\"); main.style.cssText = \"font:16px system-ui;padding:32px\"; const heading = document.createElement(\"h1\"); heading.textContent = \"Shared databases\"; main.append(heading); const list = document.createElement(\"ul\"); for (const database of databases) { const item = document.createElement(\"li\"); item.textContent = database.title; list.append(item); } if (!databases.length) { const item = document.createElement(\"li\"); item.textContent = \"No database access granted\"; list.append(item); } main.append(list); document.body.replaceChildren(main); })();"
+  }
+]

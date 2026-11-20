@@ -125,7 +125,13 @@ impl Branch {
             if entry.is_dir() {
                 continue;
             }
-            let entry_name = entry.name().to_string();
+            let entry_name = match entry.name() {
+                Ok(name) => name.to_string(),
+                Err(error) => {
+                    result.skipped.push(format!("entry {index} ({error})"));
+                    continue;
+                }
+            };
             let ext = Path::new(&entry_name)
                 .extension()
                 .map(|e| e.to_string_lossy().to_lowercase())

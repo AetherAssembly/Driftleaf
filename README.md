@@ -8,14 +8,19 @@
 [![Copr build status](https://copr.fedorainfracloud.org/coprs/aster1630/Driftleaf/package/driftleaf/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/aster1630/Driftleaf/package/driftleaf/)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
-A private, local-first notes app for your desktop. Your branch stays on your computer, encrypted, organized, and yours. No accounts or cloud sync; optional update checks contact GitHub for public release metadata only. Just you and your thoughts.
+A private, local-first notes app for your desktop. Your branch stays on your computer, encrypted, organized, and yours. No accounts or cloud sync. The only requests Driftleaf makes on its own are an optional check for new releases and announcements at startup, which one setting turns off. Just you and your thoughts.
+
+![Driftleaf's editor showing a note with inline Markdown formatting](docs/screenshots/editor.png)
 
 ## Why Driftleaf?
 
 - **Truly private** - All notes are encrypted on your disk. Driftleaf developers never see your data.
 - **You own it** - No accounts to create, no cloud lock-in. Your branch is just a folder on your computer.
 - **Fast & responsive** - Everything runs locally. No waiting for the cloud or dealing with sync conflicts.
-- **Write anywhere** - Markdown support with a live preview so you can format as you write.
+- **Write anywhere** - Headings, bold, links, and more render inline as you type, with raw Markdown a toggle away in Source mode. Code blocks are syntax highlighted.
+- **Images and files, encrypted too** - Paste or attach an image or file and it is encrypted into the branch with your notes. Driftleaf never loads images from the web.
+- **Hard to lose things** - Deleted notes and databases wait in Trash for 30 days. Writes are atomic and checked on every unlock.
+- **Easy to leave** - Export the whole branch as a `.zip` containing plain Markdown, CSV/JSON, and attachment files that need nothing from Driftleaf to read.
 - **Keyboard first** - Power users can do everything with keyboard shortcuts. Tab through everything, search instantly, capture thoughts without reaching for the mouse.
 - **Accessible** - Built for everyone, with screen reader support and clear keyboard navigation.
 
@@ -36,14 +41,15 @@ architecture-specific downloads, verification, and platform-specific installatio
 
 1. **Create a branch** - This is where all your notes live. Choose a starting template or a blank branch, then set a strong passphrase you'll remember (there's no password reset).
 2. **Create folders** - Organize your notes however you like.
-3. **Start writing** - Create notes in markdown. Use the live preview to see formatting as you type.
-4. **Search** - Use **Ctrl+K** to quickly find notes by title or content.
+3. **Start writing** - Create notes in Markdown. Formatting renders inline as you type; switch to Source mode anytime to see the raw Markdown.
+4. **Search** - Use **Ctrl+K** to jump to any note by title or content, or to run a command.
 
 ### Essential Keyboard Shortcuts
 
 | Shortcut                              | What it does                                     |
 | ------------------------------------- | ------------------------------------------------ |
-| **Ctrl+K** (Cmd+K on Mac)             | Open command palette and search                  |
+| **Ctrl+K** (Cmd+K on Mac)             | Find a note by title or content, or run a command |
+| **Ctrl+F** (Cmd+F on Mac)             | Find and replace in the open note                |
 | **Ctrl+Shift+N** (Cmd+Shift+N on Mac) | Capture a quick note (works even when minimized) |
 | **Arrow Keys**                        | Navigate your notes and folders                  |
 | **Tab**                               | Move between sections (sidebar, notes, editor)   |
@@ -53,7 +59,7 @@ architecture-specific downloads, verification, and platform-specific installatio
 
 Type `[[Note title]]` in a note to link to another note. Add an alias with
 `[[Note title|display text]]`, or use a folder-qualified target such as
-`[[Projects/Driftleaf]]` when titles aren't unique. Links work in the preview;
+`[[Projects/Driftleaf]]` when titles aren't unique. Links are clickable in the editor;
 open **Graph** in the sidebar to explore connections, and linked notes show
 their backlinks above the editor. Link data is derived from decrypted note
 content in memory while the branch is unlocked; graph data is not persisted.
@@ -107,6 +113,20 @@ Driftleaf encrypts everything with your passphrase. There's no way to reset a fo
 
 For more details on security and recovery, see [docs/RECOVERY.md](docs/RECOVERY.md).
 
+You can change the passphrase from **Settings → Branch** while the branch is unlocked, and set the branch to lock itself after a period without input. Changing the passphrase is quick because it re-seals the existing key instead of re-encrypting your notes; [docs/RECOVERY.md](docs/RECOVERY.md#changing-your-passphrase) explains what that means for old backups.
+
+### Deleted Something?
+
+Deleted notes and databases go to **Trash** in the sidebar and can be restored for 30 days.
+
+### Sync and Mobile
+
+Driftleaf has no built-in sync and no mobile app. If you keep a branch in Syncthing, Dropbox, or similar, read [docs/SYNC.md](docs/SYNC.md) first: it works only with one device open at a time.
+
+### Getting Your Notes Out
+
+**Settings → Branch → Diagnostics & Branch Health → Export unencrypted copy** creates a dated `.zip` containing every note as Markdown, every database as CSV and JSON, and every attachment as an ordinary file. The archive can be opened with standard ZIP tools; it is not encrypted.
+
 ### Backing Up Your Branch
 
 Your branch is just a folder on your computer. From **Settings → Diagnostics & Branch Health → Create backup**, choose a destination outside the branch. Driftleaf creates a dated copy (including the hidden `.driftleaf/` directory) without overwriting existing backups. For resilience against device failure, store it on an external drive or another computer. You can verify a copied backup from the same screen; verification asks for the passphrase when needed and does not modify the backup. To restore, copy the backup folder back.
@@ -121,7 +141,7 @@ Want to help develop Driftleaf or build it yourself? Take a look at [DEVELOPMENT
 
 **Setup:**
 
-`@aetherAssembly/ui` is published to GitHub Packages, so you'll need a GitHub personal access token:
+One dependency, `@aetherAssembly/ui`, is published to GitHub Packages, which requires a GitHub personal access token (classic, with only the `read:packages` scope) even for public packages. Every other dependency comes from the public npm registry.
 
 ```sh
 # ~/.npmrc (once, not per-project)
@@ -158,17 +178,15 @@ npm run package:tauri -- --bundles nsis     # Windows: installer
 
 ### Technical Details
 
-- **Stack**: Tauri 2 (Rust shell) + React 19 + Vite + TypeScript, with the existing
-  Node domain service run as a sidecar child process. Electron has been fully removed
-  as of v0.7.0 — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#desktop-shell-and-storage-backend)
-  for how that's wired and why.
+- **Stack**: Tauri 2 + an in-process Rust storage backend + React 19, Vite, and TypeScript.
+  The desktop app does not bundle or run Node.js. Node remains a development and test
+  dependency. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#desktop-shell-and-storage-backend).
 - **Storage**: Encrypted markdown files (scrypt + AES-256-GCM) per folder-based branch
 - **Search**: SQLite FTS5 index, rebuilt on unlock
-- **Safety**: Atomic writes + consistency checks on every unlock
+- **Safety**: Atomic, fsynced writes + consistency checks on every unlock
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for an overview of branch storage, encryption, privacy, and the internal API terminology.
 
 ## License
 
-AGPL-3.0-only - see [LICENSE](LICENSE). Matches the license on
-[`aether-packages`](https://github.com/AetherAssembly/aether-packages).
+AGPL-3.0-or-later - see [LICENSE](LICENSE).

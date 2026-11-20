@@ -1,21 +1,25 @@
-# Driftleaf Rust compatibility core
+# Driftleaf Rust storage backend
 
-Development checkpoint: 0.6.10. This crate is **not the application's active backend**.
-The Tauri preview still bundles the existing Node domain service.
+`driftleaf-core` is the active storage backend used by the Tauri desktop app. The Tauri
+shell links this crate directly and calls its `Service` on a blocking worker thread; it
+does not launch the Node reference service or bundle a Node runtime.
 
-Implemented and tested:
+The crate owns branch creation, unlock/reconciliation, encryption, note and folder
+mutations, databases and formulas, attachments, Trash, import/export, backups, SQLite
+writer locking, and the in-memory search index and note graph. The existing on-disk branch
+format is retained for compatibility.
 
-- scrypt N=131072, r=8, p=1 with exact UTF-8 passphrase bytes and 16-byte salt;
-- AES-256-GCM using the existing nonce/tag/ciphertext framing and zeroized keys;
-- read-only current and legacy manifest/note parsing and raw database reads;
-- SQLite exclusive writer locks interoperable with Node, including crash release.
+The Node implementation under `src/main/` and `sidecar/` remains as a development
+reference for compatibility/regression scripts and the browser UI harness. It is not part
+of the production Tauri backend.
 
-Run `npm run test:rust-compat` from the repository root. Fixtures contain only
-public test data. The example binaries are stdin-driven compatibility harnesses,
-not production commands; do not point them at a live personal branch.
+Run the backend tests from the repository root:
 
-Still required before backend replacement: complete manifest/data validation,
-atomic mutations and reconciliation, backup/import/export, database behavior,
-in-memory search, integration into the desktop session lifecycle, and fault tests.
-Do not wire partial native writers into the app or remove the reference backend
-until those compatibility gates are satisfied.
+```sh
+cargo test --manifest-path crates/driftleaf-core/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml
+npm run test:rust-compat
+```
+
+The compatibility examples and fixtures use disposable test data. Do not point them at a
+personal branch.

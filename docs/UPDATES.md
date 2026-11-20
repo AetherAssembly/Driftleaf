@@ -7,7 +7,7 @@ the branch unlock screen. Update checks can be disabled in Settings, and
 
 ## Current status: manual updates everywhere
 
-As of v0.7.0, no update signing key or manifest feed has been provisioned, so every
+No signed updater key or update manifest is configured, so every
 build — Windows, macOS, and Linux — reports updates as manual: Driftleaf shows that a
 newer release is available and links to it, but doesn't download or install it
 automatically. Signed, in-app automatic updates are implemented and ready in the Rust

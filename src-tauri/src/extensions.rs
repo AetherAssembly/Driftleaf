@@ -1,4 +1,4 @@
-use super::{validate_main_window, Sidecar};
+use super::{validate_main_window, Backend};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{
@@ -44,12 +44,12 @@ pub async fn run_extension(
     app: AppHandle,
     id: String,
     state: tauri::State<'_, Arc<ExtensionWindows>>,
-    sidecar: tauri::State<'_, Arc<Sidecar>>,
+    backend: tauri::State<'_, Arc<Backend>>,
 ) -> Result<(), String> {
     validate_main_window(window.label())?;
     let _guard = state.lifecycle.lock().await;
     let label = format!("extension-{}", state.next_id.fetch_add(1, Ordering::SeqCst));
-    let extension = sidecar
+    let extension = backend
         .call("extensions.trustedOpen", vec![json!(id), json!(label)])
         .await?;
     let source = extension
@@ -80,7 +80,7 @@ pub async fn run_extension(
         .build();
     if let Err(error) = built {
         state.forget(&label);
-        let _ = sidecar
+        let _ = backend
             .call("extensions.trustedClose", vec![json!(label)])
             .await;
         return Err(error.to_string());
@@ -108,13 +108,13 @@ pub async fn extension_call(
     method: String,
     args: Vec<Value>,
     state: tauri::State<'_, Arc<ExtensionWindows>>,
-    sidecar: tauri::State<'_, Arc<Sidecar>>,
+    backend: tauri::State<'_, Arc<Backend>>,
 ) -> Result<Value, String> {
     if !state.contains(window.label()) {
         return Err("This window is not an active extension".into());
     }
     validate_method(&method, &args)?;
-    sidecar
+    backend
         .call(
             "extensions.trustedCall",
             vec![json!(window.label()), json!(method), json!(args)],

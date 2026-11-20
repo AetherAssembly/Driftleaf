@@ -13,9 +13,14 @@ import { GraphView } from "./components/GraphView";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { ExtensionsModal } from "./components/ExtensionsModal";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { AnnouncementBanner } from "./components/AnnouncementBanner";
 import { CanvasView } from "./components/CanvasView";
+import { TrashModal } from "./components/TrashModal";
+import { AttachmentsModal } from "./components/AttachmentsModal";
+import { releaseAttachments } from "./lib/attachments";
 import { backlinksFor, unlinkedMentionsFor } from "../shared/note-links";
 import type {
+  AnnouncementItem,
   AppSettings,
   CanvasItem,
   CommunityReleaseItem,
@@ -101,6 +106,7 @@ export default function App() {
     message: "Checking update status…",
     automaticInstall: false,
   });
+  const [announcement, setAnnouncement] = useState<AnnouncementItem | null>(null);
   const [content, setContent] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [searchQuery, setSearchQuery] = useState("");
@@ -110,6 +116,7 @@ export default function App() {
     theme: "system",
     editorFontSizePx: 15,
     autosaveIntervalMs: 500,
+    autoLockMinutes: 0,
     checkUpdatesAutomatically: true,
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -119,6 +126,9 @@ export default function App() {
   const [showWelcome, setShowWelcome] = useState(false);
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [attachmentsOpen, setAttachmentsOpen] = useState(false);
+  const [trashCount, setTrashCount] = useState(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Independent debounce timers share a durable-in-session draft queue. Failed
@@ -137,6 +147,9 @@ export default function App() {
   useEffect(() => {
     selectedNoteRef.current = selectedNote;
   }, [selectedNote]);
+  // Bumped on every openNote() call; a read that resolves after a newer navigation has
+  // already started is stale and must not overwrite what the user has since selected.
+  const navigationId = useRef(0);
 
   const refreshNoteGraph = useCallback(async () => {
     try {
@@ -178,16 +191,18 @@ export default function App() {
   }), []);
 
   const refreshVaultState = useCallback(async () => {
-    const [folderList, noteList, databaseList, canvasList] = await Promise.all([
+    const [folderList, noteList, databaseList, canvasList, trashList] = await Promise.all([
       window.driftleaf.notes.listFolders(),
       window.driftleaf.notes.list(),
       window.driftleaf.databases.list(),
       window.driftleaf.canvas.read(),
+      window.driftleaf.trash.list(),
     ]);
     setFolders(folderList);
     setNotes(noteList);
     setDatabases(databaseList);
     setCanvasItems(canvasList);
+    setTrashCount(trashList.length);
   }, []);
 
   useEffect(() => {
@@ -220,6 +235,25 @@ export default function App() {
     };
   }, []);
 
+  // Fetched once at startup alongside the update check (see main.rs); failures are silent
+  // since a missed announcement isn't worth surfacing an error for.
+  useEffect(() => {
+    let active = true;
+    const unsubscribe = window.driftleaf.events.onAnnouncementStatus((next) => {
+      if (active) setAnnouncement(next);
+    });
+    void window.driftleaf.announcements
+      .status()
+      .then((next) => {
+        if (active) setAnnouncement(next);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
   useEffect(() => {
     if (unlocked) void refreshNoteGraph();
   }, [unlocked, refreshNoteGraph]);
@@ -243,19 +277,85 @@ export default function App() {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      // Exactly Ctrl/Cmd+K. With Shift or Alt held it is a different shortcut (Ctrl+Shift+K
+      // deletes a line in the editor) and must not also toggle the palette.
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
         if (!unlocked) return;
         // Don't stack the command palette on top of another already-open overlay — none of
         // these native/hand-rolled modals currently stop this window-level listener from
         // firing while they're focused.
-        if (settingsOpen || vaultToolsOpen || moveNoteId || quickCaptureOpen || showWelcome) return;
+        if (
+          settingsOpen ||
+          vaultToolsOpen ||
+          moveNoteId ||
+          quickCaptureOpen ||
+          showWelcome ||
+          extensionsOpen ||
+          trashOpen
+        )
+          return;
         setCommandPaletteOpen((v) => !v);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [unlocked, settingsOpen, vaultToolsOpen, moveNoteId, quickCaptureOpen, showWelcome]);
+  }, [unlocked, settingsOpen, vaultToolsOpen, moveNoteId, quickCaptureOpen, showWelcome, extensionsOpen, trashOpen]);
+
+  // The shell hands dropped files to the page as ordinary HTML5 drops (see
+  // disable_drag_drop_handler in src-tauri/src/main.rs). The editor turns those into
+  // attachments; anywhere else, swallow the drop so the webview does not try to open the
+  // file in place of the app.
+  useEffect(() => {
+    const swallowFileDrop = (event: DragEvent) => {
+      if (!event.dataTransfer?.types.includes("Files")) return;
+      if (event.target instanceof Element && event.target.closest(".editor__codemirror")) return;
+      event.preventDefault();
+      if (event.type === "dragover") event.dataTransfer.dropEffect = "none";
+    };
+    window.addEventListener("dragover", swallowFileDrop);
+    window.addEventListener("drop", swallowFileDrop);
+    return () => {
+      window.removeEventListener("dragover", swallowFileDrop);
+      window.removeEventListener("drop", swallowFileDrop);
+    };
+  }, []);
+
+  // Auto-lock after a period with no input. handleLock is redefined every render (it closes
+  // over the current draft/save state), so the timer calls it through a ref rather than
+  // capturing one stale copy for the life of the effect.
+  const handleLockRef = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => {
+    handleLockRef.current = handleLock;
+  });
+  useEffect(() => {
+    if (!unlocked || settings.autoLockMinutes <= 0) return;
+    const timeoutMs = settings.autoLockMinutes * 60_000;
+    let timer: ReturnType<typeof setTimeout>;
+    let lastReset = 0;
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        // If unsaved edits cannot be written, handleLock leaves the branch open and says
+        // so; re-arm so it tries again after another idle period instead of never.
+        void handleLockRef.current().finally(arm);
+      }, timeoutMs);
+    };
+    const onActivity = () => {
+      // pointermove fires constantly; once a second is plenty for a timer in minutes.
+      const now = Date.now();
+      if (now - lastReset < 1000) return;
+      lastReset = now;
+      arm();
+    };
+    const events = ["keydown", "pointerdown", "pointermove", "wheel"] as const;
+    for (const name of events) window.addEventListener(name, onActivity, { passive: true });
+    arm();
+    return () => {
+      clearTimeout(timer);
+      for (const name of events) window.removeEventListener(name, onActivity);
+    };
+  }, [unlocked, settings.autoLockMinutes]);
 
   useEffect(() => {
     const retrySave = (event: KeyboardEvent) => {
@@ -274,11 +374,17 @@ export default function App() {
   }
 
   async function openNote(id: string) {
+    const requestId = ++navigationId.current;
     if (!(await flushPendingWrites())) return;
     const note = notes.find((n) => n.id === id) ?? (await findNoteAnywhere(id));
     if (!note) return;
+    if (requestId !== navigationId.current) return; // superseded while resolving the note itself
+    // Block edits to the outgoing note while its replacement loads — otherwise typing during
+    // this await produces a draft that's silently reassociated with whichever note wins the race.
+    document.body.inert = true;
     try {
       const text = await window.driftleaf.notes.read(id);
+      if (requestId !== navigationId.current) return; // a newer navigation already won
       setGraphOpen(false);
       setCanvasOpen(false);
       setSelectedNote(note);
@@ -287,7 +393,11 @@ export default function App() {
       setContent(text);
       setSaveStatus("idle");
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "Failed to open note");
+      if (requestId === navigationId.current) {
+        showToast(err instanceof Error ? err.message : "Failed to open note");
+      }
+    } finally {
+      if (requestId === navigationId.current) document.body.inert = false;
     }
   }
 
@@ -358,6 +468,8 @@ export default function App() {
       const meta = await window.driftleaf.notes.create(selectedFolder, "Untitled");
       setNotes((prev) => [...prev, meta]);
       await refreshNoteGraph();
+      setGraphOpen(false);
+      setCanvasOpen(false);
       setSelectedNote(meta);
       setSelectedDatabaseId(null);
       setContent("");
@@ -371,6 +483,8 @@ export default function App() {
     try {
       const database = await window.driftleaf.databases.create(title, selectedFolder);
       setDatabases((previous) => [...previous, database]);
+      setGraphOpen(false);
+      setCanvasOpen(false);
       setSelectedNote(null);
       setSelectedDatabaseId(database.id);
     } catch (err) {
@@ -399,25 +513,37 @@ export default function App() {
       draftWrites.remove(`note:${selectedNote.id}`);
       draftWrites.remove(`title:${selectedNote.id}`);
       setNotes((prev) => prev.filter((n) => n.id !== selectedNote.id));
+      setTrashCount((count) => count + 1);
       await refreshNoteGraph();
       setSelectedNote(null);
       setContent("");
+      showToast(`Moved "${selectedNote.title || "Untitled"}" to Trash.`);
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to delete note");
     }
   }
 
-  async function handleQuickCapture(text: string) {
+  // Staged in the durable draft queue (same one note content/title writes use) rather than
+  // fired-and-forgotten: a failed create/write stays queued for retry on the next flush
+  // instead of silently discarding the only copy of what the user typed.
+  async function handleQuickCapture(text: string): Promise<boolean> {
     const firstLine = text.split("\n")[0].trim();
     const title = firstLine ? firstLine.slice(0, 60) : "Untitled";
-    try {
+    draftWrites.set("quick-capture", async () => {
       const meta = await window.driftleaf.notes.create("", title);
       await window.driftleaf.notes.write(meta.id, text);
       setNotes((prev) => [...prev, { ...meta, title }]);
-      await refreshNoteGraph();
+      void refreshNoteGraph();
+    });
+    try {
+      await draftWrites.flush();
       showToast(`Saved "${title}"`);
+      return true;
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "Failed to save quick capture");
+      showToast(
+        `Could not save capture; it will retry on the next save: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return false;
     }
   }
 
@@ -435,6 +561,8 @@ export default function App() {
       setNotes((prev) => [...prev, meta]);
       await refreshNoteGraph();
       setFolders((prev) => (prev.includes(DAILY_FOLDER) ? prev : [...prev, DAILY_FOLDER].sort()));
+      setGraphOpen(false);
+      setCanvasOpen(false);
       setSelectedFolder(DAILY_FOLDER);
       setSelectedNote(meta);
       setSelectedDatabaseId(null);
@@ -645,12 +773,17 @@ export default function App() {
       await window.driftleaf.folders.rename(oldPath, newPath);
       await refreshVaultState();
       await refreshNoteGraph();
+      // Mirror the backend's exact-or-descendant prefix remap (vault.ts renameFolder) here too
+      // — otherwise a note/selection nested under the renamed folder (not the folder itself)
+      // keeps pointing at the old, now-nonexistent path.
+      const remap = (folderPath: string) =>
+        folderPath === oldPath || folderPath.startsWith(oldPath + "/")
+          ? newPath + folderPath.slice(oldPath.length)
+          : folderPath;
       // Functional updaters read the latest state at update time regardless of how stale
       // this closure is, so these two don't need the selectedNoteRef workaround above.
-      setSelectedFolder((prev) => (prev === oldPath ? newPath : prev));
-      setSelectedNote((prev) =>
-        prev?.folderPath === oldPath ? { ...prev, folderPath: newPath } : prev,
-      );
+      setSelectedFolder((prev) => remap(prev));
+      setSelectedNote((prev) => (prev ? { ...prev, folderPath: remap(prev.folderPath) } : prev));
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to rename folder");
     }
@@ -683,20 +816,28 @@ export default function App() {
   function handleSearchChange(text: string) {
     setSearchQuery(text);
     if (searchTimer.current) clearTimeout(searchTimer.current);
+    // Invalidate at input time, not dispatch time — a request already in flight for an older
+    // query must lose even during the debounce window before the next query actually
+    // dispatches, so a stale result can never overwrite results for text already changed.
+    const requestId = ++searchRequestId.current;
     if (!text.trim()) {
-      searchRequestId.current += 1; // invalidate any response still in flight
       setSearchResults([]);
       return;
     }
-    searchTimer.current = setTimeout(async () => {
-      const requestId = ++searchRequestId.current;
-      const results = await window.driftleaf.search.query(text);
-      // A faster, later query can resolve before this one — only apply the response if
-      // it's still the most recent request, so a slow stale result can't overwrite fresher
-      // results already on screen.
-      if (requestId === searchRequestId.current) {
-        setSearchResults(results);
-      }
+    searchTimer.current = setTimeout(() => {
+      window.driftleaf.search.query(text).then(
+        (results) => {
+          // A faster, later query can resolve before this one — only apply the response if
+          // it's still the most recent request, so a slow stale result can't overwrite fresher
+          // results already on screen.
+          if (requestId === searchRequestId.current) setSearchResults(results);
+        },
+        (error: unknown) => {
+          if (requestId === searchRequestId.current) {
+            showToast(error instanceof Error ? error.message : "Search failed");
+          }
+        },
+      );
     }, SEARCH_DEBOUNCE_MS);
   }
 
@@ -706,7 +847,17 @@ export default function App() {
     try {
       if (!(await flushPendingWrites())) return;
       await window.driftleaf.vault.lock();
+      // Invalidate every session-bound async request in flight — a navigation, search, or
+      // extension-catalog response delivered after this point belongs to the locked branch
+      // and must never repopulate state once unlocked, possibly on a different branch.
+      ++navigationId.current;
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+      searchRequestId.current += 1;
       setUnlocked(false);
+      setFolders([""]);
+      setNotes([]);
+      setDatabases([]);
+      setSelectedFolder("");
       setSelectedNote(null);
       setSelectedDatabaseId(null);
       setContent("");
@@ -716,6 +867,21 @@ export default function App() {
       setCanvasOpen(false);
       setSearchQuery("");
       setSearchResults([]);
+      setExtensionsOpen(false);
+      setExtensions([]);
+      setExtensionSamples([]);
+      setCommunityItems([]);
+      setCommunityError(null);
+      releaseAttachments();
+      // Nothing branch-scoped may still be on screen when the next unlock happens.
+      setTrashOpen(false);
+      setAttachmentsOpen(false);
+      setTrashCount(0);
+      setSettingsOpen(false);
+      setVaultToolsOpen(false);
+      setCommandPaletteOpen(false);
+      setQuickCaptureOpen(false);
+      setMoveNoteId(null);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Could not lock branch");
     } finally {
@@ -726,12 +892,14 @@ export default function App() {
   if (!unlocked) {
     return (
       <>
-        <UpdateBanner
-          status={updateStatus}
-          onDownload={() => void downloadUpdate()}
-          onInstall={() => void installUpdate()}
-          onOpenDownload={() => void openUpdateDownload()}
-        />
+        <div className="app-banner-stack">
+          <UpdateBanner
+            status={updateStatus}
+            onDownload={() => void downloadUpdate()}
+            onInstall={() => void installUpdate()}
+            onOpenDownload={() => void openUpdateDownload()}
+          />
+        </div>
         <UnlockScreen
           version={updateStatus.currentVersion}
           onUnlocked={(recovery) => {
@@ -765,6 +933,12 @@ export default function App() {
       run: () => { void openCanvas(); },
     },
     { id: "extensions", label: "Open extensions", run: () => void openExtensions() },
+    { id: "open-trash", label: "Open Trash", run: () => setTrashOpen(true) },
+    {
+      id: "branch-tools",
+      label: "Back up, export, or check this branch…",
+      run: () => setVaultToolsOpen(true),
+    },
     { id: "open-settings", label: "Open settings", run: () => setSettingsOpen(true) },
     { id: "lock-vault", label: "Lock branch", run: () => void handleLock() },
     ...folders.map((f): Command => ({
@@ -778,12 +952,15 @@ export default function App() {
 
   return (
     <div className="app">
-      <UpdateBanner
-        status={updateStatus}
-        onDownload={() => void downloadUpdate()}
-        onInstall={() => void installUpdate()}
-        onOpenDownload={() => void openUpdateDownload()}
-      />
+      <div className="app-banner-stack">
+        <UpdateBanner
+          status={updateStatus}
+          onDownload={() => void downloadUpdate()}
+          onInstall={() => void installUpdate()}
+          onOpenDownload={() => void openUpdateDownload()}
+        />
+        <AnnouncementBanner item={announcement} />
+      </div>
       <Sidebar
         folders={folders}
         notes={notes}
@@ -813,6 +990,12 @@ export default function App() {
         onLock={() => void handleLock()}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenExtensions={() => void openExtensions()}
+        onOpenTrash={() => {
+          void flushPendingWrites().then((saved) => {
+            if (saved) setTrashOpen(true);
+          });
+        }}
+        trashCount={trashCount}
         graphOpen={graphOpen}
         canvasOpen={canvasOpen}
         onOpenGraph={() => {
@@ -865,6 +1048,7 @@ export default function App() {
             onChange={handleContentChange}
             onRenameTitle={handleRenameTitle}
             onDelete={() => void handleDeleteNote()}
+            onNotify={showToast}
           />
         ) : (
           <div className="main__empty">Select or create a note to start writing.</div>
@@ -890,6 +1074,15 @@ export default function App() {
         onClose={() => setVaultToolsOpen(false)}
         theme={settings.theme}
         noteCount={notes.length}
+        onOpenAttachments={() => {
+          setVaultToolsOpen(false);
+          setAttachmentsOpen(true);
+        }}
+      />
+      <AttachmentsModal
+        open={attachmentsOpen}
+        onClose={() => setAttachmentsOpen(false)}
+        onOpenNote={(id) => void openNote(id)}
       />
       <ExtensionsModal
         open={extensionsOpen}
@@ -920,16 +1113,28 @@ export default function App() {
           onClose={() => setMoveNoteId(null)}
         />
       )}
+      <TrashModal
+        open={trashOpen}
+        onClose={() => setTrashOpen(false)}
+        onCountChange={setTrashCount}
+        onRestored={() => {
+          void refreshVaultState();
+          void refreshNoteGraph();
+        }}
+      />
       {toast && <div className="toast">{toast}</div>}
       <WelcomeModal open={showWelcome} onClose={() => setShowWelcome(false)} />
       <QuickCapture
         open={quickCaptureOpen}
-        onCapture={(text) => void handleQuickCapture(text)}
+        onCapture={(text) => handleQuickCapture(text)}
         onClose={() => setQuickCaptureOpen(false)}
       />
       <CommandPalette
         open={commandPaletteOpen}
         commands={commands}
+        notes={notes}
+        onOpenNote={(id) => void openNote(id)}
+        onSearchNotes={(text) => window.driftleaf.search.query(text)}
         onClose={() => setCommandPaletteOpen(false)}
       />
     </div>

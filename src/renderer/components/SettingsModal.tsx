@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Input, Modal } from "@aetherAssembly/ui";
 import type { AppSettings, UpdateStatus } from "../../shared/ipc";
+import { SecuritySettings } from "./SecuritySettings";
 
 type SettingsTab = "appearance" | "editor" | "updates" | "vault" | "about";
 
@@ -76,7 +77,7 @@ export function SettingsModal({
     { id: "appearance", label: "Appearance", detail: "Theme and color" },
     { id: "editor", label: "Editor", detail: "Writing preferences" },
     { id: "updates", label: "Updates", detail: "Version and releases" },
-    { id: "vault", label: "Branch", detail: "Privacy and diagnostics" },
+    { id: "vault", label: "Branch", detail: "Security and diagnostics" },
     { id: "about", label: "About", detail: "Driftleaf information" },
   ];
   const lastVaultName = settings.lastVaultPath
@@ -211,8 +212,13 @@ export function SettingsModal({
                     onPatch({ checkUpdatesAutomatically: event.target.checked })
                   }
                 />
-                Check for updates automatically when Driftleaf starts
+                Check for updates and announcements when Driftleaf starts
               </label>
+              <p className="settings__hint">
+                When this is on, Driftleaf asks GitHub for the latest release and reads the
+                project&rsquo;s announcement feed once per launch. When it is off, Driftleaf
+                makes no network requests on its own.
+              </p>
               <p className="settings__hint">
                 {updateStatus.automaticInstall
                   ? "Updates can be downloaded and installed in-app on this platform."
@@ -240,10 +246,14 @@ export function SettingsModal({
                   </Button>
                 </div>
               )}
+              <SecuritySettings settings={settings} onPatch={onPatch} />
               <div className="settings__tools-card">
                 <div>
                   <strong>Diagnostics &amp; Branch Health</strong>
-                  <p>Inspect app details, check branch integrity, and verify backups.</p>
+                  <p>
+                    Back up, export, check branch integrity, verify backups, and clean up
+                    attachments.
+                  </p>
                 </div>
                 <Button variant="secondary" size="sm" onClick={onOpenTools}>
                   Open tools

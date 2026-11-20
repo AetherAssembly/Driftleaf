@@ -35,3 +35,4 @@ docs/packaging/aur/src/
 docs/packaging/aur/*.pkg.tar.*
 docs/packaging/aur/Driftleaf_*.deb
 docs/packaging/aur/LICENSE-*
+docs/BUG_PASS_AND_FEATURE_ROADMAP.md

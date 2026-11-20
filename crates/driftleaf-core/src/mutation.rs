@@ -1,11 +1,15 @@
 //! Native mutation of a branch: notes, folders, databases, canvas items, and extensions —
 //! every write path in src/main/vault.ts except backup/import/export and search, which stay
-//! on the Node sidecar. Disk-first for create/write, manifest-first for delete, matching
-//! vault.ts's exact ordering (see createNote/writeNote/deleteNote) so a crash between steps
-//! leaves an orphaned file or a stale manifest entry for Node's reconcileVault to self-heal,
-//! never lost content. Like snapshot.rs, this never runs reconciliation or legacy-path
-//! migration itself: callers are assumed to already be operating on a branch Node has
-//! unlocked (and thus already reconciled) at least once. Properties/rows/views/extensions/
+//! on the Node sidecar. Trash lives in trash.rs, attachments in attachments.rs, and the
+//! passphrase change in vault_config.rs, all as further `impl Branch` blocks. Disk-first for
+//! create/write, matching vault.ts's exact ordering (see createNote/writeNote) so a crash
+//! between steps leaves an orphaned file or a stale manifest entry for Node's reconcileVault
+//! to self-heal, never lost content. Deleting a note, database, or folder touches no file at
+//! all: it is one manifest write that moves the entries into `trash` (see deleteNote), and
+//! files are only removed when a Trash entry is purged. Like snapshot.rs, this never runs
+//! reconciliation, legacy-path migration, or the unlock-time Trash retention sweep itself:
+//! callers are assumed to already be operating on a branch Node has unlocked (and thus
+//! already reconciled) at least once. Properties/rows/views/extensions/
 //! canvas items are handled as `serde_json::Value` rather than typed structs, matching the
 //! rest of this crate's posture: validate the same way Node does, round-trip whatever shape
 //! is already there, and don't require a full Rust model of the IPC type hierarchy.
@@ -13,13 +17,14 @@ use crate::{decrypt, encrypt, open_branch, random_hex, random_uuid_v4, valid_id,
 use serde_json::{json, Value};
 use std::{
     fs,
+    io::Write,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 pub struct Branch {
     pub root: PathBuf,
-    key: Key,
+    pub(crate) key: Key,
     pub manifest: Value,
 }
 
@@ -31,16 +36,39 @@ pub(crate) fn now_ms() -> u64 {
 }
 
 // Writes go to a sibling temp file and land via rename(), same atomicity guarantee (and
-// reasoning) as writeFileAtomic() in src/main/vault.ts.
-fn write_file_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
+// reasoning) as writeFileAtomic() in src/main/vault.ts. Also matches its durability and
+// cleanup behavior: fsync the temp file before the rename (atomicity alone doesn't mean
+// the bytes survive a power loss while still sitting in the OS page cache), fsync the
+// containing directory afterward so the rename's new entry is durable too, and remove the
+// temp file instead of leaving it behind if anything along the way fails.
+pub(crate) fn write_file_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
     let dir = path.parent().ok_or("Invalid path")?;
     let name = path
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or("Invalid path")?;
     let tmp = dir.join(format!(".{name}.tmp-{}", random_hex(16)));
-    fs::write(&tmp, data).map_err(|e| e.to_string())?;
-    fs::rename(&tmp, path).map_err(|e| e.to_string())
+    let result = (|| -> Result<(), String> {
+        let mut file = fs::File::create(&tmp).map_err(|e| e.to_string())?;
+        file.write_all(data).map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+        drop(file);
+        fs::rename(&tmp, path).map_err(|e| e.to_string())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+        return result;
+    }
+    // Windows can't open a directory with File::open (it refuses directory handles the same
+    // way Node's `open()` does), so this is POSIX-only; NTFS's own journaling covers the
+    // rename's durability there instead.
+    #[cfg(unix)]
+    {
+        if let Ok(dir_file) = fs::File::open(dir) {
+            let _ = dir_file.sync_all();
+        }
+    }
+    result
 }
 
 // Same traversal and reserved-name checks as validateFolderPath() in src/main/vault.ts.
@@ -71,7 +99,7 @@ impl Branch {
         self.manifest["notes"].as_array_mut().unwrap()
     }
 
-    fn note_path(&self, id: &str) -> Result<PathBuf, String> {
+    pub(crate) fn note_path(&self, id: &str) -> Result<PathBuf, String> {
         if !valid_id(id) {
             return Err("Invalid note ID".into());
         }
@@ -82,7 +110,7 @@ impl Branch {
             .join(format!("{id}.enc")))
     }
 
-    fn write_manifest(&self) -> Result<(), String> {
+    pub(crate) fn write_manifest(&self) -> Result<(), String> {
         let path = self.root.join(DRIFTLEAF_DIR).join("manifest.enc");
         let data = serde_json::to_vec(&self.manifest).map_err(|e| e.to_string())?;
         write_file_atomic(&path, &encrypt(&data, &self.key)?)
@@ -152,6 +180,10 @@ impl Branch {
         self.write_manifest()
     }
 
+    /// Moves the note to Trash, matching deleteNote(): its manifest entry moves from
+    /// `notes` to `trash` in one atomic manifest write and the encrypted file is not
+    /// touched, so there is no window in which a crash can lose content. The file is
+    /// removed only when the Trash entry is purged (see trash.rs).
     pub fn delete_note(&mut self, id: &str) -> Result<(), String> {
         let index = self
             .notes()
@@ -163,16 +195,14 @@ impl Branch {
         if let Some(items) = self.manifest["canvasItems"].as_array_mut() {
             items.retain(|item| !(item["kind"] == "note" && item["targetId"] == id));
         }
+        let previous_trash = self.manifest["trash"].clone();
+        self.trash_mut()
+            .push(json!({ "kind": "note", "meta": meta, "deletedAt": now_ms() }));
         if let Err(err) = self.write_manifest() {
             self.notes().insert(index, meta);
             self.manifest["canvasItems"] = previous_canvas;
+            self.manifest["trash"] = previous_trash;
             return Err(err);
-        }
-        // force: true — ignore an already-missing file, same as rm(path, { force: true }).
-        if let Err(err) = fs::remove_file(self.note_path(id)?) {
-            if err.kind() != std::io::ErrorKind::NotFound {
-                return Err(err.to_string());
-            }
         }
         Ok(())
     }
@@ -453,14 +483,14 @@ fn clear_relation_to_row(
 }
 
 impl Branch {
-    fn databases(&self) -> &[Value] {
+    pub(crate) fn databases(&self) -> &[Value] {
         self.manifest["databases"]
             .as_array()
             .map(Vec::as_slice)
             .unwrap_or(&[])
     }
 
-    fn databases_mut(&mut self) -> &mut Vec<Value> {
+    pub(crate) fn databases_mut(&mut self) -> &mut Vec<Value> {
         // open_branch() already defaults this to an array; the check stays as a safeguard.
         if !self.manifest["databases"].is_array() {
             self.manifest["databases"] = json!([]);
@@ -468,7 +498,7 @@ impl Branch {
         self.manifest["databases"].as_array_mut().unwrap()
     }
 
-    fn database_path(&self, id: &str) -> Result<PathBuf, String> {
+    pub(crate) fn database_path(&self, id: &str) -> Result<PathBuf, String> {
         if !valid_id(id) {
             return Err("Invalid database ID".into());
         }
@@ -870,6 +900,9 @@ impl Branch {
         )
     }
 
+    /// Moves the database to Trash, matching deleteDatabase(). Its encrypted file is left
+    /// in place. Refused while a live database, or a database already in Trash, still
+    /// links to it through a relation property.
     pub fn delete_database(&mut self, id: &str) -> Result<(), String> {
         let databases = self.databases().to_vec();
         let index = databases
@@ -894,20 +927,20 @@ impl Branch {
                 ));
             }
         }
+        self.assert_not_linked_from_trash(&[id.to_string()], &[])?;
         let meta = self.databases_mut().remove(index);
         let previous_canvas = self.manifest["canvasItems"].clone();
         if let Some(items) = self.manifest["canvasItems"].as_array_mut() {
             items.retain(|item| !(item["kind"] == "database" && item["targetId"] == id));
         }
+        let previous_trash = self.manifest["trash"].clone();
+        self.trash_mut()
+            .push(json!({ "kind": "database", "meta": meta, "deletedAt": now_ms() }));
         if let Err(err) = self.write_manifest() {
             self.databases_mut().insert(index, meta);
             self.manifest["canvasItems"] = previous_canvas;
+            self.manifest["trash"] = previous_trash;
             return Err(err);
-        }
-        if let Err(err) = fs::remove_file(self.database_path(id)?) {
-            if err.kind() != std::io::ErrorKind::NotFound {
-                return Err(err.to_string());
-            }
         }
         Ok(())
     }
@@ -972,7 +1005,7 @@ fn validate_extension(extension: &Value) -> Result<(), String> {
             ids.iter().all(|id| id.as_str().is_some_and(valid_id))
         });
     if !valid {
-        return Err("Vault contains an invalid extension definition".into());
+        return Err("Branch contains an invalid extension definition".into());
     }
     Ok(())
 }
@@ -1155,7 +1188,7 @@ impl Branch {
 
     pub fn rename_folder(&mut self, old_folder_path: &str, new_folder_path: &str) -> Result<(), String> {
         if old_folder_path.is_empty() {
-            return Err("Cannot rename the vault root".into());
+            return Err("Cannot rename the branch root".into());
         }
         validate_folder_path(old_folder_path)?;
         validate_folder_path(new_folder_path)?;
@@ -1195,49 +1228,78 @@ impl Branch {
         Ok(())
     }
 
+    /// Mirrors deleteFolder(): every note and database under the folder moves to Trash in
+    /// one manifest write (each keeps its original folder path, so restoring one recreates
+    /// the folder it came from). No encrypted file is removed here.
     pub fn delete_folder(&mut self, folder_path: &str) -> Result<Vec<String>, String> {
         if folder_path.is_empty() {
-            return Err("Cannot delete the vault root".into());
+            return Err("Cannot delete the branch root".into());
         }
         validate_folder_path(folder_path)?;
         let prefix = format!("{folder_path}/");
         let in_folder = |f: &str| f == folder_path || f.starts_with(&prefix);
 
-        let affected_ids: Vec<String> = self.manifest["notes"]
+        // Both lists keep manifest order: it is the order their Trash entries are appended in.
+        let affected: Vec<Value> = self.manifest["notes"]
             .as_array()
             .into_iter()
             .flatten()
             .filter(|n| n["folderPath"].as_str().is_some_and(in_folder))
-            .filter_map(|n| n["id"].as_str().map(String::from))
+            .cloned()
             .collect();
-        let affected_database_ids: std::collections::HashSet<String> = self
+        let affected_databases: Vec<Value> = self
             .databases()
             .iter()
             .filter(|d| d["folderPath"].as_str().is_some_and(in_folder))
+            .cloned()
+            .collect();
+        let affected_ids: Vec<String> = affected
+            .iter()
+            .filter_map(|n| n["id"].as_str().map(String::from))
+            .collect();
+        let affected_database_id_list: Vec<String> = affected_databases
+            .iter()
             .filter_map(|d| d["id"].as_str().map(String::from))
             .collect();
+        let affected_database_ids: std::collections::HashSet<&str> =
+            affected_database_id_list.iter().map(String::as_str).collect();
 
-        // No surviving database may keep a relation pointed at one being deleted — same
-        // guard as deleteFolder() in vault.ts.
-        for database in self.databases().to_vec() {
-            let id = database["id"].as_str().unwrap_or("");
-            if affected_database_ids.contains(id) {
-                continue;
+        if !affected_database_ids.is_empty() {
+            // No surviving database may keep a relation pointed at one being deleted — same
+            // guard as deleteFolder() in vault.ts, which (like here) only reads the other
+            // databases when the folder actually contains one.
+            for database in self.databases().to_vec() {
+                let id = database["id"].as_str().unwrap_or("");
+                if affected_database_ids.contains(id) {
+                    continue;
+                }
+                let data = self.read_database(id)?;
+                if data["properties"].as_array().into_iter().flatten().any(|p| {
+                    p["type"] == "relation"
+                        && p["relationDatabaseId"]
+                            .as_str()
+                            .is_some_and(|rel| affected_database_ids.contains(rel))
+                }) {
+                    let title = database["title"].as_str().unwrap_or("");
+                    return Err(format!(
+                        "Folder contains a database linked from \"{title}\"; remove that relation before deleting the folder"
+                    ));
+                }
             }
-            let data = self.read_database(id)?;
-            if data["properties"].as_array().into_iter().flatten().any(|p| {
-                p["relationDatabaseId"]
-                    .as_str()
-                    .is_some_and(|rel| affected_database_ids.contains(rel))
-            }) {
-                let title = database["title"].as_str().unwrap_or("");
-                return Err(format!(
-                    "Folder contains a database linked from \"{title}\"; remove that relation before deleting the folder"
-                ));
-            }
+            self.assert_not_linked_from_trash(&affected_database_id_list, &[])?;
         }
 
         let previous_manifest = self.manifest.clone();
+        let deleted_at = now_ms();
+        {
+            let trash = self.trash_mut();
+            for meta in &affected {
+                trash.push(json!({ "kind": "note", "meta": meta, "deletedAt": deleted_at }));
+            }
+            for meta in &affected_databases {
+                trash.push(json!({ "kind": "database", "meta": meta, "deletedAt": deleted_at }));
+            }
+        }
         let affected_note_ids: std::collections::HashSet<&str> =
             affected_ids.iter().map(String::as_str).collect();
         if let Some(notes) = self.manifest["notes"].as_array_mut() {
@@ -1261,12 +1323,6 @@ impl Branch {
         if let Err(err) = self.write_manifest() {
             self.manifest = previous_manifest;
             return Err(err);
-        }
-        for id in &affected_database_ids {
-            let _ = fs::remove_file(self.database_path(id)?);
-        }
-        for id in &affected_ids {
-            let _ = fs::remove_file(self.note_path(id)?);
         }
         Ok(affected_ids)
     }

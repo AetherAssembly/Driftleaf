@@ -55,6 +55,14 @@ impl SearchIndex {
         Ok(())
     }
 
+    /// How many notes are indexed (for the health check's coverage line).
+    pub fn count(&self) -> Result<u64, String> {
+        self.conn
+            .query_row("SELECT COUNT(*) FROM notes_fts", [], |row| row.get::<_, i64>(0))
+            .map(|count| count as u64)
+            .map_err(|e| e.to_string())
+    }
+
     pub fn remove_from_index(&self, id: &str) -> Result<(), String> {
         self.conn.execute("DELETE FROM notes_fts WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
         Ok(())

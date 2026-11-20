@@ -50,7 +50,7 @@ export function createExtensionAccess<Sender>(
       service.__internal.runSerializedCommand(() => {
         requireContext(sender, "read_graph");
         const index = service.__internal.currentIndex();
-        if (!index) throw new Error("No vault is unlocked");
+        if (!index) throw new Error("No branch is unlocked");
         return searchModule.buildNoteGraph(index);
       }),
     listDatabases: (sender: Sender) =>

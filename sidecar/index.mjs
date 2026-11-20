@@ -27,6 +27,9 @@ import * as linksModule from "../src/shared/note-links.ts";
 import * as storageModule from "../src/shared/storage.ts";
 import { SerialQueue } from "../src/shared/serial-queue.ts";
 import * as databaseExportModule from "../src/main/database-export.ts";
+import * as branchExportModule from "../src/main/branch-export.ts";
+import { randomUUID } from "node:crypto";
+import { rename, rm, writeFile } from "node:fs/promises";
 import * as communityCatalogModule from "../src/main/community-catalog.ts";
 import { createSettingsStore } from "../src/main/settings-store.ts";
 
@@ -119,6 +122,7 @@ const serviceModule = loadModule("src/main/service.ts", {
   "./vault": vaultModule,
   "./search": search,
   "./database-export": databaseExportModule,
+  "./branch-export": branchExportModule,
   "./community-catalog": communityCatalogModule,
 });
 
@@ -172,6 +176,7 @@ const host = {
   pickImportFiles: unsupportedPicker("pickImportFiles"),
   pickExtensionFile: unsupportedPicker("pickExtensionFile"),
   pickExportDestination: unsupportedPicker("pickExportDestination"),
+  pickSaveDestination: unsupportedPicker("pickSaveDestination"),
   openExternal: async () => {
     throw new Error("openExternal is handled by the Tauri shell directly, not the sidecar");
   },
@@ -268,6 +273,27 @@ const trustedCommands = {
     service.__internal.runSerializedCommand(() =>
       vaultModule.installExtension(service.__internal.requireVault(), name, source),
     ),
+  // Rust shows the folder picker / save dialog and passes the chosen path straight here.
+  "vault.trustedExportPlaintext": (destinationParent) =>
+    service.__internal.runSerializedCommand(() =>
+      branchExportModule.exportBranchPlaintext(service.__internal.requireVault(), destinationParent),
+    ),
+  "attachments.trustedSaveCopy": (id, destinationPath) =>
+    service.__internal.runSerializedCommand(async () => {
+      if (typeof destinationPath !== "string" || !path.isAbsolute(destinationPath)) {
+        throw new Error("Invalid save destination");
+      }
+      const { data } = await vaultModule.readAttachment(service.__internal.requireVault(), id);
+      const temporaryPath = `${destinationPath}.tmp-${randomUUID()}`;
+      try {
+        await writeFile(temporaryPath, data, { flag: "wx" });
+        await rename(temporaryPath, destinationPath);
+      } catch (error) {
+        await rm(temporaryPath, { force: true }).catch(() => {});
+        throw error;
+      }
+      return true;
+    }),
   "databases.trustedExportContent": (id, format) =>
     service.__internal.runSerializedCommand(() =>
       databaseExportModule.exportDatabase(service.__internal.requireVault(), id, format),

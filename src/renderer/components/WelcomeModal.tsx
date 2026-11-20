@@ -18,12 +18,14 @@ export function WelcomeModal({ open, onClose }: WelcomeModalProps) {
           your passphrase. Even we can&rsquo;t read them without it.
         </li>
         <li>
-          <strong>Local-first.</strong> Your branch stays on this device. Optional update
-          checks contact GitHub for public release metadata only; no note or branch data is sent.
+          <strong>Local-first.</strong> Your branch stays on this device. The only requests
+          Driftleaf makes on its own are a check for new releases and announcements at
+          startup, which you can turn off in Settings; no note or branch data is ever sent.
         </li>
         <li>
           <strong>Yours alone.</strong> Your passphrase can&rsquo;t be reset. Write it
-          down and keep it safe.
+          down and keep it safe. You can change it later in Settings while the branch is
+          unlocked.
         </li>
       </ul>
       <p className="welcome-modal__hint">

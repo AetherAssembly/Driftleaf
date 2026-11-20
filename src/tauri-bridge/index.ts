@@ -12,12 +12,41 @@
 // in sidecar/index.mjs for why that check couldn't just stay in service.ts for this shell.
 // Everything else that has real session/data semantics goes through the generic sidecar_call,
 // which forwards to the Node domain service (src/main/service.ts, unmodified) over a private
-// stdin/stdout pipe. Commands that are still genuinely unresolved (extensions.run needs a
-// sandboxed window Tauri doesn't have yet; the updater is a separate later phase) throw a
-// clear "not yet available" error instead of silently doing nothing.
-import { invoke } from "@tauri-apps/api/core";
+// stdin/stdout pipe. The updater has its own native commands (updates.rs) independent of the
+// sidecar: signed auto-install on eligible builds, plus plain GitHub release discovery and a
+// manual "open the release page" command on every other build (docs/UPDATES.md).
+import { invoke as tauriInvoke, type InvokeArgs } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { DriftleafApi } from "../shared/ipc";
+import type { AnnouncementItem, DriftleafApi } from "../shared/ipc";
+
+// announcement_status/announcement_check always return an object, with every field null until
+// the first successful fetch — collapse that "nothing yet" shape to `null` for callers.
+function normalizeAnnouncement(raw: Partial<AnnouncementItem> | null): AnnouncementItem | null {
+  return raw && raw.guid != null && raw.title != null && raw.checkedAt != null
+    ? {
+        guid: raw.guid,
+        title: raw.title,
+        link: raw.link ?? null,
+        pubDate: raw.pubDate ?? null,
+        description: raw.description ?? null,
+        checkedAt: raw.checkedAt,
+      }
+    : null;
+}
+
+// A Rust command that returns Err(String) rejects invoke() with that bare string, not an
+// Error. Every caller in src/renderer reports failures as
+// `err instanceof Error ? err.message : "<generic fallback>"`, so without this the real
+// message ("Incorrect passphrase", "Disk is full…") was always replaced by the fallback.
+// Normalizing here keeps the renderer shell-agnostic, as the rest of this file does.
+async function invoke<T>(command: string, args?: InvokeArgs): Promise<T> {
+  try {
+    return await tauriInvoke<T>(command, args);
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error(typeof error === "string" ? error : String(error), { cause: error });
+  }
+}
 
 function call<T>(method: string, ...args: unknown[]): Promise<T> {
   // invoke() JSON-serializes this call to cross into Rust, and JSON.stringify turns
@@ -29,12 +58,7 @@ function call<T>(method: string, ...args: unknown[]): Promise<T> {
   // trailing undefineds here so an omitted argument reaches the sidecar as an omitted
   // argument, matching how a plain JS call (and the Electron preload) behaves.
   while (args.length > 0 && args[args.length - 1] === undefined) args.pop();
-  return invoke<T>("sidecar_call", { method, args });
-}
-
-function notSupported(name: string): () => Promise<never> {
-  return () =>
-    Promise.reject(new Error(`${name} is not yet available in this Tauri preview build`));
+  return invoke<T>("backend_call", { method, args });
 }
 
 export const tauriDriftleafApi: DriftleafApi = {
@@ -50,7 +74,26 @@ export const tauriDriftleafApi: DriftleafApi = {
     hasPassphrase: (rootPath) => call("vault.hasPassphrase", rootPath),
     healthCheck: () => call("vault.healthCheck"),
     verifyBackup: (rootPath, passphrase) => invoke("verify_backup", { rootPath, passphrase }),
+    changePassphrase: (currentPassphrase, newPassphrase) =>
+      call("vault.changePassphrase", currentPassphrase, newPassphrase),
+    exportPlaintext: () => invoke("export_branch"),
     lock: () => call("vault.lock"),
+  },
+  trash: {
+    list: () => call("trash.list"),
+    restore: (kind, id) => call("trash.restore", kind, id),
+    purge: (kind, id) => call("trash.purge", kind, id),
+    empty: () => call("trash.empty"),
+  },
+  attachments: {
+    add: (name, mimeType, dataBase64) => call("attachments.add", name, mimeType, dataBase64),
+    read: (id) => call("attachments.read", id),
+    list: () => call("attachments.list"),
+    listUsage: () => call("attachments.listUsage"),
+    remove: (id) => call("attachments.remove", id),
+    saveCopy: (id) => invoke<boolean>("save_attachment", { id }),
+    unused: () => call("attachments.unused"),
+    removeUnused: () => call("attachments.removeUnused"),
   },
   notes: {
     list: (folderPath) => call("notes.list", folderPath),
@@ -114,7 +157,13 @@ export const tauriDriftleafApi: DriftleafApi = {
     check: () => invoke("update_check"),
     download: () => invoke("update_download"),
     install: () => invoke("update_install"),
-    openDownload: notSupported("updates.openDownload"),
+    openDownload: () => invoke("update_open_download"),
+  },
+  announcements: {
+    status: () =>
+      invoke<Partial<AnnouncementItem> | null>("announcement_status").then(normalizeAnnouncement),
+    check: () =>
+      invoke<Partial<AnnouncementItem> | null>("announcement_check").then(normalizeAnnouncement),
   },
   events: {
     onCloseCancelled: (callback) => {
@@ -145,6 +194,13 @@ export const tauriDriftleafApi: DriftleafApi = {
       const unlisten = listen<import("../shared/ipc").UpdateStatus>(
         "driftleaf:updateStatus",
         (event) => callback(event.payload),
+      );
+      return () => void unlisten.then((fn) => fn());
+    },
+    onAnnouncementStatus: (callback) => {
+      const unlisten = listen<Partial<AnnouncementItem>>(
+        "driftleaf:announcementStatus",
+        (event) => callback(normalizeAnnouncement(event.payload)),
       );
       return () => void unlisten.then((fn) => fn());
     },

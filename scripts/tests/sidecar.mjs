@@ -9,6 +9,13 @@ import { pathToFileURL } from "node:url";
 const root = process.env.DRIFTLEAF_TEST_BACKEND || path.resolve(import.meta.dirname, "../..");
 const nodeBinary = process.env.DRIFTLEAF_TEST_BACKEND
   ? path.join(root, process.platform === "win32" ? "node.exe" : "node") : process.execPath;
+const rustBackend = process.env.DRIFTLEAF_TEST_RUST_BACKEND
+  ? path.resolve(
+      import.meta.dirname,
+      "../../crates/driftleaf-core/target/release/examples/service_stdio" +
+        (process.platform === "win32" ? ".exe" : ""),
+    )
+  : null;
 function frame(value) {
   const body = Buffer.from(JSON.stringify(value));
   const header = Buffer.alloc(4);
@@ -24,16 +31,25 @@ async function fixture(run) {
   const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), "driftleaf-sidecar-")));
   const children = [];
   function start() {
+    // DRIFTLEAF_TEST_RUST_BACKEND=1 runs every test in this file against the Rust service
+    // (the backend the app ships) instead of the Node reference implementation. Both must
+    // pass the same protocol and behaviour checks.
+    const [command, commandArgs] = rustBackend
+      ? [rustBackend, []]
+      : [
+          nodeBinary,
+          [
+            "--experimental-strip-types",
+            "--loader",
+            // A raw Windows path (D:\...) is parsed as a URL with scheme "d" and rejected;
+            // pathToFileURL produces a real file:// URL on every platform instead.
+            pathToFileURL(path.join(root, "scripts/tests/typescript-loader.mjs")).href,
+            path.join(root, "sidecar/index.mjs"),
+          ],
+        ];
     const child = spawn(
-      nodeBinary,
-      [
-        "--experimental-strip-types",
-        "--loader",
-        // A raw Windows path (D:\...) is parsed as a URL with scheme "d" and rejected;
-        // pathToFileURL produces a real file:// URL on every platform instead.
-        pathToFileURL(path.join(root, "scripts/tests/typescript-loader.mjs")).href,
-        path.join(root, "sidecar/index.mjs"),
-      ],
+      command,
+      commandArgs,
       {
         cwd: root,
         env: {
@@ -140,7 +156,7 @@ test(
         /already open/,
       );
       await first.request("vault.lock");
-      await assert.rejects(first.request("notes.read", [note.id]), /No vault is unlocked/);
+      await assert.rejects(first.request("notes.read", [note.id]), /No branch is unlocked/);
       await second.request("vault.unlock", [branch, "test passphrase"]);
       assert.equal(await second.request("notes.read", [note.id]), "privatecanaryword 🪴");
       await second.request("vault.lock");

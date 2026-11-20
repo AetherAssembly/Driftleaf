@@ -7,7 +7,7 @@ import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 function SidebarActionIcon({
   name,
 }: {
-  name: "graph" | "canvas" | "import" | "folder" | "extensions";
+  name: "graph" | "canvas" | "import" | "folder" | "extensions" | "trash";
 }) {
   return (
     <svg
@@ -47,6 +47,9 @@ function SidebarActionIcon({
           <path d="M10 8.5v5M7.5 11h5" />
         </>
       )}
+      {name === "trash" && (
+        <path d="M3.5 5.5h13M8 5.5V4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M5 5.5l.8 10.1a1.5 1.5 0 0 0 1.5 1.4h5.4a1.5 1.5 0 0 0 1.5-1.4L15 5.5M8.5 9v5M11.5 9v5" />
+      )}
       {name === "extensions" && (
         <path d="M7 3.5h2a1.5 1.5 0 1 1 3 0h2a2 2 0 0 1 2 2V8h-1a2 2 0 1 0 0 4h1v2.5a2 2 0 0 1-2 2h-2.5v-1a2 2 0 1 0-4 0v1H5a2 2 0 0 1-2-2V12h1a2 2 0 1 0 0-4H3V5.5a2 2 0 0 1 2-2h2z" />
       )}
@@ -75,6 +78,8 @@ interface SidebarProps {
   onLock: () => void;
   onOpenSettings: () => void;
   onOpenExtensions: () => void;
+  onOpenTrash: () => void;
+  trashCount: number;
   graphOpen: boolean;
   canvasOpen: boolean;
   onOpenGraph: () => void;
@@ -110,6 +115,8 @@ export function Sidebar({
   onLock,
   onOpenSettings,
   onOpenExtensions,
+  onOpenTrash,
+  trashCount,
   graphOpen,
   canvasOpen,
   onOpenGraph,
@@ -485,6 +492,21 @@ export function Sidebar({
         <Button variant="ghost" size="sm" onClick={onOpenExtensions} aria-label="Open extensions" title="Extensions">
           {collapsed ? <SidebarActionIcon name="extensions" /> : "Extensions"}
         </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onOpenTrash}
+          aria-label={trashCount > 0 ? `Open Trash, ${trashCount} item(s)` : "Open Trash"}
+          title="Trash"
+        >
+          {collapsed ? (
+            <SidebarActionIcon name="trash" />
+          ) : trashCount > 0 ? (
+            `Trash (${trashCount})`
+          ) : (
+            "Trash"
+          )}
+        </Button>
         <Button variant="ghost" size="sm" onClick={onOpenSettings} aria-label="Open settings" title="Settings">
           {collapsed ? "⚙" : "Settings"}
         </Button>
@@ -504,8 +526,8 @@ export function Sidebar({
 
       <Modal open={!!deletingFolder} onClose={() => setDeletingFolder(null)} title="Delete folder?">
         <p>
-          &ldquo;{deletingFolder?.split("/").pop()}&rdquo; and all notes inside it will be
-          permanently deleted.
+          &ldquo;{deletingFolder?.split("/").pop()}&rdquo; will be removed, and every note and
+          database inside it will be moved to Trash, where you can restore them for 30 days.
         </p>
         <div className="modal-actions">
           <Button variant="ghost" size="sm" onClick={() => setDeletingFolder(null)}>
@@ -519,7 +541,7 @@ export function Sidebar({
               setDeletingFolder(null);
             }}
           >
-            Yes, delete
+            Move to Trash
           </Button>
         </div>
       </Modal>

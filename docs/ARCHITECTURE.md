@@ -14,17 +14,32 @@ and you choose where its folder lives.
 
 Notes, database contents, and branch organization are encrypted while stored.
 The branch passphrase protects the encryption key; Driftleaf does not keep a
-copy and cannot reset a forgotten passphrase. Note titles, folder names,
-database details, extensions, and canvas layout are encrypted along with the
-content. On disk, encrypted notes use opaque filenames rather than their
-titles.
+copy and cannot reset a forgotten passphrase. You can change the passphrase
+while the branch is unlocked: the key itself stays the same and is re-sealed
+under the new passphrase, so nothing has to be re-encrypted (see
+[Branch Recovery](RECOVERY.md#changing-your-passphrase) for what that does and
+does not protect against). Note titles, folder names, database details,
+attachment names, extensions, and canvas layout are encrypted along with the
+content. On disk, encrypted notes and attachments use opaque filenames rather
+than their titles.
+
+Images and files added to a note are encrypted the same way and stored beside
+the notes. The editor displays only images that are attachments in the branch;
+it never loads an image from a web address, so opening a note cannot make a
+network request.
+
+Deleting a note or database moves it to Trash for 30 days. It stays encrypted
+on disk during that time and is removed afterwards, or sooner if you empty
+Trash.
 
 When a branch is unlocked, Driftleaf decrypts the information needed for the
 open session. Search and note-link information are kept in memory and cleared
 when the branch is locked. They are not saved as a separate, unencrypted index.
 
 Driftleaf does not send branch contents to an account or cloud service. Optional
-update checks request public release information from GitHub; community
+update checks request public release information from GitHub, and with the
+same setting on, Driftleaf reads the project's public announcement feed once
+per launch; community
 galleries request public release information and assets when opened or
 refreshed. Those services receive ordinary network request metadata, but not
 your notes or account identity. See [Software Updates](UPDATES.md) and
@@ -43,13 +58,23 @@ automatically, but lost metadata or a forgotten passphrase cannot be
 reconstructed. See [Branch Recovery](RECOVERY.md) for backup and recovery
 details.
 
+There is no built-in sync. [Sync, Multiple Devices, and Mobile](SYNC.md)
+covers what is and is not safe if you sync the folder yourself.
+
+A branch can be exported at any time as a dated, unencrypted `.zip` archive
+containing ordinary Markdown, CSV, JSON, and attachment files that need nothing
+from Driftleaf to read.
+
 ## Notes, links, and search
 
-Notes use Markdown and include a live preview. Search covers note titles and
-content in the unlocked branch. Links written as
-`[[Note title]]` appear in previews and connect notes in the graph. A folder
-path can distinguish notes with duplicate titles, as in
-`[[Projects/Driftleaf]]`; unresolved or ambiguous links remain ordinary text.
+Notes use Markdown, rendered inline as you type (a Source mode is available
+for editing the raw Markdown directly). Fenced code blocks are syntax
+highlighted, and Ctrl/Cmd+F finds and replaces within the open note. Search
+covers note titles and content in the unlocked branch, from the sidebar or
+from the Ctrl/Cmd+K palette. Links written as `[[Note title]]` render as clickable
+links in the editor and connect notes in the graph. A folder path can
+distinguish notes with duplicate titles, as in `[[Projects/Driftleaf]]`;
+unresolved or ambiguous links remain ordinary text.
 
 The graph and backlinks are derived from the notes currently available in the
 unlocked branch. They are not separate copies of note content.
@@ -81,19 +106,14 @@ unsigned macOS builds link to releases for manual installation. See
 
 ## Desktop shell and storage backend
 
-As of v0.7.0, Driftleaf ships as a Tauri 2 app — Electron has been fully removed. Rust
-owns native dialogs, window identity, the close/flush handshake, the global quick-capture
-shortcut, external-link handling, and updater routing. Branch storage itself still runs
-through the same Node domain service (`src/main/service.ts` and the modules it composes),
-reached as a sidecar child process over a private framed stdin/stdout protocol — this is
-a deliberate choice for v0.7.0, not a remaining migration step to rush. The branch format
-is unchanged throughout.
+Driftleaf ships as a Tauri 2 desktop app. The Rust shell owns native dialogs, window
+lifecycle, the global quick-capture shortcut, external-link handling, updates, and the
+active storage backend. `src-tauri` links `driftleaf-core` directly; its `Service` owns
+the unlocked branch, writer lock, in-memory search index, and renderer-facing commands.
+The branch format is unchanged.
 
-A separate `driftleaf-core` Rust crate (`crates/driftleaf-core`) independently proves the
-full storage-logic surface against the real Node implementation — crypto, every branch
-entity's read/write, backup, file/zip/template import, the formula evaluator, database
-export, and FTS5 search with the wikilink note graph — as a complete, tested compatibility
-layer. Swapping it in to replace the Node sidecar as the active backend is **under
-consideration for a future release**, not yet started or scheduled: it would need a new
-session-lifecycle layer in Rust (nothing in `src-tauri` calls into `driftleaf-core` today),
-a full `reconcileVault()` port, and re-verifying every workflow against it.
+The interface remains a React/TypeScript webview. Node.js is used for frontend
+development/build tools and the Node-based reference and compatibility tests, but the
+desktop app neither bundles a Node runtime nor starts a Node sidecar. The old
+`sidecar/index.mjs` is retained only for the test harness and browser-based UI development.
+It is not the production backend.

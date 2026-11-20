@@ -341,13 +341,21 @@ export function DatabaseView({ databaseId, onDeleted, onRenamed }: DatabaseViewP
     try {
       await draftWrites.flush();
       const row = await window.driftleaf.databases.createRow(databaseId);
-      const nextRow = {
-        ...row,
-        values: { ...row.values, [property.id]: localDateKey(date) },
-      };
-      const nextData = { ...data, rows: [...data.rows, nextRow] };
-      setData(nextData);
-      await save(nextData);
+      // Merge onto whatever `data` actually is by the time this resolves, not the value
+      // captured when the function was called — a cell edit or another row op can commit
+      // during either await above, and basing the merge on a stale snapshot would silently
+      // revert it. The functional updater always sees React's latest state.
+      let nextData: DatabaseData | null = null;
+      setData((current) => {
+        if (!current) return current;
+        const nextRow = {
+          ...row,
+          values: { ...row.values, [property.id]: localDateKey(date) },
+        };
+        nextData = { ...current, rows: [...current.rows, nextRow] };
+        return nextData;
+      });
+      if (nextData) await save(nextData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add calendar row");
     } finally {
@@ -370,7 +378,9 @@ export function DatabaseView({ databaseId, onDeleted, onRenamed }: DatabaseViewP
 
   async function deleteDatabase() {
     if (
-      !window.confirm(`Delete the "${data?.meta.title ?? "database"}" database and all its rows?`)
+      !window.confirm(
+        `Move the "${data?.meta.title ?? "database"}" database and all its rows to Trash? You can restore it from there for 30 days.`,
+      )
     ) {
       return;
     }
