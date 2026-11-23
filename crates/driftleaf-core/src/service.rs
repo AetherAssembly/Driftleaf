@@ -567,6 +567,10 @@ impl Service {
                 self.branch_mut()?.update_canvas(value(args, 0))?;
                 Ok(Value::Null)
             }
+            "personalization.read" => Ok(self.branch()?.read_personalization()),
+            "personalization.update" => {
+                self.branch_mut()?.update_personalization(&value(args, 0))
+            }
             // Updates belong to the desktop shell (src-tauri/src/updates.rs). This is what the
             // service reports when it is driven without one.
             "updates.status" => Ok(json!({

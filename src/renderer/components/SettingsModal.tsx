@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Input, Modal } from "@aetherAssembly/ui";
-import type { AppSettings, UpdateStatus } from "../../shared/ipc";
+import type { AppSettings, BranchPersonalization, UpdateStatus } from "../../shared/ipc";
 import { SecuritySettings } from "./SecuritySettings";
 
 type SettingsTab = "appearance" | "editor" | "updates" | "vault" | "about";
@@ -15,7 +15,9 @@ interface SettingsModalProps {
   onDownloadUpdate: () => void;
   onInstallUpdate: () => void;
   onOpenUpdateDownload: () => void;
-  onPatch: (update: Partial<AppSettings>) => void;
+  onPatch: (update: Partial<AppSettings>) => Promise<void>;
+  personalization: BranchPersonalization;
+  onSavePersonalization: (value: BranchPersonalization) => Promise<void>;
 }
 
 export function SettingsModal({
@@ -29,9 +31,18 @@ export function SettingsModal({
   onInstallUpdate,
   onOpenUpdateDownload,
   onPatch,
+  personalization,
+  onSavePersonalization,
 }: SettingsModalProps) {
   const [fontSize, setFontSize] = useState(settings.editorFontSizePx);
   const [autosave, setAutosave] = useState(settings.autosaveIntervalMs);
+  const [customCss, setCustomCss] = useState(settings.customCss);
+  const [customCssStatus, setCustomCssStatus] = useState<string | null>(null);
+  const [customCssBusy, setCustomCssBusy] = useState(false);
+  const [displayName, setDisplayName] = useState(personalization.displayName);
+  const [greetingLines, setGreetingLines] = useState(personalization.greetingLines.join("\n"));
+  const [personalizationStatus, setPersonalizationStatus] = useState<string | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [tab, setTab] = useState<SettingsTab>("appearance");
   const fontDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autosaveDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -40,6 +51,15 @@ export function SettingsModal({
     setFontSize(settings.editorFontSizePx);
     setAutosave(settings.autosaveIntervalMs);
   }, [settings.editorFontSizePx, settings.autosaveIntervalMs]);
+
+  useEffect(() => {
+    setCustomCss(settings.customCss);
+  }, [settings.customCss]);
+
+  useEffect(() => {
+    setDisplayName(personalization.displayName);
+    setGreetingLines(personalization.greetingLines.join("\n"));
+  }, [personalization]);
 
   useEffect(
     () => () => {
@@ -52,26 +72,69 @@ export function SettingsModal({
   function handleFontSize(value: number) {
     setFontSize(value);
     if (fontDebounce.current) clearTimeout(fontDebounce.current);
-    fontDebounce.current = setTimeout(() => onPatch({ editorFontSizePx: value }), 300);
+    fontDebounce.current = setTimeout(() => void patchSettings({ editorFontSizePx: value }), 300);
   }
 
   function handleAutosave(value: number) {
     setAutosave(value);
     if (autosaveDebounce.current) clearTimeout(autosaveDebounce.current);
-    autosaveDebounce.current = setTimeout(() => onPatch({ autosaveIntervalMs: value }), 300);
+    autosaveDebounce.current = setTimeout(
+      () => void patchSettings({ autosaveIntervalMs: value }),
+      300,
+    );
   }
 
-  const themes: Array<{ value: AppSettings["theme"]; label: string; color: string }> = [
-    { value: "system", label: "System", color: "linear-gradient(135deg,#f8faf8 50%,#24352a 50%)" },
-    { value: "light", label: "Light", color: "#f3f5f2" },
-    { value: "dark", label: "Dark", color: "#1a211c" },
-    { value: "aquatic", label: "Aquatic", color: "#10262d" },
-    { value: "mossy", label: "Mossy", color: "#1e2819" },
-    { value: "sunset", label: "Sunset", color: "#302026" },
-    { value: "space", label: "Space", color: "#171b35" },
-    { value: "cherry", label: "Cherry", color: "#321c26" },
-    { value: "arctic", label: "Arctic", color: "#142633" },
-    { value: "amber", label: "Amber", color: "#302516" },
+  async function patchSettings(update: Partial<AppSettings>) {
+    try {
+      await onPatch(update);
+      setSettingsError(null);
+    } catch (error) {
+      setSettingsError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function saveCustomCss(css: string) {
+    setCustomCssBusy(true);
+    setCustomCssStatus(null);
+    try {
+      await onPatch({ customCss: css });
+      setCustomCssStatus(css ? "Custom CSS applied." : "Custom CSS cleared.");
+    } catch (error) {
+      setCustomCssStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCustomCssBusy(false);
+    }
+  }
+
+  async function savePersonalization() {
+    setPersonalizationStatus(null);
+    try {
+      await onSavePersonalization({
+        displayName,
+        greetingLines: greetingLines.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+      });
+      setPersonalizationStatus("Personalization saved to this encrypted branch.");
+    } catch (error) {
+      setPersonalizationStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  const themes: Array<{
+    value: AppSettings["theme"];
+    label: string;
+    color: string;
+    accent: string;
+  }> = [
+    { value: "system", label: "System", color: "linear-gradient(135deg,#f8faf8 50%,#24352a 50%)", accent: "#4f7a5c" },
+    { value: "light", label: "Light", color: "#f3f5f2", accent: "#4f7a5c" },
+    { value: "dark", label: "Dark", color: "#1a211c", accent: "#78a886" },
+    { value: "aquatic", label: "Aquatic", color: "#10262d", accent: "#3bbfc0" },
+    { value: "mossy", label: "Mossy", color: "#1e2819", accent: "#9bbd72" },
+    { value: "sunset", label: "Sunset", color: "#302026", accent: "#ff9f6e" },
+    { value: "space", label: "Space", color: "#171b35", accent: "#a89cff" },
+    { value: "cherry", label: "Cherry", color: "#321c26", accent: "#f28caf" },
+    { value: "arctic", label: "Arctic", color: "#142633", accent: "#72c9e8" },
+    { value: "amber", label: "Amber", color: "#302516", accent: "#efb957" },
   ];
   const tabs: Array<{ id: SettingsTab; label: string; detail: string }> = [
     { id: "appearance", label: "Appearance", detail: "Theme and color" },
@@ -84,6 +147,10 @@ export function SettingsModal({
     ? (settings.lastVaultPath.split(/[\\/]/).pop() ?? settings.lastVaultPath)
     : null;
   const busy = updateStatus.state === "checking" || updateStatus.state === "downloading";
+  const activeTheme =
+    settings.theme === "system" ? (document.documentElement.dataset.theme ?? "light") : settings.theme;
+  const defaultAccent =
+    themes.find((theme) => theme.value === activeTheme)?.accent ?? "#4f7a5c";
 
   return (
     <Modal open={open} onClose={onClose} title="Settings">
@@ -116,7 +183,7 @@ export function SettingsModal({
                     type="button"
                     key={theme.value}
                     className={`settings__theme-card${settings.theme === theme.value ? " settings__theme-card--active" : ""}`}
-                    onClick={() => onPatch({ theme: theme.value })}
+                    onClick={() => void patchSettings({ theme: theme.value })}
                     aria-pressed={settings.theme === theme.value}
                   >
                     <span className="settings__theme-swatch" style={{ background: theme.color }}>
@@ -130,6 +197,109 @@ export function SettingsModal({
                 System follows your operating-system color preference. The remaining palettes are
                 dark themes.
               </p>
+              <div className="settings__field">
+                <label className="settings__color-label" htmlFor="settings-accent-color">
+                  Accent color
+                  <input
+                    id="settings-accent-color"
+                    type="color"
+                    value={settings.accentColor ?? defaultAccent}
+                    onChange={(event) => void patchSettings({ accentColor: event.target.value })}
+                  />
+                </label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!settings.accentColor}
+                  onClick={() => void patchSettings({ accentColor: null })}
+                >
+                  Use theme accent
+                </Button>
+              </div>
+              <div className="settings__field settings__custom-css">
+                <label htmlFor="settings-custom-css">Custom CSS</label>
+                <textarea
+                  id="settings-custom-css"
+                  value={customCss}
+                  onChange={(event) => {
+                    setCustomCss(event.target.value);
+                    setCustomCssStatus(null);
+                  }}
+                  rows={7}
+                  maxLength={65_536}
+                  spellCheck={false}
+                  aria-describedby="settings-custom-css-hint"
+                />
+                <p id="settings-custom-css-hint" className="settings__hint">
+                  Applies across branches. External resources, imports, and CSS escapes are blocked
+                  to keep branch contents private.
+                </p>
+                <div className="settings__actions">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={customCssBusy}
+                    disabled={customCssBusy || customCss === settings.customCss}
+                    onClick={() => void saveCustomCss(customCss)}
+                  >
+                    Apply custom CSS
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={customCssBusy || (!customCss && !settings.customCss)}
+                    onClick={() => {
+                      setCustomCss("");
+                      void saveCustomCss("");
+                    }}
+                  >
+                    Clear custom CSS
+                  </Button>
+                </div>
+                {customCssStatus && <p className="settings__hint" role="status">{customCssStatus}</p>}
+              </div>
+              <div className="settings__field">
+                <span className="settings__field-label">Welcome greeting</span>
+                <Input
+                  type="text"
+                  label="Display name"
+                  value={displayName}
+                  maxLength={80}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                  hint="Stored only in this encrypted branch."
+                />
+                <label className="settings__textarea-label" htmlFor="settings-greeting-lines">
+                  Custom greeting lines
+                </label>
+                <textarea
+                  id="settings-greeting-lines"
+                  value={greetingLines}
+                  onChange={(event) => setGreetingLines(event.target.value)}
+                  rows={4}
+                  maxLength={3_400}
+                  placeholder={"Take it one note at a time.\nA fresh page is a small beginning."}
+                  aria-describedby="settings-greeting-lines-hint"
+                />
+                <p id="settings-greeting-lines-hint" className="settings__hint">
+                  One line is chosen each day alongside Driftleaf&rsquo;s built-in greetings. Up to
+                  20 lines, 160 characters each.
+                </p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={
+                    displayName === personalization.displayName &&
+                    greetingLines === personalization.greetingLines.join("\n")
+                  }
+                  onClick={() => void savePersonalization()}
+                >
+                  Save personalization
+                </Button>
+                {personalizationStatus && (
+                  <p className="settings__hint" role="status">{personalizationStatus}</p>
+                )}
+              </div>
+              {settingsError && <p className="settings__error" role="alert">{settingsError}</p>}
             </section>
           )}
 
@@ -160,6 +330,7 @@ export function SettingsModal({
                   hint="200–5000 ms after you stop typing."
                 />
               </div>
+              {settingsError && <p className="settings__error" role="alert">{settingsError}</p>}
             </section>
           )}
 

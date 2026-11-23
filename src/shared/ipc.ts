@@ -4,6 +4,8 @@
 export interface AppSettings {
   lastVaultPath: string | null;
   theme: Theme;
+  accentColor: string | null;
+  customCss: string;
   editorFontSizePx: number;
   autosaveIntervalMs: number;
   checkUpdatesAutomatically: boolean;
@@ -26,6 +28,11 @@ export type Theme =
   | "amber";
 
 export type VaultTemplateId = "blank" | "general" | "productivity" | "journal" | "study";
+
+export interface BranchPersonalization {
+  displayName: string;
+  greetingLines: string[];
+}
 
 export type DatabasePropertyType =
   | "title"
@@ -301,6 +308,10 @@ export interface DriftleafApi {
     // .zip in a folder the user picks. Resolves null if the folder picker was cancelled.
     exportPlaintext(): Promise<PlaintextExportResult | null>;
     lock(): Promise<void>;
+  };
+  personalization: {
+    read(): Promise<BranchPersonalization>;
+    update(value: BranchPersonalization): Promise<BranchPersonalization>;
   };
   notes: {
     list(folderPath?: string): Promise<NoteMeta[]>;

@@ -646,6 +646,50 @@ body {
   background: var(--ae-color-bg, transparent);
 }
 
+.settings__color-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings__color-label input {
+  width: 52px;
+  height: 36px;
+  padding: 2px;
+  border: 1px solid var(--ae-color-border, #ddd);
+  border-radius: 7px;
+  background: var(--ae-color-bg, transparent);
+  cursor: pointer;
+}
+
+.settings__custom-css,
+.settings__field:has(textarea) {
+  display: grid;
+  gap: 9px;
+}
+
+.settings__field-label {
+  font-weight: 650;
+}
+
+.settings__custom-css textarea,
+.settings__field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px;
+  border: 1px solid var(--ae-color-border, #ddd);
+  border-radius: 8px;
+  color: var(--ae-color-text, inherit);
+  background: var(--ae-color-surface, #fff);
+  font: 0.85em/1.5 var(--ae-font-mono, monospace);
+  resize: vertical;
+}
+
+.settings__error {
+  color: var(--ae-color-danger, #c0392b);
+}
+
 .settings__update-card,
 .settings__vault-card,
 .settings__tools-card {
@@ -2182,6 +2226,29 @@ body {
 .main__empty {
   margin: auto;
   opacity: 0.6;
+}
+
+.main__welcome {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 28px;
+  text-align: center;
+  opacity: 1;
+}
+
+.main__welcome h1,
+.main__welcome p {
+  margin: 0;
+}
+
+.main__welcome h1 {
+  color: var(--ae-color-text, inherit);
+  font-size: clamp(1.5rem, 3vw, 2.2rem);
+}
+
+.main__welcome p {
+  color: var(--ae-color-text-muted, #666);
 }
 
 .editor {

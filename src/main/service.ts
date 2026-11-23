@@ -15,6 +15,7 @@ import { SerialQueue } from "../shared/serial-queue";
 import type {
   AppDiagnostics,
   AppSettings,
+  BranchPersonalization,
   CanvasItem,
   DatabaseExportFormat,
   DatabaseProperty,
@@ -281,6 +282,12 @@ export function createDriftleafService(host: ServiceHost): DriftleafService {
         return exportBranchPlaintext(vault, destination);
       }),
       lock: () => lockSession(),
+    },
+    personalization: {
+      read: serializedCommand(() => vaultModule.readPersonalization(requireVault())),
+      update: serializedCommand((value: BranchPersonalization) =>
+        vaultModule.updatePersonalization(requireVault(), value),
+      ),
     },
     trash: {
       list: serializedCommand(() => vaultModule.listTrash(requireVault())),
