@@ -179,13 +179,14 @@ these release builds comes from `src-tauri/tauri.release.conf.json` (merged over
 `src-tauri/tauri.conf.json`). The bundle contains the Tauri app and its Rust backend; it
 does not contain a Node runtime or sidecar. Node is only needed on the build/test machine.
 
-Signed auto-updates are off by default for this release — see
-[docs/UPDATES.md](UPDATES.md) for current status.
+For a local-only unsigned package without that key, append
+`--config '{"bundle":{"createUpdaterArtifacts":false}}'` to the build command.
+See [docs/UPDATES.md](UPDATES.md) for updater status.
 
 ### Versioning during development
 
 ```sh
-node scripts/tauri/version.mjs 0.8.1
+node scripts/tauri/version.mjs 0.8.2
 ```
 
 Syncs `package.json`/`package-lock.json`/`src-tauri/tauri.conf.json`/`Cargo.toml`/
@@ -235,6 +236,26 @@ These are automatically added to your package's dependency list but good to know
 chmod +x "Driftleaf_*.AppImage"
 "./Driftleaf_<version>_amd64.AppImage"
 ```
+
+#### **`failed to run linuxdeploy` while building an AppImage**
+
+If the log reports that the release binary was built before this error, Rust
+compilation succeeded but AppImage bundling failed. A verbose build may reveal
+the cause, such as `Could not find dependency: libjxl.so.0.12` when WebKitGTK
+expects that ABI but the system only has a newer `libjxl.so.0.13`. Point
+`LD_LIBRARY_PATH` at a directory containing compatible libraries (including
+`libjxl.so.0.12` and `libjxl_cms.so.0.12`):
+
+```sh
+LD_LIBRARY_PATH=/path/to/compatible-libraries npm run package:tauri -- --bundles appimage --config '{"bundle":{"createUpdaterArtifacts":false}}'
+```
+
+The config override is only for local unsigned packages without the updater
+signing key; omit it for release builds. Do not symlink a newer incompatible
+SONAME to the missing version. If the error names a different dependency, use a
+compatible build of that dependency instead.
+
+You can download the proper binaries for libjxl from your Distro's Package Archive, or from the [libjxl repo](https://github.com/libjxl/libjxl)
 
 #### **Window opens but stays blank on Linux**
 

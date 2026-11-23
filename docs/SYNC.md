@@ -18,9 +18,10 @@ No. Driftleaf runs on Linux, macOS, and Windows.
 ## Can I keep a branch in Syncthing, Dropbox, iCloud Drive, a NAS, or similar?
 
 You can, and everything those tools see is ciphertext: note contents, titles,
-folder names, database contents, and attachments are all encrypted before they
-reach disk. The file-sync provider learns only how many notes and attachments
-you have, roughly how large each is, and when they change.
+folder names, display names, custom greetings, database contents, and
+attachments are all encrypted before they reach disk. The file-sync provider
+learns only how many notes and attachments you have, roughly how large each is,
+and when they change.
 
 It is not a supported or tested configuration, though, and it is only safe if
 you follow one rule:
@@ -29,12 +30,12 @@ you follow one rule:
 finish completely before you open it on another.**
 
 The reason is how a branch is stored. Every note is its own file, but the
-index of the whole branch (titles, folders, Trash, attachment names) is a
-single encrypted file, `.driftleaf/manifest.enc`, that is rewritten on every
-change. If two devices change the branch before syncing with each other, the
-sync tool sees two different versions of that one file. It will keep one and
-either discard the other or save it as a "conflicted copy". Driftleaf cannot
-merge the two.
+index of the whole branch (titles, folders, Trash, attachment names, and
+personalization) is a single encrypted file, `.driftleaf/manifest.enc`, that is
+rewritten on every change. If two devices change the branch before syncing with
+each other, the sync tool sees two different versions of that one file. It will
+keep one and either discard the other or save it as a "conflicted copy".
+Driftleaf cannot merge the two.
 
 What happens then:
 
@@ -42,8 +43,8 @@ What happens then:
   next unlock re-adds any note file the surviving index does not list. Those
   notes come back titled **Recovered note** in the top-level folder, because
   their titles and folders lived in the index that lost.
-- Titles, folder placement, Trash contents, canvas layout, and extension
-  grants from the losing device are gone.
+- Titles, folder placement, display name, custom greetings, Trash contents,
+  canvas layout, and extension grants from the losing device are gone.
 - Databases that only the losing index knew about are not re-added
   automatically. The health check reports them as unindexed files.
 

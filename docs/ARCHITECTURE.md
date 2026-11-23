@@ -45,6 +45,16 @@ refreshed. Those services receive ordinary network request metadata, but not
 your notes or account identity. See [Software Updates](UPDATES.md) and
 [Community extensions and templates](COMMUNITY.md).
 
+## Personalization and appearance
+
+The optional display name and custom greeting lines are stored in the encrypted
+branch manifest. The empty-workspace welcome combines custom lines with built-in
+greetings and chooses one deterministically by local date.
+
+Accent color and custom CSS are global app settings that apply across branches.
+Custom CSS is validated to prevent it from loading external resources; it cannot
+make a network request on behalf of an open branch.
+
 ## Branch files and backups
 
 A branch is a regular folder with a hidden `.driftleaf` directory containing

@@ -17,6 +17,7 @@ A private, local-first notes app for your desktop. Your branch stays on your com
 - **Truly private** - All notes are encrypted on your disk. Driftleaf developers never see your data.
 - **You own it** - No accounts to create, no cloud lock-in. Your branch is just a folder on your computer.
 - **Fast & responsive** - Everything runs locally. No waiting for the cloud or dealing with sync conflicts.
+- **Make it yours** - Add a display name and custom greetings to the empty workspace, then customize the global accent color and CSS.
 - **Write anywhere** - Headings, bold, links, and more render inline as you type, with raw Markdown a toggle away in Source mode. Code blocks are syntax highlighted.
 - **Images and files, encrypted too** - Paste or attach an image or file and it is encrypted into the branch with your notes. Driftleaf never loads images from the web.
 - **Hard to lose things** - Deleted notes and databases wait in Trash for 30 days. Writes are atomic and checked on every unlock.

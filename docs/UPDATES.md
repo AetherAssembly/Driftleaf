@@ -5,14 +5,10 @@ The installed version and update status appear in **Settings → Updates** and
 the branch unlock screen. Update checks can be disabled in Settings, and
 **Check for updates** remains available on demand.
 
-## Current status: manual updates everywhere
-
-No signed updater key or update manifest is configured, so every
-build — Windows, macOS, and Linux — reports updates as manual: Driftleaf shows that a
-newer release is available and links to it, but doesn't download or install it
-automatically. Signed, in-app automatic updates are implemented and ready in the Rust
-shell for Windows (and, once code-signed and notarized, macOS), but need a key and
-hosted manifest before they turn on.
+The Windows installer supports unsigned in-app updates: Driftleaf downloads an
+available update after **Download update** is selected, with installation beginning
+after confirmation with **Restart to install**. The Windows executable is not code-signed.
+Unsigned macOS builds do not install updates automatically and require manual installation.
 
 ## Installing an update
 
@@ -21,8 +17,7 @@ hosted manifest before they turn on.
   beginning after confirmation with **Restart to install**. Until then, download the new
   installer from the releases page and run it.
 - **Linux:** Driftleaf reports when a newer release is available and links to
-  it. Installation follows the package or AppImage process used for the
-  current version.
+  it. Installation follows the Linux Distro's update process.
 - **macOS:** unsigned builds report releases and link to the DMG for manual
   installation.
 
