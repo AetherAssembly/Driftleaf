@@ -1,6 +1,6 @@
 # Terms of Service
 
-_Last updated: 2026-11-13_
+_Last updated: 2026-11-21_
 
 > The canonical, always-current version of this document is hosted at
 > [legal.aetherassembly.org/driftleaf/tos.html](https://legal.aetherassembly.org/driftleaf/tos.html).
