@@ -630,6 +630,10 @@ test("settings store validates accent colors and network-free custom CSS", async
     });
     assert.equal(updated.accentColor, "#4a7a5c");
     assert.equal(updated.customCss, '.app { color: red; } .note::after { content: "url(ignored)"; }');
+    assert.equal(
+      (await store.readSettings()).customCss,
+      '.app { color: red; } .note::after { content: "url(ignored)"; }',
+    );
     await assert.rejects(store.patchSettings({ accentColor: "red" }), /six-digit hex color/);
     await assert.rejects(
       store.patchSettings({

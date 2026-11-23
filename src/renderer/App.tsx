@@ -79,25 +79,32 @@ function applyTheme(
   const root = document.documentElement;
   root.setAttribute("data-theme", resolvedTheme);
   root.style.colorScheme = resolvedTheme === "light" ? "light" : "dark";
+
+  let accentStyle = document.getElementById("driftleaf-accent-css");
   if (accentColor) {
-    root.style.setProperty("--ae-color-primary", accentColor);
-    root.style.setProperty("--ae-color-primary-hover", mixAccent(accentColor, 0.1));
-    root.style.setProperty("--ae-color-primary-active", mixAccent(accentColor, 0.2));
-    root.style.setProperty("--ae-color-primary-fg", accentForeground(accentColor));
-    root.style.setProperty("--ae-color-border-focus", accentColor);
-  } else {
-    for (const property of [
-      "--ae-color-primary",
-      "--ae-color-primary-hover",
-      "--ae-color-primary-active",
-      "--ae-color-primary-fg",
-      "--ae-color-border-focus",
-    ]) {
-      root.style.removeProperty(property);
+    if (!(accentStyle instanceof HTMLStyleElement)) {
+      accentStyle = document.createElement("style");
+      accentStyle.id = "driftleaf-accent-css";
+      document.head.append(accentStyle);
     }
+    accentStyle.textContent = `:root {
+  --ae-color-primary: ${accentColor};
+  --ae-color-primary-hover: ${mixAccent(accentColor, 0.1)};
+  --ae-color-primary-active: ${mixAccent(accentColor, 0.2)};
+  --ae-color-primary-fg: ${accentForeground(accentColor)};
+  --ae-color-border-focus: ${accentColor};
+}`;
+  } else {
+    accentStyle?.remove();
   }
 
-  const safeCss = validateCustomCss(customCss);
+  let safeCss = "";
+  try {
+    safeCss = validateCustomCss(customCss);
+  } catch {
+    // Persistence validation normally prevents this, but never let stale or malformed
+    // settings stop theme application or crash the renderer.
+  }
   let style = document.getElementById("driftleaf-custom-css");
   if (!safeCss) {
     style?.remove();
