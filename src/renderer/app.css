@@ -1409,7 +1409,7 @@ body {
 
 .tools-modal__diagnostics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: 7px;
   margin: 0;
 }

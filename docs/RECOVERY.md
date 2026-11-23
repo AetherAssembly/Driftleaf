@@ -134,7 +134,7 @@ After copying, verify the backup from **Settings → Diagnostics & Branch Health
 
 The same Settings screen can run a health check on the currently open branch. It checks branch metadata, manifest consistency, encrypted note and database integrity, recoverable unindexed files, leftover temporary writes, and search-index coverage. It reports issues without attempting repairs; unlock-time reconciliation repairs supported note manifest/file mismatches. Database files missing from the manifest are reported as unindexed but are not automatically recovered.
 
-**Copy Diagnostics** in that screen copies app/platform and display-session details plus the active theme. It does not include branch paths, note contents, or passphrases.
+**Copy Diagnostics** in that screen copies the Driftleaf version, operating system and version, architecture, backend runtime, and active theme. On non-Windows systems, it also includes display-server and desktop/compositor fields. It does not include branch paths, note contents, or passphrases.
 
 The branch is just a folder — a backup can also be made manually by copying `my-vault/` (including the hidden `.driftleaf/` directory) to an external drive or another machine.
 

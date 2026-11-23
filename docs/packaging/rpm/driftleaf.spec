@@ -3,7 +3,7 @@
 %global debug_package %{nil}
 
 Name:           driftleaf
-Version:        0.8.1
+Version:        0.8.2
 Release:        1%{?dist}
 Summary:        A local-first encrypted notes, graph, and database app
 License:        AGPL-3.0-or-later

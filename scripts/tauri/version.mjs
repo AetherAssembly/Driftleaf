@@ -26,7 +26,7 @@ for (const file of ["package.json", "package-lock.json", "src-tauri/tauri.conf.j
   if (data.packages?.[""]) data.packages[""].version = version;
   await writeFile(file, JSON.stringify(data, null, 2) + "\n");
 }
-for (const file of ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock"]) {
+for (const file of ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock", "crates/driftleaf/Cargo.toml", "crates/driftleaf/Cargo.lock"]) {
   const data = await readFile(file, "utf8");
   await writeFile(file, data.replace(/(name = "driftleaf"\nversion = ")[^"]+/, "$1" + version));
 }
