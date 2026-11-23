@@ -20,6 +20,7 @@ import * as branchExport from "../../src/main/branch-export.ts";
 import * as communityCatalog from "../../src/main/community-catalog.ts";
 import { DraftWrites } from "../../src/renderer/lib/draft-writes.ts";
 import { createSettingsStore } from "../../src/main/settings-store.ts";
+import { validateCustomCss } from "../../src/shared/theme-customization.ts";
 import { mkdir, readdir } from "node:fs/promises";
 
 const require = createRequire(import.meta.url);
@@ -617,6 +618,56 @@ test("settings store only persists auto-lock values the UI offers", async () => 
     assert.equal((await store.patchSettings({ autoLockMinutes: 7 })).autoLockMinutes, 0);
     assert.equal((await store.patchSettings({ autoLockMinutes: "5" })).autoLockMinutes, 0);
     assert.equal((await store.patchSettings({ theme: "dark" })).autoLockMinutes, 0);
+  });
+});
+
+test("settings store validates accent colors and network-free custom CSS", async () => {
+  await temporaryBranch(async (directory) => {
+    const store = createSettingsStore(directory);
+    const updated = await store.patchSettings({
+      accentColor: "#4A7A5C",
+      customCss: '.app { color: red; } .note::after { content: "url(ignored)"; }',
+    });
+    assert.equal(updated.accentColor, "#4a7a5c");
+    assert.equal(updated.customCss, '.app { color: red; } .note::after { content: "url(ignored)"; }');
+    await assert.rejects(store.patchSettings({ accentColor: "red" }), /six-digit hex color/);
+    await assert.rejects(
+      store.patchSettings({
+        customCss: "/* safe */ .app { background: url/**/(https://example.test/x); }",
+      }),
+      /external resources/,
+    );
+    assert.throws(
+      () => validateCustomCss(".app { background: image-set ('remote.png' 1x); }"),
+      /external resources/,
+    );
+  });
+});
+
+test("branch personalization is encrypted, normalized, and survives reopening", async () => {
+  await temporaryBranch(async (directory) => {
+    const service = serviceHarness();
+    await service.vault.create(directory, "personalization-passphrase", "blank");
+    assert.deepEqual(await service.personalization.read(), {
+      displayName: "",
+      greetingLines: [],
+    });
+    const saved = await service.personalization.update({
+      displayName: "  Alex  ",
+      greetingLines: ["  Make room for a new idea.  ", ""],
+    });
+    assert.deepEqual(saved, {
+      displayName: "Alex",
+      greetingLines: ["Make room for a new idea."],
+    });
+    await assert.rejects(
+      service.personalization.update({ displayName: "x".repeat(81), greetingLines: [] }),
+      /80 characters or shorter/,
+    );
+    await service.vault.lock();
+    await service.vault.unlock(directory, "personalization-passphrase");
+    assert.deepEqual(await service.personalization.read(), saved);
+    await service.vault.lock();
   });
 });
 
