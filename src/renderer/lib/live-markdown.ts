@@ -1,5 +1,11 @@
 import { EditorView, Decoration, type Command, type DecorationSet, type KeyBinding, ViewPlugin, type ViewUpdate, WidgetType, keymap } from "@codemirror/view";
-import { EditorState, RangeSetBuilder, type Extension } from "@codemirror/state";
+import {
+  EditorState,
+  RangeSetBuilder,
+  StateEffect,
+  StateField,
+  type Extension,
+} from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { markdown, markdownLanguage, markdownKeymap } from "@codemirror/lang-markdown";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -9,15 +15,21 @@ import type { NoteLinkTarget } from "../../shared/note-links";
 import { resolveWikiLink } from "../../shared/note-links";
 import { codeHighlightExtension, resolveCodeLanguage } from "./code-highlight";
 import { attachmentIdFromUrl, type LoadedAttachment } from "./attachments";
+import { MathWidget, MermaidWidget, NoteEmbedWidget } from "./live-render-widgets";
 
 export interface LivePreviewRefs {
   notesRef: { current: NoteLinkTarget[] };
   onNavigateRef: { current: (id: string) => void };
   loadAttachmentRef: { current: (id: string) => Promise<LoadedAttachment> };
   onOpenAttachmentRef: { current: (id: string) => void };
+  loadNoteRef: { current: (id: string) => Promise<string> };
 }
 
 const WIKILINK_RE = /\[\[([^[\]|\n]+)(\|([^[\]\n]*))?\]\]/g;
+const NOTE_EMBED_RE = /!\[\[([^[\]|\n]+)\]\]/g;
+const INLINE_MATH_RE = /(?<!\\)\$(?!\$)([^$\n]+?)(?<!\\)\$(?!\$)/g;
+const DISPLAY_MATH_RE = /(?<!\\)\$\$([\s\S]+?)(?<!\\)\$\$/g;
+const blockPreviewFocusEffect = StateEffect.define<boolean>();
 
 const CODE_HOST_NODES = new Set(["InlineCode", "FencedCode", "CodeBlock", "HTMLBlock", "HTMLTag", "CodeText", "CodeInfo"]);
 
@@ -147,6 +159,7 @@ function collectWikiLinks(
   from: number,
   to: number,
   codeRanges: Array<{ from: number; to: number }>,
+  embedRanges: Array<{ from: number; to: number }>,
   notes: NoteLinkTarget[],
   entries: Entry[],
 ) {
@@ -157,6 +170,7 @@ function collectWikiLinks(
     const start = from + match.index;
     const end = start + match[0].length;
     if (codeRanges.some((range) => start < range.to && end > range.from)) continue;
+    if (embedRanges.some((range) => start < range.to && end > range.from)) continue;
 
     const target = match[1].trim();
     const alias = match[3]?.trim();
@@ -191,6 +205,7 @@ function buildDecorations(view: EditorView, refs: LivePreviewRefs): DecorationSe
   const entries: Entry[] = [];
   const lineClasses = new Map<number, Set<string>>();
   const codeRanges: Array<{ from: number; to: number }> = [];
+  const embedRanges: Array<{ from: number; to: number }> = [];
 
   const addLineClass = (linePos: number, cls: string) => {
     const set = lineClasses.get(linePos) ?? new Set<string>();
@@ -321,7 +336,53 @@ function buildDecorations(view: EditorView, refs: LivePreviewRefs): DecorationSe
       },
     });
 
-    collectWikiLinks(view, from, to, codeRanges, notes, entries);
+    const text = view.state.doc.sliceString(from, to);
+    NOTE_EMBED_RE.lastIndex = 0;
+    let embedMatch: RegExpExecArray | null;
+    while ((embedMatch = NOTE_EMBED_RE.exec(text))) {
+      const start = from + embedMatch.index;
+      const end = start + embedMatch[0].length;
+      if (codeRanges.some((range) => start < range.to && end > range.from)) continue;
+      embedRanges.push({ from: start, to: end });
+    }
+
+    const displayMathRanges: Array<{ from: number; to: number }> = [];
+    DISPLAY_MATH_RE.lastIndex = 0;
+    let displayMatch: RegExpExecArray | null;
+    const rangeText = view.state.doc.sliceString(from, to);
+    while ((displayMatch = DISPLAY_MATH_RE.exec(rangeText))) {
+      const start = from + displayMatch.index;
+      const end = start + displayMatch[0].length;
+      if (
+        codeRanges.some((range) => start < range.to && end > range.from) ||
+        embedRanges.some((range) => start < range.to && end > range.from)
+      ) continue;
+      displayMathRanges.push({ from: start, to: end });
+    }
+
+    for (let lineNumber = view.state.doc.lineAt(from).number; lineNumber <= view.state.doc.lineAt(to).number; lineNumber += 1) {
+      const line = view.state.doc.line(lineNumber);
+
+      INLINE_MATH_RE.lastIndex = 0;
+      let mathMatch: RegExpExecArray | null;
+      while ((mathMatch = INLINE_MATH_RE.exec(line.text))) {
+        const start = line.from + mathMatch.index;
+        const end = start + mathMatch[0].length;
+        if (
+          codeRanges.some((range) => start < range.to && end > range.from) ||
+          embedRanges.some((range) => start < range.to && end > range.from) ||
+          displayMathRanges.some((range) => start < range.to && end > range.from) ||
+          overlapsSelection(view, start, end)
+        ) continue;
+        entries.push({
+          from: start,
+          to: end,
+          deco: Decoration.replace({ widget: new MathWidget(mathMatch[1], false) }),
+        });
+      }
+    }
+
+    collectWikiLinks(view, from, to, codeRanges, embedRanges, notes, entries);
   }
 
   entries.sort((a, b) => a.from - b.from || a.to - b.to);
@@ -342,6 +403,127 @@ function buildDecorations(view: EditorView, refs: LivePreviewRefs): DecorationSe
     }
   }
   return builder.finish();
+}
+
+interface BlockPreviewState {
+  decorations: DecorationSet;
+  focused: boolean;
+}
+
+function selectionOverlaps(state: EditorState, from: number, to: number): boolean {
+  return state.selection.ranges.some((range) => range.from <= to && range.to >= from);
+}
+
+function buildBlockDecorations(
+  state: EditorState,
+  refs: LivePreviewRefs,
+  focused: boolean,
+): DecorationSet {
+  const notes = refs.notesRef.current;
+  const entries: Entry[] = [];
+  const codeRanges: Array<{ from: number; to: number }> = [];
+  const doc = state.doc;
+
+  syntaxTree(state).iterate({
+    from: 0,
+    to: doc.length,
+    enter: (ref) => {
+      if (CODE_HOST_NODES.has(ref.name) && ref.name !== "CodeText" && ref.name !== "CodeInfo") {
+        codeRanges.push({ from: ref.from, to: ref.to });
+      }
+
+      if (ref.name !== "FencedCode") return;
+      const node = ref.node;
+      const info = node.getChild("CodeInfo");
+      if (!info || doc.sliceString(info.from, info.to).trim().toLowerCase() !== "mermaid") return;
+      if (focused && selectionOverlaps(state, node.from, node.to)) return;
+
+      let source = "";
+      for (let child = node.firstChild; child; child = child.nextSibling) {
+        if (child.name === "CodeText") source += doc.sliceString(child.from, child.to);
+      }
+      entries.push({
+        from: node.from,
+        to: node.to,
+        deco: Decoration.replace({ widget: new MermaidWidget(source), block: true }),
+      });
+    },
+  });
+
+  const embedRanges: Array<{ from: number; to: number }> = [];
+  NOTE_EMBED_RE.lastIndex = 0;
+  let embedMatch: RegExpExecArray | null;
+  const text = doc.toString();
+  while ((embedMatch = NOTE_EMBED_RE.exec(text))) {
+    const from = embedMatch.index;
+    const to = from + embedMatch[0].length;
+    if (codeRanges.some((range) => from < range.to && to > range.from)) continue;
+    embedRanges.push({ from, to });
+    if (focused && selectionOverlaps(state, from, to)) continue;
+
+    const id = resolveWikiLink(embedMatch[1].trim(), notes);
+    if (!id) continue;
+    const title = notes.find((note) => note.id === id)?.title ?? embedMatch[1].trim();
+    entries.push({
+      from,
+      to,
+      deco: Decoration.replace({ widget: new NoteEmbedWidget(id, title, refs), block: true }),
+    });
+  }
+
+  DISPLAY_MATH_RE.lastIndex = 0;
+  let displayMatch: RegExpExecArray | null;
+  while ((displayMatch = DISPLAY_MATH_RE.exec(text))) {
+    const from = displayMatch.index;
+    const to = from + displayMatch[0].length;
+    if (
+      codeRanges.some((range) => from < range.to && to > range.from) ||
+      embedRanges.some((range) => from < range.to && to > range.from) ||
+      (focused && selectionOverlaps(state, from, to))
+    ) continue;
+    entries.push({
+      from,
+      to,
+      deco: Decoration.replace({ widget: new MathWidget(displayMatch[1], true), block: true }),
+    });
+  }
+
+  entries.sort((a, b) => a.from - b.from || a.to - b.to);
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const entry of entries) builder.add(entry.from, entry.to, entry.deco);
+  return builder.finish();
+}
+
+function blockPreviewExtension(refs: LivePreviewRefs): Extension {
+  const field = StateField.define<BlockPreviewState>({
+    create(state) {
+      return {
+        decorations: buildBlockDecorations(state, refs, false),
+        focused: false,
+      };
+    },
+    update(value, transaction) {
+      let focused = value.focused;
+      for (const effect of transaction.effects) {
+        if (effect.is(blockPreviewFocusEffect)) focused = effect.value;
+      }
+      const selectionChanged = !transaction.startState.selection.eq(transaction.state.selection);
+      if (!transaction.docChanged && !selectionChanged && focused === value.focused) {
+        return value;
+      }
+      return {
+        decorations: buildBlockDecorations(transaction.state, refs, focused),
+        focused,
+      };
+    },
+    provide: (field) =>
+      EditorView.decorations.from(field, (value) => value.decorations),
+  });
+
+  return [
+    field,
+    EditorView.focusChangeEffect.of((_state, focused) => blockPreviewFocusEffect.of(focused)),
+  ];
 }
 
 function createPlugin(refs: LivePreviewRefs) {
@@ -492,5 +674,44 @@ export function markdownEditingExtension(): Extension {
 
 /** The decorations that render markdown inline instead of showing raw syntax. */
 export function livePreviewExtension(refs: LivePreviewRefs): Extension {
-  return [createPlugin(refs), linkNavigationHandler(refs)];
+  return [blockPreviewExtension(refs), createPlugin(refs), linkNavigationHandler(refs)];
+}
+
+const focusLinePlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = this.build(view);
+    }
+
+    build(view: EditorView): DecorationSet {
+      const builder = new RangeSetBuilder<Decoration>();
+      const line = view.state.doc.lineAt(view.state.selection.main.head);
+      builder.add(line.from, line.from, Decoration.line({ class: "cm-focus-line" }));
+      return builder.finish();
+    }
+
+    update(update: ViewUpdate) {
+      if (update.selectionSet || update.docChanged) this.decorations = this.build(update.view);
+    }
+  },
+  { decorations: (instance) => instance.decorations },
+);
+
+export function focusModeExtension(focusMode: boolean, typewriter: boolean): Extension {
+  if (!focusMode) return [];
+  return [
+    EditorView.editorAttributes.of({ class: "cm-focus-mode" }),
+    focusLinePlugin,
+    typewriter
+      ? EditorView.updateListener.of((update) => {
+          if (update.selectionSet || update.docChanged) {
+            update.view.dispatch({
+              effects: EditorView.scrollIntoView(update.state.selection.main.head, { y: "center" }),
+            });
+          }
+        })
+      : [],
+  ];
 }

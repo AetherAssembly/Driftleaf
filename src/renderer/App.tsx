@@ -116,6 +116,8 @@ function applyTheme(
     document.head.append(style);
   }
   style.textContent = safeCss;
+  style.remove();
+  document.head.append(style);
 }
 
 function dailyGreeting(lines: string[]): string {
@@ -197,6 +199,7 @@ export default function App() {
     customCss: "",
     editorFontSizePx: 15,
     autosaveIntervalMs: 500,
+    typewriterScrolling: false,
     autoLockMinutes: 0,
     checkUpdatesAutomatically: true,
   });
@@ -355,6 +358,17 @@ export default function App() {
     systemTheme.addEventListener("change", handleSystemThemeChange);
     return () => systemTheme.removeEventListener("change", handleSystemThemeChange);
   }, [settings.theme, settings.accentColor, settings.customCss]);
+
+  useEffect(() => {
+    const head = document.head;
+    const keepCustomCssLast = () => {
+      const style = document.getElementById("driftleaf-custom-css");
+      if (style && head.lastElementChild !== style) head.append(style);
+    };
+    const observer = new MutationObserver(keepCustomCssLast);
+    observer.observe(head, { childList: true });
+    return () => observer.disconnect();
+  }, []);
 
   // Global hotkey (registered in main/index.ts) works even when the window wasn't focused.
   useEffect(() => {
@@ -1138,6 +1152,7 @@ export default function App() {
             content={content}
             saveStatus={saveStatus}
             fontSizePx={settings.editorFontSizePx}
+            typewriterMode={settings.typewriterScrolling}
             onChange={handleContentChange}
             onRenameTitle={handleRenameTitle}
             onDelete={() => void handleDeleteNote()}

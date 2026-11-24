@@ -8,6 +8,7 @@ export interface AppSettings {
   customCss: string;
   editorFontSizePx: number;
   autosaveIntervalMs: number;
+  typewriterScrolling: boolean;
   checkUpdatesAutomatically: boolean;
   // Lock the branch after this many minutes without keyboard or pointer input. 0 = never.
   autoLockMinutes: number;

@@ -17,6 +17,7 @@ const DEFAULTS: AppSettings = {
   customCss: "",
   editorFontSizePx: 15,
   autosaveIntervalMs: 500,
+  typewriterScrolling: false,
   checkUpdatesAutomatically: true,
   autoLockMinutes: 0,
 };
@@ -47,6 +48,9 @@ export function createSettingsStore(baseDir: string): SettingsStore {
     try {
       const raw = await readFile(settingsFilePath(), "utf-8");
       const settings = { ...DEFAULTS, ...(JSON.parse(raw) as Partial<AppSettings>) };
+      if (typeof settings.typewriterScrolling !== "boolean") {
+        settings.typewriterScrolling = DEFAULTS.typewriterScrolling;
+      }
       try {
         settings.accentColor = validateAccentColor(settings.accentColor);
       } catch {
@@ -90,6 +94,9 @@ export function createSettingsStore(baseDir: string): SettingsStore {
       AUTOSAVE_RANGE,
       DEFAULTS.autosaveIntervalMs,
     );
+    if (typeof next.typewriterScrolling !== "boolean") {
+      next.typewriterScrolling = DEFAULTS.typewriterScrolling;
+    }
     if (typeof next.checkUpdatesAutomatically !== "boolean") {
       next.checkUpdatesAutomatically = DEFAULTS.checkUpdatesAutomatically;
     }

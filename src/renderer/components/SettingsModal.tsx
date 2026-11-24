@@ -231,8 +231,10 @@ export function SettingsModal({
                   aria-describedby="settings-custom-css-hint"
                 />
                 <p id="settings-custom-css-hint" className="settings__hint">
-                  Applies across branches. External resources, imports, and CSS escapes are blocked
-                  to keep branch contents private.
+                  Applies after Driftleaf styles across branches. For example, use
+                  <code> .editor__title </code> to style the note title or
+                  <code> :root </code> to override theme variables. External resources, imports,
+                  and CSS escapes are blocked to keep branch contents private.
                 </p>
                 <div className="settings__actions">
                   <Button
@@ -330,6 +332,16 @@ export function SettingsModal({
                   hint="200–5000 ms after you stop typing."
                 />
               </div>
+              <label className="settings__check-row">
+                <input
+                  type="checkbox"
+                  checked={settings.typewriterScrolling}
+                  onChange={(event) =>
+                    void patchSettings({ typewriterScrolling: event.target.checked })
+                  }
+                />
+                Keep the current line centered in Focus mode (typewriter scrolling)
+              </label>
               {settingsError && <p className="settings__error" role="alert">{settingsError}</p>}
             </section>
           )}
