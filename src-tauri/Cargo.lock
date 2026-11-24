@@ -931,7 +931,7 @@ dependencies = [
 
 [[package]]
 name = "driftleaf"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "driftleaf-core",
  "reqwest",
@@ -950,7 +950,7 @@ dependencies = [
 
 [[package]]
 name = "driftleaf-core"
-version = "0.1.0"
+version = "0.8.2"
 dependencies = [
  "aes",
  "aes-gcm",

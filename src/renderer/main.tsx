@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "@aetherAssembly/ui/styles.css";
+import "katex/dist/katex.min.css";
 import "./app.css";
 import App from "./App";
 import { ErrorBoundary } from "./ErrorBoundary";

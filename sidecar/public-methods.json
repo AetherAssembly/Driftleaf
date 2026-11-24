@@ -38,6 +38,8 @@
   "notes.remove",
   "notes.rename",
   "notes.write",
+  "personalization.read",
+  "personalization.update",
   "search.query",
   "settings.patch",
   "settings.read",

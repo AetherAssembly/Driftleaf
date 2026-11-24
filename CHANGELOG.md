@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
+## [0.8.2] - 2026-11-24
+
+### Added
+
+- Optional display names and custom greeting lines, stored in the encrypted branch
+  manifest and shown in the empty workspace.
+- Global accent-color and custom CSS settings. CSS that loads external resources
+  is rejected to keep branch contents private.
+- Live-preview KaTeX math, Mermaid fenced diagrams, and inline note embeds using
+  `![[Note title]]`.
+- Focus mode, which hides the sidebar and dims other lines, plus a Settings →
+  Editor toggle for optional typewriter scrolling.
+
+### Changed
+
+- Custom CSS now reliably overrides theme variables and styles loaded with the
+  editor; examples and selector guidance are in
+  [docs/EXAMPLES.md](docs/EXAMPLES.md#custom-css).
+- Windows diagnostics now include the OS version and omit display-server fields
+  that only apply to Linux.
+- The diagnostics card has a roomier layout.
+
 ## [0.8.1] - 2026-11-20
 
 ## Fixed
@@ -11,8 +33,7 @@ The format is based on Keep a Changelog and this project uses semantic versionin
 - Launching Driftleaf on Windows no longer opens a blank console window alongside
   the app. Release builds of the Tauri shell now declare the Windows GUI subsystem;
   a console appears only when the binary is deliberately run from a terminal.
-- Ctrl/Cmd+Shift+K no longer also toggles the command palette. *(placeholder if
-  already fixed in 0.8.0 — remove)*
+- Ctrl/Cmd+Shift+K no longer also toggles the command palette.
 
 ### Changed
 

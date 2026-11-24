@@ -75,6 +75,7 @@ pub fn create_branch(root: &Path, passphrase: &str, template_id: &str) -> Result
         manifest: json!({
             "notes": [], "folders": [], "databases": [], "extensions": [],
             "canvasItems": [], "trash": [], "attachments": [],
+            "personalization": { "displayName": "", "greetingLines": [] },
         }),
     };
     branch.write_manifest()?;

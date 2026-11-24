@@ -22,6 +22,7 @@ import { backlinksFor, unlinkedMentionsFor } from "../shared/note-links";
 import type {
   AnnouncementItem,
   AppSettings,
+  BranchPersonalization,
   CanvasItem,
   CommunityReleaseItem,
   DatabaseMeta,
@@ -34,18 +35,98 @@ import type {
   UpdateStatus,
   VaultRecoveryReport,
 } from "../shared/ipc";
+import { DEFAULT_BRANCH_PERSONALIZATION } from "../shared/personalization";
+import { validateCustomCss } from "../shared/theme-customization";
 
 const WELCOMED_KEY = "driftleaf:welcomed";
 const DAILY_FOLDER = "Daily";
+const DEFAULT_GREETING_LINES = [
+  "A fresh page is a small beginning.",
+  "Take it one note at a time.",
+  "Good ideas find their way here.",
+  "Make room for what matters today.",
+];
 
-function applyTheme(theme: AppSettings["theme"]) {
+function mixAccent(hex: string, amount: number): string {
+  const channels = [1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16));
+  return `#${channels
+    .map((channel) => Math.round(channel * (1 - amount)).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+function accentForeground(hex: string): string {
+  const channels = [1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16));
+  const luminance = channels
+    .map((channel, index) => {
+      const value = channel / 255;
+      const linear = value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      return linear * [0.2126, 0.7152, 0.0722][index];
+    })
+    .reduce((sum, channel) => sum + channel, 0);
+  return (luminance + 0.05) / 0.05 > 1.05 / (luminance + 0.05) ? "#111111" : "#ffffff";
+}
+
+function applyTheme(
+  theme: AppSettings["theme"],
+  accentColor: string | null,
+  customCss: string,
+) {
   const prefersDark =
     theme === "dark" ||
     (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   const resolvedTheme =
     theme === "system" ? (prefersDark ? "dark" : "light") : theme;
-  document.documentElement.setAttribute("data-theme", resolvedTheme);
-  document.documentElement.style.colorScheme = resolvedTheme === "light" ? "light" : "dark";
+  const root = document.documentElement;
+  root.setAttribute("data-theme", resolvedTheme);
+  root.style.colorScheme = resolvedTheme === "light" ? "light" : "dark";
+
+  let accentStyle = document.getElementById("driftleaf-accent-css");
+  if (accentColor) {
+    if (!(accentStyle instanceof HTMLStyleElement)) {
+      accentStyle = document.createElement("style");
+      accentStyle.id = "driftleaf-accent-css";
+      document.head.append(accentStyle);
+    }
+    accentStyle.textContent = `:root {
+  --ae-color-primary: ${accentColor};
+  --ae-color-primary-hover: ${mixAccent(accentColor, 0.1)};
+  --ae-color-primary-active: ${mixAccent(accentColor, 0.2)};
+  --ae-color-primary-fg: ${accentForeground(accentColor)};
+  --ae-color-border-focus: ${accentColor};
+}`;
+  } else {
+    accentStyle?.remove();
+  }
+
+  let safeCss = "";
+  try {
+    safeCss = validateCustomCss(customCss);
+  } catch {
+    // Persistence validation normally prevents this, but never let stale or malformed
+    // settings stop theme application or crash the renderer.
+  }
+  let style = document.getElementById("driftleaf-custom-css");
+  if (!safeCss) {
+    style?.remove();
+    return;
+  }
+  if (!(style instanceof HTMLStyleElement)) {
+    style = document.createElement("style");
+    style.id = "driftleaf-custom-css";
+    document.head.append(style);
+  }
+  style.textContent = safeCss;
+  style.remove();
+  document.head.append(style);
+}
+
+function dailyGreeting(lines: string[]): string {
+  const messages = [...DEFAULT_GREETING_LINES, ...lines];
+  const today = new Date();
+  const day = Math.floor(
+    Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) / 86_400_000,
+  );
+  return messages[day % messages.length];
 }
 
 function todayNoteTitle(): string {
@@ -114,11 +195,17 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>({
     lastVaultPath: null,
     theme: "system",
+    accentColor: null,
+    customCss: "",
     editorFontSizePx: 15,
     autosaveIntervalMs: 500,
+    typewriterScrolling: false,
     autoLockMinutes: 0,
     checkUpdatesAutomatically: true,
   });
+  const [personalization, setPersonalization] = useState<BranchPersonalization>(
+    DEFAULT_BRANCH_PERSONALIZATION,
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [vaultToolsOpen, setVaultToolsOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -191,18 +278,21 @@ export default function App() {
   }), []);
 
   const refreshVaultState = useCallback(async () => {
-    const [folderList, noteList, databaseList, canvasList, trashList] = await Promise.all([
-      window.driftleaf.notes.listFolders(),
-      window.driftleaf.notes.list(),
-      window.driftleaf.databases.list(),
-      window.driftleaf.canvas.read(),
-      window.driftleaf.trash.list(),
-    ]);
+    const [folderList, noteList, databaseList, canvasList, trashList, branchPersonalization] =
+      await Promise.all([
+        window.driftleaf.notes.listFolders(),
+        window.driftleaf.notes.list(),
+        window.driftleaf.databases.list(),
+        window.driftleaf.canvas.read(),
+        window.driftleaf.trash.list(),
+        window.driftleaf.personalization.read(),
+      ]);
     setFolders(folderList);
     setNotes(noteList);
     setDatabases(databaseList);
     setCanvasItems(canvasList);
     setTrashCount(trashList.length);
+    setPersonalization(branchPersonalization);
   }, []);
 
   useEffect(() => {
@@ -259,14 +349,26 @@ export default function App() {
   }, [unlocked, refreshNoteGraph]);
 
   useEffect(() => {
-    applyTheme(settings.theme);
+    applyTheme(settings.theme, settings.accentColor, settings.customCss);
     if (settings.theme !== "system") return;
 
     const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
-    const handleSystemThemeChange = () => applyTheme("system");
+    const handleSystemThemeChange = () =>
+      applyTheme("system", settings.accentColor, settings.customCss);
     systemTheme.addEventListener("change", handleSystemThemeChange);
     return () => systemTheme.removeEventListener("change", handleSystemThemeChange);
-  }, [settings.theme]);
+  }, [settings.theme, settings.accentColor, settings.customCss]);
+
+  useEffect(() => {
+    const head = document.head;
+    const keepCustomCssLast = () => {
+      const style = document.getElementById("driftleaf-custom-css");
+      if (style && head.lastElementChild !== style) head.append(style);
+    };
+    const observer = new MutationObserver(keepCustomCssLast);
+    observer.observe(head, { childList: true });
+    return () => observer.disconnect();
+  }, []);
 
   // Global hotkey (registered in main/index.ts) works even when the window wasn't focused.
   useEffect(() => {
@@ -371,6 +473,10 @@ export default function App() {
   async function handlePatchSettings(update: Partial<AppSettings>) {
     const next = await window.driftleaf.settings.patch(update);
     setSettings(next);
+  }
+
+  async function handleSavePersonalization(value: BranchPersonalization) {
+    setPersonalization(await window.driftleaf.personalization.update(value));
   }
 
   async function openNote(id: string) {
@@ -863,6 +969,7 @@ export default function App() {
       setContent("");
       setNoteGraph({ nodes: [], edges: [], unlinkedMentions: [] });
       setCanvasItems([]);
+      setPersonalization(DEFAULT_BRANCH_PERSONALIZATION);
       setGraphOpen(false);
       setCanvasOpen(false);
       setSearchQuery("");
@@ -1045,13 +1152,22 @@ export default function App() {
             content={content}
             saveStatus={saveStatus}
             fontSizePx={settings.editorFontSizePx}
+            typewriterMode={settings.typewriterScrolling}
             onChange={handleContentChange}
             onRenameTitle={handleRenameTitle}
             onDelete={() => void handleDeleteNote()}
             onNotify={showToast}
           />
         ) : (
-          <div className="main__empty">Select or create a note to start writing.</div>
+          <div className="main__empty main__welcome">
+            <h1>
+              {personalization.displayName
+                ? `Welcome back, ${personalization.displayName}.`
+                : "Welcome back."}
+            </h1>
+            <p>{dailyGreeting(personalization.greetingLines)}</p>
+            <p>Select or create a note to start writing.</p>
+          </div>
         )}
       </main>
       <SettingsModal
@@ -1067,7 +1183,9 @@ export default function App() {
         onDownloadUpdate={() => void downloadUpdate()}
         onInstallUpdate={() => void installUpdate()}
         onOpenUpdateDownload={() => void openUpdateDownload()}
-        onPatch={(update) => void handlePatchSettings(update)}
+        onPatch={handlePatchSettings}
+        personalization={personalization}
+        onSavePersonalization={handleSavePersonalization}
       />
       <VaultToolsModal
         open={vaultToolsOpen}

@@ -35,12 +35,23 @@ function diagnosticEntries(
 ): Array<[string, string]> {
   const activeTheme =
     theme === "system" ? `${document.documentElement.dataset.theme ?? "light"} (System)` : theme;
+  const isWindows = diagnostics.platform === "win32";
+  const environmentEntries: Array<[string, string]> = isWindows
+    ? []
+    : [
+        ["Display server", diagnostics.displayServer],
+        ["Desktop / compositor", diagnostics.desktopEnvironment],
+      ];
+  const osRelease =
+    diagnostics.osRelease.toLowerCase() === "unknown" ? "Not detected" : diagnostics.osRelease;
   return [
     ["Driftleaf", diagnostics.version],
-    ["Operating system", `${diagnostics.platform} ${diagnostics.osRelease}`],
+    [
+      isWindows ? "Windows version" : "Operating system",
+      isWindows ? osRelease : `${diagnostics.platform} ${osRelease}`,
+    ],
     ["Architecture", diagnostics.architecture],
-    ["Display server", diagnostics.displayServer],
-    ["Desktop / compositor", diagnostics.desktopEnvironment],
+    ...environmentEntries,
     ["Backend runtime", diagnostics.runtime],
     ["Driftleaf theme", activeTheme],
   ];

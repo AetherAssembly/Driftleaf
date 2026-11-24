@@ -79,6 +79,10 @@ export const tauriDriftleafApi: DriftleafApi = {
     exportPlaintext: () => invoke("export_branch"),
     lock: () => call("vault.lock"),
   },
+  personalization: {
+    read: () => call("personalization.read"),
+    update: (value) => call("personalization.update", value),
+  },
   trash: {
     list: () => call("trash.list"),
     restore: (kind, id) => call("trash.restore", kind, id),

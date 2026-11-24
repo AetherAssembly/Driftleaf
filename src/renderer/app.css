@@ -22,7 +22,7 @@
   gap: 10px;
 }
 
-:root[data-theme="dark"] {
+:root:where([data-theme="dark"]) {
   --ae-color-primary: #78a886;
   --ae-color-primary-hover: #659574;
   --ae-color-primary-active: #527f60;
@@ -50,13 +50,13 @@
   --ae-color-text-placeholder: #809087;
 }
 
-:root[data-theme="aquatic"],
-:root[data-theme="mossy"],
-:root[data-theme="sunset"],
-:root[data-theme="space"],
-:root[data-theme="cherry"],
-:root[data-theme="arctic"],
-:root[data-theme="amber"] {
+:root:where([data-theme="aquatic"]),
+:root:where([data-theme="mossy"]),
+:root:where([data-theme="sunset"]),
+:root:where([data-theme="space"]),
+:root:where([data-theme="cherry"]),
+:root:where([data-theme="arctic"]),
+:root:where([data-theme="amber"]) {
   color-scheme: dark;
   --ae-color-danger: #f87171;
   --ae-color-danger-hover: #ef4444;
@@ -66,7 +66,7 @@
   --ae-color-info: #60a5fa;
 }
 
-:root[data-theme="aquatic"] {
+:root:where([data-theme="aquatic"]) {
   --ae-color-primary: #3bbfc0;
   --ae-color-primary-hover: #2eaaad;
   --ae-color-primary-active: #248f95;
@@ -84,7 +84,7 @@
   --ae-color-text-placeholder: #789e9e;
 }
 
-:root[data-theme="mossy"] {
+:root:where([data-theme="mossy"]) {
   --ae-color-primary: #9bbd72;
   --ae-color-primary-hover: #88a95f;
   --ae-color-primary-active: #718e4e;
@@ -102,7 +102,7 @@
   --ae-color-text-placeholder: #89977b;
 }
 
-:root[data-theme="sunset"] {
+:root:where([data-theme="sunset"]) {
   --ae-color-primary: #ff9f6e;
   --ae-color-primary-hover: #ee895c;
   --ae-color-primary-active: #d97452;
@@ -120,7 +120,7 @@
   --ae-color-text-placeholder: #a8867e;
 }
 
-:root[data-theme="space"] {
+:root:where([data-theme="space"]) {
   --ae-color-primary: #a89cff;
   --ae-color-primary-hover: #9386ed;
   --ae-color-primary-active: #7c70d4;
@@ -139,7 +139,7 @@
   --ae-color-info: #82b9ff;
 }
 
-:root[data-theme="cherry"] {
+:root:where([data-theme="cherry"]) {
   --ae-color-primary: #f28caf;
   --ae-color-primary-hover: #e8759a;
   --ae-color-primary-active: #ce5e83;
@@ -157,7 +157,7 @@
   --ae-color-text-placeholder: #a88794;
 }
 
-:root[data-theme="arctic"] {
+:root:where([data-theme="arctic"]) {
   --ae-color-primary: #72c9e8;
   --ae-color-primary-hover: #59b5d6;
   --ae-color-primary-active: #4399bb;
@@ -175,7 +175,7 @@
   --ae-color-text-placeholder: #7d9ca9;
 }
 
-:root[data-theme="amber"] {
+:root:where([data-theme="amber"]) {
   --ae-color-primary: #efb957;
   --ae-color-primary-hover: #dda644;
   --ae-color-primary-active: #bf8c32;
@@ -644,6 +644,50 @@ body {
   border: 1px solid var(--ae-color-border, #ddd);
   border-radius: 11px;
   background: var(--ae-color-bg, transparent);
+}
+
+.settings__color-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings__color-label input {
+  width: 52px;
+  height: 36px;
+  padding: 2px;
+  border: 1px solid var(--ae-color-border, #ddd);
+  border-radius: 7px;
+  background: var(--ae-color-bg, transparent);
+  cursor: pointer;
+}
+
+.settings__custom-css,
+.settings__field:has(textarea) {
+  display: grid;
+  gap: 9px;
+}
+
+.settings__field-label {
+  font-weight: 650;
+}
+
+.settings__custom-css textarea,
+.settings__field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px;
+  border: 1px solid var(--ae-color-border, #ddd);
+  border-radius: 8px;
+  color: var(--ae-color-text, inherit);
+  background: var(--ae-color-surface, #fff);
+  font: 0.85em/1.5 var(--ae-font-mono, monospace);
+  resize: vertical;
+}
+
+.settings__error {
+  color: var(--ae-color-danger, #c0392b);
 }
 
 .settings__update-card,
@@ -1409,7 +1453,7 @@ body {
 
 .tools-modal__diagnostics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: 7px;
   margin: 0;
 }
@@ -2184,6 +2228,29 @@ body {
   opacity: 0.6;
 }
 
+.main__welcome {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 28px;
+  text-align: center;
+  opacity: 1;
+}
+
+.main__welcome h1,
+.main__welcome p {
+  margin: 0;
+}
+
+.main__welcome h1 {
+  color: var(--ae-color-text, inherit);
+  font-size: clamp(1.5rem, 3vw, 2.2rem);
+}
+
+.main__welcome p {
+  color: var(--ae-color-text-muted, #666);
+}
+
 .editor {
   flex: 1;
   display: flex;
@@ -2258,6 +2325,74 @@ body {
 
 .editor__codemirror .cm-placeholder {
   color: var(--ae-color-text-placeholder, #999);
+}
+
+.focus-mode-active .sidebar {
+  display: none;
+}
+
+.cm-focus-mode .cm-line {
+  transition: opacity 140ms ease;
+}
+
+.cm-focus-mode .cm-line:not(.cm-focus-line) {
+  opacity: 0.24;
+}
+
+.cm-focus-mode .cm-focus-line {
+  opacity: 1;
+}
+
+.cm-note-embed {
+  display: block;
+  margin: 0.5em 0;
+  padding: 0.75em 1em;
+  border: 1px solid var(--ae-color-border, #ddd);
+  border-left: 3px solid var(--ae-color-primary, #4f7a5c);
+  border-radius: 6px;
+  background: var(--ae-color-surface, transparent);
+  white-space: normal;
+  font-family: var(--ae-font-sans, system-ui, sans-serif);
+}
+
+.cm-note-embed__title {
+  margin-bottom: 0.5em;
+  color: var(--ae-color-text-muted, #666);
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+.cm-note-embed__body > :first-child {
+  margin-top: 0;
+}
+
+.cm-note-embed__body > :last-child {
+  margin-bottom: 0;
+}
+
+.cm-note-embed--pending,
+.cm-note-embed--error,
+.cm-mermaid--pending,
+.cm-mermaid--error {
+  color: var(--ae-color-text-muted, #666);
+}
+
+.cm-math--display {
+  display: block;
+  overflow-x: auto;
+  padding: 0.25em 0;
+  text-align: center;
+}
+
+.cm-mermaid {
+  display: block;
+  margin: 0.5em 0;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.cm-mermaid svg {
+  max-width: 100%;
 }
 
 /* Live-preview rendering: headings, inline marks, links, lists, quotes */
@@ -2671,14 +2806,14 @@ body {
   --code-deleted: #b3261e;
 }
 
-:root[data-theme="dark"],
-:root[data-theme="aquatic"],
-:root[data-theme="mossy"],
-:root[data-theme="sunset"],
-:root[data-theme="space"],
-:root[data-theme="cherry"],
-:root[data-theme="arctic"],
-:root[data-theme="amber"] {
+:root:where([data-theme="dark"]),
+:root:where([data-theme="aquatic"]),
+:root:where([data-theme="mossy"]),
+:root:where([data-theme="sunset"]),
+:root:where([data-theme="space"]),
+:root:where([data-theme="cherry"]),
+:root:where([data-theme="arctic"]),
+:root:where([data-theme="amber"]) {
   --code-comment: #9aa7ad;
   --code-keyword: #d2a6ff;
   --code-string: #9fd88f;

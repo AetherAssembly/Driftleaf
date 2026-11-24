@@ -5,6 +5,7 @@ use serde_json::{json, Map, Value};
 use std::{fs, path::PathBuf};
 
 const AUTO_LOCK_MINUTES: [i64; 6] = [0, 1, 5, 15, 30, 60];
+const MAX_CUSTOM_CSS_BYTES: usize = 64 * 1024;
 
 pub struct SettingsStore {
     dir: PathBuf,
@@ -14,6 +15,8 @@ fn defaults() -> Map<String, Value> {
     json!({
         "lastVaultPath": null,
         "theme": "system",
+        "accentColor": null,
+        "customCss": "",
         "editorFontSizePx": 15,
         "autosaveIntervalMs": 500,
         "checkUpdatesAutomatically": true,
@@ -22,6 +25,65 @@ fn defaults() -> Map<String, Value> {
     .as_object()
     .cloned()
     .unwrap_or_default()
+}
+
+fn validate_custom_css(css: &str) -> Result<(), String> {
+    if css.len() > MAX_CUSTOM_CSS_BYTES {
+        return Err("Custom CSS must be 64 KB or smaller".into());
+    }
+    if css.contains('\\') {
+        return Err("Custom CSS cannot use escape sequences".into());
+    }
+
+    let mut code = String::new();
+    let mut quote = None;
+    let mut chars = css.chars().peekable();
+    while let Some(character) = chars.next() {
+        if let Some(delimiter) = quote {
+            if character == delimiter {
+                quote = None;
+            }
+            code.push(' ');
+        } else if character == '"' || character == '\'' {
+            quote = Some(character);
+            code.push(' ');
+        } else if character == '/' && chars.peek() == Some(&'*') {
+            chars.next();
+            let mut closed = false;
+            while let Some(comment_character) = chars.next() {
+                if comment_character == '*' && chars.peek() == Some(&'/') {
+                    chars.next();
+                    closed = true;
+                    break;
+                }
+            }
+            if !closed {
+                return Err("Custom CSS contains an unfinished comment".into());
+            }
+            code.push(' ');
+        } else {
+            code.push(character);
+        }
+    }
+    if quote.is_some() {
+        return Err("Custom CSS contains an unfinished string".into());
+    }
+
+    let code = code.to_ascii_lowercase();
+    let has_function = |name: &str| {
+        code.match_indices(name).any(|(index, matched)| {
+            let starts_identifier =
+                index == 0 || !code[..index].chars().next_back().is_some_and(|c| c.is_ascii_alphanumeric() || c == '_');
+            starts_identifier
+                && code[index + matched.len()..]
+                .trim_start()
+                .starts_with('(')
+        })
+    };
+    if code.contains("@import") || has_function("url") || has_function("image-set") {
+        return Err("Custom CSS cannot load external resources".into());
+    }
+    Ok(())
 }
 
 fn clamp(value: &Value, min: f64, max: f64, fallback: f64) -> Value {
@@ -52,6 +114,24 @@ impl SettingsStore {
         {
             settings.extend(stored);
         }
+        let valid_color = settings["accentColor"].is_null()
+            || settings["accentColor"].as_str().is_some_and(|value| {
+                value.len() == 7
+                    && value.starts_with('#')
+                    && value[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
+            });
+        if !valid_color {
+            settings.insert("accentColor".into(), Value::Null);
+        } else if let Some(color) = settings["accentColor"].as_str() {
+            settings.insert("accentColor".into(), json!(color.to_ascii_lowercase()));
+        }
+        if let Some(css) = settings.get("customCss").and_then(Value::as_str) {
+            if validate_custom_css(css).is_err() {
+                settings.insert("customCss".into(), json!(""));
+            }
+        } else {
+            settings.insert("customCss".into(), json!(""));
+        }
         Value::Object(settings)
     }
 
@@ -60,6 +140,24 @@ impl SettingsStore {
         if let Some(patch) = patch.as_object() {
             next.extend(patch.clone());
         }
+        let accent_color = next.get("accentColor").cloned().ok_or("Invalid accent color")?;
+        if !accent_color.is_null()
+            && !accent_color.as_str().is_some_and(|value| {
+                value.len() == 7
+                    && value.starts_with('#')
+                    && value[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
+            })
+        {
+            return Err("Accent color must be a six-digit hex color".into());
+        }
+        if let Some(color) = accent_color.as_str() {
+            next.insert("accentColor".into(), json!(color.to_ascii_lowercase()));
+        }
+        let custom_css = next
+            .get("customCss")
+            .and_then(Value::as_str)
+            .ok_or("Custom CSS must be text")?;
+        validate_custom_css(custom_css)?;
         let font = clamp(&next["editorFontSizePx"], 12.0, 24.0, 15.0);
         let autosave = clamp(&next["autosaveIntervalMs"], 200.0, 5000.0, 500.0);
         next.insert("editorFontSizePx".into(), font);
@@ -83,5 +181,20 @@ impl SettingsStore {
             return Err(error.to_string());
         }
         Ok(Value::Object(next))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_custom_css;
+
+    #[test]
+    fn custom_css_blocks_resource_loading_but_allows_local_styles() {
+        assert!(validate_custom_css(".app { color: red; }").is_ok());
+        assert!(validate_custom_css(r#".app::after { content: "url(ignored)"; }"#).is_ok());
+        assert!(validate_custom_css("@import 'https://example.test/theme.css';").is_err());
+        assert!(validate_custom_css(".app { background: url (https://example.test/x); }").is_err());
+        assert!(validate_custom_css("/*safe*/.app { background: image-set ('x' 1x); }").is_err());
+        assert!(validate_custom_css(r#".app { background: u\72l(https://example.test/x); }"#).is_err());
     }
 }

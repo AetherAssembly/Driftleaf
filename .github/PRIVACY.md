@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: 2026-11-21_
+_Last updated: 2026-11-22_
 
 > The canonical, always-current version of this document is hosted at
 > [legal.aetherassembly.org/driftleaf/privacy.html](https://legal.aetherassembly.org/driftleaf/privacy.html).
@@ -20,8 +20,8 @@ Driftleaf stores the following information locally on your device, inside the
 branch folder you choose.
 
 - Your note content, databases, and attachments (images and files you add to notes), each encrypted with AES-256-GCM using a key protected by your passphrase
-- An encrypted manifest (`.driftleaf/manifest.enc`) recording note titles, folders, timestamps, attachment names, items in Trash, and installed extension code and permissions. Note and attachment files use opaque IDs rather than titles in their filesystem paths.
-- Application settings (such as theme and preferences, and the path of the last branch you opened), stored unencrypted in the app's settings directory for your operating-system user account
+- An encrypted manifest (`.driftleaf/manifest.enc`) recording note titles, folders, timestamps, attachment names, items in Trash, installed extension code and permissions, and optional display-name and greeting preferences. Note and attachment files use opaque IDs rather than titles in their filesystem paths.
+- Application settings (such as theme, accent color, custom CSS, other preferences, and the path of the last branch you opened), stored unencrypted in the app's settings directory for your operating-system user account. Custom CSS cannot load external resources.
 
 Deleted notes and databases are kept, still encrypted, in the branch's Trash for 30 days so you can restore them, and are then removed. You can empty Trash yourself at any time.
 

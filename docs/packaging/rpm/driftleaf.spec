@@ -3,7 +3,7 @@
 %global debug_package %{nil}
 
 Name:           driftleaf
-Version:        0.8.1
+Version:        0.8.2
 Release:        1%{?dist}
 Summary:        A local-first encrypted notes, graph, and database app
 License:        AGPL-3.0-or-later
@@ -26,9 +26,11 @@ Driftleaf is a local-first desktop workspace for encrypted Markdown notes,
 linked-note graphs, a spatial canvas, JavaScript extensions, and editable
 databases. Vault metadata, notes, database contents, canvas layouts, and
 extension permissions are encrypted at rest. Database table, board, and
-calendar views support formulas, while CSV and JSON import/export help move
-data between tools. Driftleaf works offline; update and community catalogs
-use optional public GitHub release requests.
+calendar views support formulas, while the Markdown editor renders LaTeX math,
+Mermaid diagrams, and inline note embeds. Focus mode supports distraction-free
+writing with optional typewriter scrolling configured in Settings. CSV and JSON
+import/export help move data between tools. Driftleaf works offline; update and
+community catalogs use optional public GitHub release requests.
 
 %prep
 %setup -c -T
@@ -77,6 +79,13 @@ install -Dm644 %{_builddir}/LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LIC
 %{_datadir}/icons/hicolor/256x256@2/apps/driftleaf.png
 
 %changelog
+* Tue Nov 24 2026 AetherAssembly <support@aetherassembly.org> - 0.8.2-1
+- Add KaTeX math, Mermaid diagram, and inline note-embed rendering to the
+  live Markdown preview.
+- Add focus mode with typewriter scrolling configurable in Settings, and make
+  custom CSS reliably override theme variables and dynamically loaded editor
+  styles.
+
 * Fri Nov 20 2026 AetherAssembly <support@aetherassembly.org> - 0.8.1-1
 - Stop the blank console window that opened alongside every launch on Windows
   since 0.8.0; release builds now use the Windows GUI subsystem.

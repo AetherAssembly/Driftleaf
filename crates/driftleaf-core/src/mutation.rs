@@ -1023,7 +1023,86 @@ fn extension_summary(extension: &Value) -> Value {
     summary
 }
 
+fn validate_personalization(value: &Value) -> Result<Value, String> {
+    let personalization = value
+        .as_object()
+        .ok_or("Personalization must be an object")?;
+    let display_name = personalization
+        .get("displayName")
+        .and_then(Value::as_str)
+        .ok_or("Display name must be text")?
+        .trim();
+    if display_name.encode_utf16().count() > 80 {
+        return Err("Display name must be 80 characters or shorter".into());
+    }
+
+    let greeting_lines = personalization
+        .get("greetingLines")
+        .and_then(Value::as_array)
+        .ok_or("Greeting lines must be a list")?;
+    if greeting_lines.len() > 20 {
+        return Err("You can add up to 20 custom greeting lines".into());
+    }
+    let mut normalized_lines = Vec::new();
+    for line in greeting_lines {
+        let line = line.as_str().ok_or("Greeting lines must be text")?.trim();
+        if line.encode_utf16().count() > 160 {
+            return Err("Each greeting line must be 160 characters or shorter".into());
+        }
+        if !line.is_empty() {
+            normalized_lines.push(Value::String(line.to_string()));
+        }
+    }
+    Ok(json!({
+        "displayName": display_name,
+        "greetingLines": normalized_lines,
+    }))
+}
+
+fn normalize_personalization(value: &Value) -> Value {
+    let Some(personalization) = value.as_object() else {
+        return json!({ "displayName": "", "greetingLines": [] });
+    };
+    let display_name = personalization
+        .get("displayName")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|name| name.encode_utf16().count() <= 80)
+        .unwrap_or_default();
+    let greeting_lines: Vec<Value> = personalization
+        .get("greetingLines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && line.encode_utf16().count() <= 160)
+        .take(20)
+        .map(|line| Value::String(line.to_string()))
+        .collect();
+    json!({ "displayName": display_name, "greetingLines": greeting_lines })
+}
+
 impl Branch {
+    pub fn read_personalization(&self) -> Value {
+        normalize_personalization(&self.manifest["personalization"])
+    }
+
+    pub fn update_personalization(&mut self, value: &Value) -> Result<Value, String> {
+        let personalization = validate_personalization(value)?;
+        let previous = self.manifest.get("personalization").cloned();
+        self.manifest["personalization"] = personalization.clone();
+        if let Err(error) = self.write_manifest() {
+            if let Some(previous) = previous {
+                self.manifest["personalization"] = previous;
+            } else if let Some(manifest) = self.manifest.as_object_mut() {
+                manifest.remove("personalization");
+            }
+            return Err(error);
+        }
+        Ok(personalization)
+    }
+
     pub fn read_canvas(&self) -> Value {
         self.manifest["canvasItems"].clone()
     }
@@ -1334,6 +1413,37 @@ mod validation_tests {
 
     fn title_property() -> Value {
         json!({ "id": "p1", "name": "Name", "type": "title" })
+    }
+
+    #[test]
+    fn personalization_is_trimmed_and_bounded() {
+        let personalization = validate_personalization(&json!({
+            "displayName": "  Riley  ",
+            "greetingLines": ["  Keep going.  ", "", "You have got this."],
+        }))
+        .unwrap();
+        assert_eq!(
+            personalization,
+            json!({
+                "displayName": "Riley",
+                "greetingLines": ["Keep going.", "You have got this."],
+            })
+        );
+        assert!(validate_personalization(&json!({
+            "displayName": "a".repeat(81),
+            "greetingLines": [],
+        }))
+        .is_err());
+        assert!(validate_personalization(&json!({
+            "displayName": "",
+            "greetingLines": ["a".repeat(161)],
+        }))
+        .is_err());
+        assert!(validate_personalization(&json!({
+            "displayName": "",
+            "greetingLines": (0..21).map(|_| "hello").collect::<Vec<_>>(),
+        }))
+        .is_err());
     }
 
     #[test]

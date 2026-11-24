@@ -1,4 +1,4 @@
-import { lazy, Suspense, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Button, Modal } from "@aetherAssembly/ui";
 import type { NoteMeta } from "../../shared/ipc";
 import type { AttachFilesHandle } from "./MarkdownEditor";
@@ -17,6 +17,7 @@ interface EditorProps {
   content: string;
   saveStatus: "idle" | "saving" | "saved";
   fontSizePx: number;
+  typewriterMode: boolean;
   onChange: (content: string) => void;
   onRenameTitle: (title: string) => void;
   onDelete: () => void;
@@ -32,6 +33,7 @@ export function Editor({
   content,
   saveStatus,
   fontSizePx,
+  typewriterMode,
   onChange,
   onRenameTitle,
   onDelete,
@@ -39,9 +41,15 @@ export function Editor({
   onNotify,
 }: EditorProps) {
   const [sourceMode, setSourceMode] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const attachFilesRef = useRef<AttachFilesHandle["current"]>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("focus-mode-active", focusMode);
+    return () => document.documentElement.classList.remove("focus-mode-active");
+  }, [focusMode]);
 
   return (
     <div className="editor">
@@ -81,6 +89,14 @@ export function Editor({
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setSourceMode((v) => !v)}>
             {sourceMode ? "Live preview" : "Source mode"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-pressed={focusMode}
+            onClick={() => setFocusMode((value) => !value)}
+          >
+            {focusMode ? "Exit focus" : "Focus"}
           </Button>
           <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
             Delete
@@ -147,6 +163,8 @@ export function Editor({
             value={content}
             notes={notes}
             sourceMode={sourceMode}
+            focusMode={focusMode}
+            typewriterMode={typewriterMode}
             placeholder="Start writing…"
             onChange={onChange}
             onNavigate={onNavigate}

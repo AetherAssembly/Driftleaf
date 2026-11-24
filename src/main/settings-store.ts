@@ -6,14 +6,18 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { AUTO_LOCK_MINUTES_OPTIONS, type AppSettings } from "../shared/ipc";
+import { validateAccentColor, validateCustomCss } from "../shared/theme-customization";
 
 export type { AppSettings } from "../shared/ipc";
 
 const DEFAULTS: AppSettings = {
   lastVaultPath: null,
   theme: "system",
+  accentColor: null,
+  customCss: "",
   editorFontSizePx: 15,
   autosaveIntervalMs: 500,
+  typewriterScrolling: false,
   checkUpdatesAutomatically: true,
   autoLockMinutes: 0,
 };
@@ -43,7 +47,21 @@ export function createSettingsStore(baseDir: string): SettingsStore {
   async function readSettings(): Promise<AppSettings> {
     try {
       const raw = await readFile(settingsFilePath(), "utf-8");
-      return { ...DEFAULTS, ...(JSON.parse(raw) as Partial<AppSettings>) };
+      const settings = { ...DEFAULTS, ...(JSON.parse(raw) as Partial<AppSettings>) };
+      if (typeof settings.typewriterScrolling !== "boolean") {
+        settings.typewriterScrolling = DEFAULTS.typewriterScrolling;
+      }
+      try {
+        settings.accentColor = validateAccentColor(settings.accentColor);
+      } catch {
+        settings.accentColor = DEFAULTS.accentColor;
+      }
+      try {
+        settings.customCss = validateCustomCss(settings.customCss);
+      } catch {
+        settings.customCss = DEFAULTS.customCss;
+      }
+      return settings;
     } catch {
       return { ...DEFAULTS };
     }
@@ -64,6 +82,8 @@ export function createSettingsStore(baseDir: string): SettingsStore {
   async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
     const current = await readSettings();
     const next = { ...current, ...patch };
+    next.accentColor = validateAccentColor(next.accentColor);
+    next.customCss = validateCustomCss(next.customCss);
     next.editorFontSizePx = clamp(
       next.editorFontSizePx,
       FONT_SIZE_RANGE,
@@ -74,6 +94,9 @@ export function createSettingsStore(baseDir: string): SettingsStore {
       AUTOSAVE_RANGE,
       DEFAULTS.autosaveIntervalMs,
     );
+    if (typeof next.typewriterScrolling !== "boolean") {
+      next.typewriterScrolling = DEFAULTS.typewriterScrolling;
+    }
     if (typeof next.checkUpdatesAutomatically !== "boolean") {
       next.checkUpdatesAutomatically = DEFAULTS.checkUpdatesAutomatically;
     }

@@ -19,7 +19,7 @@ my-vault/
 │   │                  (or the raw key, for legacy passphrase-less branches)
 │   ├── canary.enc      known-plaintext blob used to check a passphrase on unlock
 │   ├── manifest.enc    encrypted index of note, folder, database, attachment,
-│   │                  and Trash metadata
+│   │                  Trash, and personalization metadata
 │   ├── notes/
 │   │   └── <note-id>.enc  encrypted note content under an opaque filename
 │   ├── attachments/
@@ -39,7 +39,7 @@ containing unrelated files are left untouched.
 
 1. **Wrong passphrase** — the app tells you this directly; retry carefully. There's no passphrase reset (see below).
 2. **`vault.json` or `canary.enc` missing/corrupted** — these hold the key material and salt; they can't be reconstructed. Restore the `.driftleaf/` folder from a backup. Without a backup, the branch's notes aren't recoverable — this is the tradeoff of encryption with no server-side escrow.
-3. **`manifest.enc` missing/corrupted** — note titles/folders and database metadata cannot be reconstructed from opaque IDs alone. The encrypted note/database files may remain on disk but will be unavailable. Restore `manifest.enc` or the whole `.driftleaf/` directory from a backup.
+3. **`manifest.enc` missing/corrupted** — note titles/folders, database metadata, and branch personalization cannot be reconstructed from opaque IDs alone. The encrypted note/database files may remain on disk but will be unavailable. Restore `manifest.enc` or the whole `.driftleaf/` directory from a backup.
 
 ## "I Deleted Something by Mistake"
 
@@ -134,7 +134,7 @@ After copying, verify the backup from **Settings → Diagnostics & Branch Health
 
 The same Settings screen can run a health check on the currently open branch. It checks branch metadata, manifest consistency, encrypted note and database integrity, recoverable unindexed files, leftover temporary writes, and search-index coverage. It reports issues without attempting repairs; unlock-time reconciliation repairs supported note manifest/file mismatches. Database files missing from the manifest are reported as unindexed but are not automatically recovered.
 
-**Copy Diagnostics** in that screen copies app/platform and display-session details plus the active theme. It does not include branch paths, note contents, or passphrases.
+**Copy Diagnostics** in that screen copies the Driftleaf version, operating system and version, architecture, backend runtime, and active theme. On non-Windows systems, it also includes display-server and desktop/compositor fields. It does not include branch paths, note contents, or passphrases.
 
 The branch is just a folder — a backup can also be made manually by copying `my-vault/` (including the hidden `.driftleaf/` directory) to an external drive or another machine.
 

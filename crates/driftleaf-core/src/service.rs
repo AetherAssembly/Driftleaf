@@ -135,6 +135,46 @@ fn reindex(session: &Session, id: &str) {
 }
 
 fn os_release() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        #[repr(C)]
+        struct OsVersionInfoExW {
+            size: u32,
+            major: u32,
+            minor: u32,
+            build: u32,
+            _platform_id: u32,
+            _service_pack: [u16; 128],
+            _service_pack_major: u16,
+            _service_pack_minor: u16,
+            _suite_mask: u16,
+            _product_type: u8,
+            _reserved: u8,
+        }
+
+        #[link(name = "ntdll")]
+        unsafe extern "system" {
+            #[link_name = "RtlGetVersion"]
+            fn rtl_get_version(info: *mut OsVersionInfoExW) -> i32;
+        }
+
+        let mut info = OsVersionInfoExW {
+            size: std::mem::size_of::<OsVersionInfoExW>() as u32,
+            major: 0,
+            minor: 0,
+            build: 0,
+            _platform_id: 0,
+            _service_pack: [0; 128],
+            _service_pack_major: 0,
+            _service_pack_minor: 0,
+            _suite_mask: 0,
+            _product_type: 0,
+            _reserved: 0,
+        };
+        if unsafe { rtl_get_version(&mut info) } == 0 {
+            return format!("{}.{}.{}", info.major, info.minor, info.build);
+        }
+    }
     if cfg!(target_os = "linux") {
         if let Ok(release) = fs::read_to_string("/proc/sys/kernel/osrelease") {
             return release.trim().to_string();
@@ -526,6 +566,10 @@ impl Service {
             "canvas.update" => {
                 self.branch_mut()?.update_canvas(value(args, 0))?;
                 Ok(Value::Null)
+            }
+            "personalization.read" => Ok(self.branch()?.read_personalization()),
+            "personalization.update" => {
+                self.branch_mut()?.update_personalization(&value(args, 0))
             }
             // Updates belong to the desktop shell (src-tauri/src/updates.rs). This is what the
             // service reports when it is driven without one.

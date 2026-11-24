@@ -33,12 +33,17 @@ import { parseCsvDatabase, parseJsonDatabase } from "./database-import";
 import type {
   AttachmentMeta,
   AttachmentUsage,
+  BranchPersonalization,
   CanvasItem,
   ExtensionPermission,
   ExtensionSample,
   ExtensionSummary,
   VaultTemplateId,
 } from "../shared/ipc";
+import {
+  normalizeBranchPersonalization,
+  validateBranchPersonalization,
+} from "../shared/personalization";
 import type {
   DatabaseCellValue,
   DatabaseData,
@@ -606,6 +611,7 @@ interface Manifest {
   canvasItems?: CanvasItem[];
   trash?: TrashEntry[];
   attachments?: AttachmentMeta[];
+  personalization?: BranchPersonalization;
 }
 
 export interface StoredExtension extends ExtensionSummary {
@@ -1152,6 +1158,27 @@ export async function removeExtension(vault: Vault, id: string): Promise<void> {
   }
 }
 
+export function readPersonalization(vault: Vault): BranchPersonalization {
+  return normalizeBranchPersonalization(vault.manifest.personalization);
+}
+
+export async function updatePersonalization(
+  vault: Vault,
+  value: unknown,
+): Promise<BranchPersonalization> {
+  const personalization = validateBranchPersonalization(value);
+  const previous = vault.manifest.personalization;
+  vault.manifest.personalization = personalization;
+  try {
+    await writeManifest(vault.rootPath, vault.manifest, vault.key);
+  } catch (error) {
+    if (previous === undefined) delete vault.manifest.personalization;
+    else vault.manifest.personalization = previous;
+    throw error;
+  }
+  return personalization;
+}
+
 async function readManifest(rootPath: string, key: Buffer): Promise<Manifest> {
   try {
     const encrypted = await readFile(manifestPath(rootPath));
@@ -1225,6 +1252,7 @@ export async function createVault(
     databases: [],
     extensions: [],
     canvasItems: [],
+    personalization: { displayName: "", greetingLines: [] },
   };
   await writeManifest(rootPath, manifest, key);
 

@@ -2,7 +2,12 @@ import { useEffect, useRef } from "react";
 import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView, placeholder as placeholderExtension } from "@codemirror/view";
 import type { NoteLinkTarget } from "../../shared/note-links";
-import { livePreviewExtension, markdownEditingExtension, type LivePreviewRefs } from "../lib/live-markdown";
+import {
+  focusModeExtension,
+  livePreviewExtension,
+  markdownEditingExtension,
+  type LivePreviewRefs,
+} from "../lib/live-markdown";
 import {
   addAttachmentFromFile,
   attachmentMarkdown,
@@ -21,6 +26,8 @@ interface MarkdownEditorProps {
   value: string;
   notes: NoteLinkTarget[];
   sourceMode: boolean;
+  focusMode: boolean;
+  typewriterMode: boolean;
   placeholder?: string;
   onChange: (value: string) => void;
   onNavigate: (id: string) => void;
@@ -33,6 +40,8 @@ export function MarkdownEditor({
   value,
   notes,
   sourceMode,
+  focusMode,
+  typewriterMode,
   placeholder,
   onChange,
   onNavigate,
@@ -43,11 +52,13 @@ export function MarkdownEditor({
   const viewRef = useRef<EditorView | null>(null);
   const lastKnownDocRef = useRef<string>(value);
   const livePreviewCompartmentRef = useRef(new Compartment());
+  const focusModeCompartmentRef = useRef(new Compartment());
   const onNotifyRef = useRef(onNotify);
   const refs = useRef<LivePreviewRefs>({
     notesRef: { current: notes },
     onNavigateRef: { current: onNavigate },
     loadAttachmentRef: { current: loadAttachment },
+    loadNoteRef: { current: (id) => window.driftleaf.notes.read(id) },
     onOpenAttachmentRef: {
       current: (id) => {
         window.driftleaf.attachments.saveCopy(id).then(
@@ -135,6 +146,7 @@ export function MarkdownEditor({
             },
           }),
           livePreviewCompartmentRef.current.of(sourceMode ? [] : livePreviewExtension(refs.current)),
+          focusModeCompartmentRef.current.of(focusModeExtension(focusMode, typewriterMode)),
           EditorView.updateListener.of((update) => {
             if (!update.docChanged) return;
             const text = update.state.doc.toString();
@@ -177,7 +189,17 @@ export function MarkdownEditor({
     view.dispatch({
       effects: livePreviewCompartmentRef.current.reconfigure(sourceMode ? [] : livePreviewExtension(refs.current)),
     });
-  }, [sourceMode]);
+  }, [sourceMode, notes]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: focusModeCompartmentRef.current.reconfigure(
+        focusModeExtension(focusMode, typewriterMode),
+      ),
+    });
+  }, [focusMode, typewriterMode]);
 
   return <div className="editor__codemirror" ref={containerRef} />;
 }
