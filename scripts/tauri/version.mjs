@@ -30,7 +30,7 @@ for (const file of ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock", "crates/drif
   const data = await readFile(file, "utf8");
   let matches = 0;
   const updated = data.replace(
-    /(name = "(?:driftleaf|driftleaf-core)"\nversion = ")[^"]+/g,
+    /(name = "(?:driftleaf|driftleaf-core)"\r?\nversion = ")[^"]+/g,
     (match, prefix) => {
       matches++;
       return prefix + version;
