@@ -26,9 +26,18 @@ for (const file of ["package.json", "package-lock.json", "src-tauri/tauri.conf.j
   if (data.packages?.[""]) data.packages[""].version = version;
   await writeFile(file, JSON.stringify(data, null, 2) + "\n");
 }
-for (const file of ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock", "crates/driftleaf/Cargo.toml", "crates/driftleaf/Cargo.lock"]) {
+for (const file of ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock", "crates/driftleaf-core/Cargo.toml"]) {
   const data = await readFile(file, "utf8");
-  await writeFile(file, data.replace(/(name = "driftleaf"\nversion = ")[^"]+/, "$1" + version));
+  let matches = 0;
+  const updated = data.replace(
+    /(name = "(?:driftleaf|driftleaf-core)"\nversion = ")[^"]+/g,
+    (match, prefix) => {
+      matches++;
+      return prefix + version;
+    },
+  );
+  if (matches === 0) throw new Error(`Could not find a Driftleaf package version in ${file}`);
+  await writeFile(file, updated);
 }
 const spec = "docs/packaging/rpm/driftleaf.spec";
 await writeFile(
