@@ -621,6 +621,19 @@ test("settings store only persists auto-lock values the UI offers", async () => 
   });
 });
 
+test("settings store persists the typewriter scrolling preference", async () => {
+  await temporaryBranch(async (directory) => {
+    const store = createSettingsStore(directory);
+    assert.equal((await store.readSettings()).typewriterScrolling, false);
+    assert.equal((await store.patchSettings({ typewriterScrolling: true })).typewriterScrolling, true);
+    assert.equal((await store.readSettings()).typewriterScrolling, true);
+    assert.equal(
+      (await store.patchSettings({ typewriterScrolling: "enabled" })).typewriterScrolling,
+      false,
+    );
+  });
+});
+
 test("settings store validates accent colors and network-free custom CSS", async () => {
   await temporaryBranch(async (directory) => {
     const store = createSettingsStore(directory);
