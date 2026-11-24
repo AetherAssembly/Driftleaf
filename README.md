@@ -18,7 +18,8 @@ A private, local-first notes app for your desktop. Your branch stays on your com
 - **You own it** - No accounts to create, no cloud lock-in. Your branch is just a folder on your computer.
 - **Fast & responsive** - Everything runs locally. No waiting for the cloud or dealing with sync conflicts.
 - **Make it yours** - Add a display name and custom greetings to the empty workspace, then customize the global accent color and CSS.
-- **Write anywhere** - Headings, bold, links, and more render inline as you type, with raw Markdown a toggle away in Source mode. Code blocks are syntax highlighted.
+- **Write anywhere** - Headings, bold, links, math, and more render inline as you type, with raw Markdown a toggle away in Source mode. Code blocks are syntax highlighted, and Mermaid fences render diagrams.
+- **Connected notes** - Link notes with `[[Note title]]` or embed one inline with `![[Note title]]`. Focus mode hides the sidebar and dims other lines; typewriter scrolling is an Editor setting.
 - **Images and files, encrypted too** - Paste or attach an image or file and it is encrypted into the branch with your notes. Driftleaf never loads images from the web.
 - **Hard to lose things** - Deleted notes and databases wait in Trash for 30 days. Writes are atomic and checked on every unlock.
 - **Easy to leave** - Export the whole branch as a `.zip` containing plain Markdown, CSV/JSON, and attachment files that need nothing from Driftleaf to read.
@@ -66,6 +67,18 @@ their backlinks above the editor. Link data is derived from decrypted note
 content in memory while the branch is unlocked; graph data is not persisted.
 The graph can show the whole branch or focus on the selected note, and the editor
 also surfaces unlinked mentions that may be worth turning into links.
+
+### Live Markdown Preview
+
+The editor renders Markdown as you type. In addition to headings, links, and
+formatting, it supports KaTeX math (`$...$` inline and `$$...$$` for display
+math), Mermaid diagrams in `mermaid` fenced code blocks, and note transclusion
+with `![[Note title]]`. Select **Focus** to hide the sidebar and dim all but the
+current line. Enable **Typewriter scrolling** in **Settings → Editor** to keep
+that line centered while Focus mode is active.
+See [docs/EXAMPLES.md](docs/EXAMPLES.md#markdown-live-preview) for examples and
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#notes-links-and-search) for rendering
+and privacy details.
 
 ### Accessibility
 

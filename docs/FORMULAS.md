@@ -3,6 +3,27 @@
 A formula makes a read-only value for each row. It can use other properties
 from that row, so the result updates when those values change.
 
+These are calculated database-cell expressions, not note-body math. To render
+LaTeX in a note, use `$...$` for inline math or `$$...$$` for display math in
+the live Markdown preview.
+
+## Math and diagrams in notes
+
+The note editor also renders Mermaid diagrams from fenced code blocks labeled
+`mermaid`. For example:
+
+````markdown
+```mermaid
+flowchart LR
+  Question --> Research
+  Research --> Answer
+```
+````
+
+The diagram appears in live preview; switch to Source mode to edit its Mermaid
+code. See [Personalization Examples](EXAMPLES.md#markdown-live-preview) for
+math, Mermaid, note-embed, and focus-mode examples.
+
 ## The basics
 
 Add a **Formula (calculated)** property, then enter an expression. Use

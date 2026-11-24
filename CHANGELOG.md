@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
-## [0.8.2] - 2026-11-
+## [0.8.2] - 2026-11-24
 
 ### Added
 
@@ -12,9 +12,16 @@ The format is based on Keep a Changelog and this project uses semantic versionin
   manifest and shown in the empty workspace.
 - Global accent-color and custom CSS settings. CSS that loads external resources
   is rejected to keep branch contents private.
+- Live-preview KaTeX math, Mermaid fenced diagrams, and inline note embeds using
+  `![[Note title]]`.
+- Focus mode, which hides the sidebar and dims other lines, plus a Settings →
+  Editor toggle for optional typewriter scrolling.
 
 ### Changed
 
+- Custom CSS now reliably overrides theme variables and styles loaded with the
+  editor; examples and selector guidance are in
+  [docs/EXAMPLES.md](docs/EXAMPLES.md#custom-css).
 - Windows diagnostics now include the OS version and omit display-server fields
   that only apply to Linux.
 - The diagnostics card has a roomier layout.

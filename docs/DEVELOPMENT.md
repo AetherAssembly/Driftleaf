@@ -271,7 +271,7 @@ See the WebKitGTK compositing workaround above.
 4. Push to the branch (`git push origin feature/amazing`)
 5. Open a Pull Request
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for full guidelines.
+See [Contributing](../.github/CONTRIBUTING.md) for full guidelines.
 
 ---
 

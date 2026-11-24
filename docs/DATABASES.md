@@ -82,7 +82,7 @@ first be removed from those dependent calculations.
 ## Formulas
 
 Formula properties calculate a read-only value for each row using that row's
-other properties. See [Database Formulas](formula.md) for a short introduction
+other properties. See [Database Formulas](FORMULAS.md) for a short introduction
 and examples.
 
 ## Relations and rollups

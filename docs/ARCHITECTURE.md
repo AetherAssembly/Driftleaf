@@ -55,6 +55,12 @@ Accent color and custom CSS are global app settings that apply across branches.
 Custom CSS is validated to prevent it from loading external resources; it cannot
 make a network request on behalf of an open branch.
 
+Accent variables and custom CSS are added as separate stylesheet blocks. Custom
+CSS is loaded after the accent block, allowing it to override accent variables
+and theme palette variables when the user intentionally targets them. Theme
+variable selectors use low specificity, and custom CSS is kept after dynamically
+loaded editor styles so custom rules can reliably override the application.
+
 ## Branch files and backups
 
 A branch is a regular folder with a hidden `.driftleaf` directory containing
@@ -79,12 +85,20 @@ from Driftleaf to read.
 
 Notes use Markdown, rendered inline as you type (a Source mode is available
 for editing the raw Markdown directly). Fenced code blocks are syntax
-highlighted, and Ctrl/Cmd+F finds and replaces within the open note. Search
+highlighted; Mermaid fences render diagrams, and `$...$` or `$$...$$`
+delimiters render KaTeX math. `![[Note title]]` renders another note inline as
+sanitized Markdown; embedded images and active media are omitted so transclusion
+does not load external resources. Nested transclusions are left as text. Focus
+mode hides the sidebar and dims all but the current line, with optional
+typewriter scrolling configured in Settings → Editor. Ctrl/Cmd+F finds and
+replaces within the open note. Search
 covers note titles and content in the unlocked branch, from the sidebar or
 from the Ctrl/Cmd+K palette. Links written as `[[Note title]]` render as clickable
 links in the editor and connect notes in the graph. A folder path can
 distinguish notes with duplicate titles, as in `[[Projects/Driftleaf]]`;
 unresolved or ambiguous links remain ordinary text.
+See [Mermaid diagram examples](EXAMPLES.md#mermaid-diagram-examples) for
+flowchart, sequence, state, class, Gantt, pie, and mind-map samples.
 
 The graph and backlinks are derived from the notes currently available in the
 unlocked branch. They are not separate copies of note content.
